@@ -200,7 +200,7 @@ function UniverseRow({ type, universe: u }: { type: ContentTypeInfo; universe: U
 }
 
 /** The query of the classes the entries of a universe are of, the most entries first. */
-function classesQuery(typeId: string, u: { catalogue: string; universe: string }) {
+export function classesQuery(typeId: string, u: { catalogue: string; universe: string }) {
   return {
     queryKey: [UNIVERSES, typeId, u.catalogue, u.universe, "classes"],
     queryFn: async () =>
@@ -217,7 +217,7 @@ function classesQuery(typeId: string, u: { catalogue: string; universe: string }
  * entry over its classes. A word that says what would be anyway is taken back instead of kept, so
  * a refresh of the catalogue still decides for everything the user did not set apart.
  */
-function useInclusion(typeId: string, u: { catalogue: string; universe: string }) {
+export function useInclusion(typeId: string, u: { catalogue: string; universe: string }) {
   const changed = useDictionaryChanged(typeId);
   const path = { type: typeId, catalogue: u.catalogue, universe: u.universe };
   return {
@@ -245,6 +245,10 @@ function useInclusion(typeId: string, u: { catalogue: string; universe: string }
   };
 }
 
+/** What the entry's classes say of it: kept when any of them is, or when it has none. */
+export const keptByClasses = (c: CharacterInfo, classes: Map<string, UniverseClassInfo>) =>
+  c.classes.length === 0 || c.classes.some((id) => classes.get(id)?.included === true);
+
 /** Which entries the list shows. */
 type EntriesShown = "kept" | "left" | "all";
 
@@ -267,8 +271,7 @@ function Characters({ type, universe: u }: { type: ContentTypeInfo; universe: Un
   if (all.length === 0) return <p className="ml-9 text-muted-foreground">Викиданные не дали этой вселенной ни одного персонажа.</p>;
 
   const byId = new Map((classes.data ?? []).map((c) => [c.class, c]));
-  // What the entry's classes say of it: kept when any of them is, or when it has none
-  const byClasses = (c: CharacterInfo) => c.classes.length === 0 || c.classes.some((id) => byId.get(id)?.included === true);
+  const byClasses = (c: CharacterInfo) => keptByClasses(c, byId);
   const needle = filter.trim().toLocaleLowerCase("ru-RU");
   const shown = all
     .filter((c) => shownKind === "all" || c.included === (shownKind === "kept"))

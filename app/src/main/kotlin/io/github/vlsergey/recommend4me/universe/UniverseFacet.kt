@@ -76,6 +76,16 @@ object UniverseFacet {
         return out
     }
 
+    /** The page in its catalogue of every universe of the dictionary of a type and of every character of them: value to address. */
+    fun pages(universes: UniverseRepository): Map<String, String> {
+        val out = HashMap<String, String>()
+        universes.all().forEach { u ->
+            out[u.value] = u.url
+            universes.characters(u.catalogue, u.id).forEach { c -> out[valueOf(u.catalogue, c.id)] = c.url }
+        }
+        return out
+    }
+
     /** The sexes of a pairing's two characters, in the order of [CharacterSex]; null when the value is no pairing or a sex is not known. */
     fun sexesOf(pairing: String, sexes: Map<String, CharacterSex>): Pair<CharacterSex, CharacterSex>? {
         val (a, b) = members(pairing) ?: return null

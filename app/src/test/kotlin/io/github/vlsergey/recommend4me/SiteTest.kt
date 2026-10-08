@@ -388,7 +388,8 @@ class SiteTest {
         assertEquals("Pilot/Captain", facets.single { it.facet == "characters" }.original)
 
         // A new work of the universe: every character it may have is offered, with how often its texts name them
-        capture("n1|The captain|space|The captain commands. The captain waits. The captain sleeps|")
+        // A name of one word is a name written with a capital: the lower-case "captain" names nobody
+        capture("n1|The captain|space|The Captain commands. The Captain waits. The Captain sleeps, the captain of the guard does not|")
         corrections.correctFacet("site", "n1", FacetCorrection(facet = "universe", added = true, key = "fake:U2"))
         textVectors.refresh(store)
         val given = items.getItem("site", "n1").body!!.allFacets.find { it.facet == "characters" }?.propertyValues.orEmpty().filter { it.offered != true }.map { it.key }

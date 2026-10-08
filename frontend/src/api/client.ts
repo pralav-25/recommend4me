@@ -49,6 +49,7 @@ export type CatalogueProgress = Schemas["CatalogueProgress"];
 export type FacetSuggestions = Schemas["FacetSuggestions"];
 export type SuggestedValue = Schemas["SuggestedValue"];
 export type Candidate = Schemas["Candidate"];
+export type MentionQuote = Schemas["MentionQuote"];
 export type FacetValueUse = Schemas["FacetValueUse"];
 export type UniverseRef = Schemas["UniverseRef"];
 export type UniverseInfo = Schemas["UniverseInfo"];

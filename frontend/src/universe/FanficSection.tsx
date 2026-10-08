@@ -17,6 +17,7 @@ import { percent, plural } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { SuggestedChip } from "@/suggestion/Suggestions";
 import { useCandidates, useSuggestions } from "@/suggestion/useSuggestions";
+import { MentionsDialog } from "./MentionsDialog";
 import { CatalogueSearch, charactersQuery, useUniverses } from "./UniverseDialog";
 
 /** The facets the application gives every work of a type with universes (the backend's UniverseFacets). */
@@ -119,7 +120,9 @@ export function FanficSection({
         corrections={corrections}
       />
       <Pairings
+        type={type}
         item={ref}
+        universes={valuesOf(UNIVERSE).filter(has)}
         label={labelOf(PAIRINGS, "Пэйринги")}
         values={valuesOf(PAIRINGS)}
         characters={valuesOf(CHARACTERS).filter(has)}
@@ -392,7 +395,7 @@ function Characters({
   return (
     <Block label={label}>
       <Chips facet={CHARACTERS} values={values} corrections={corrections} />
-      <Named facet={CHARACTERS} candidates={candidates.data} corrections={corrections} />
+      <Named type={type} item={item} facet={CHARACTERS} candidates={candidates.data} universes={universes} corrections={corrections} />
       <Picker
         label="Добавить персонажа"
         placeholder="Найти персонажа по любому имени или по Q-номеру"
@@ -409,13 +412,18 @@ function Characters({
 
 /** The work's pairings; a new one is two of the work's characters. */
 function Pairings({
+  type,
   item,
+  universes,
   label,
   values,
   characters,
   corrections,
 }: {
+  type: ContentTypeInfo;
   item: ItemRef;
+  /** The universes the work has. */
+  universes: FacetValueInfo[];
   label: string;
   values: FacetValueInfo[];
   /** The characters the work has. */
@@ -457,7 +465,7 @@ function Pairings({
   return (
     <Block label={label}>
       <Chips facet={PAIRINGS} values={values} corrections={corrections} />
-      <Named facet={PAIRINGS} candidates={candidates.data} corrections={corrections} />
+      <Named type={type} item={item} facet={PAIRINGS} candidates={candidates.data} universes={universes} corrections={corrections} />
       {characters.length > 0 && (
         <Picker
           label="Выбрать пэйринг"
@@ -529,24 +537,47 @@ function ranked(options: Option[], candidates: Candidate[] | undefined): Option[
     });
 }
 
+/** Of the candidates the texts name, so many are shown: the likeliest. */
+const NAMED_SHOWN = 7;
+
 /**
- * The candidates the work's texts name, as chips to confirm or refute: a character the chapters
- * name, two characters named in one paragraph. Nothing when the texts name none.
+ * The candidates the work's texts name, as chips to confirm or refute — a character the chapters
+ * name, two characters named in one paragraph — the likeliest [NAMED_SHOWN] of them; the name
+ * opens where the texts name it and why the dictionary has it. Nothing when the texts name none.
  */
-function Named({ facet, candidates, corrections }: { facet: string; candidates: Candidate[] | undefined; corrections: Corrections }) {
+function Named({
+  type,
+  item,
+  facet,
+  candidates,
+  universes,
+  corrections,
+}: {
+  type: ContentTypeInfo;
+  item: ItemRef;
+  facet: string;
+  candidates: Candidate[] | undefined;
+  /** The universes the work has. */
+  universes: FacetValueInfo[];
+  corrections: Corrections;
+}) {
   const named = (candidates ?? []).filter((c) => (c.mentions ?? 0) > 0);
   if (named.length === 0) return null;
+  const shown = named.slice(0, NAMED_SHOWN);
   return (
     <div className="flex flex-col gap-1">
       <div className="text-xs text-muted-foreground">Упоминаются в текстах работы</div>
-      <div className="flex flex-wrap gap-1">
-        {named.map((c) => (
-          <Badge key={c.key} variant="outline" className="border-dashed pr-0.5 font-normal" title={mentionsText(c)}>
-            {c.name}
-            <span className="text-muted-foreground tabular-nums">({candidateMark(c)})</span>
+      <div className="flex flex-wrap items-center gap-1">
+        {shown.map((c) => (
+          <Badge key={c.key} variant="outline" className="border-dashed pr-0.5 font-normal">
+            <MentionsDialog type={type} item={item} facet={facet} value={c.key} name={c.name} url={c.url} summary={mentionsText(c)} universes={universes}>
+              {c.name}
+              <span className="text-muted-foreground tabular-nums">({candidateMark(c)})</span>
+            </MentionsDialog>
             <FacetAnswers facet={facet} value={{ key: c.key }} corrections={corrections} />
           </Badge>
         ))}
+        {named.length > shown.length && <span className="text-xs text-muted-foreground">и ещё {named.length - shown.length} в списке ниже</span>}
       </div>
     </div>
   );

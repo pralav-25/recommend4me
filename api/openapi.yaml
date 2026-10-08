@@ -276,6 +276,40 @@ paths:
         '404':
           description: No such item
 
+  /api/items/{source}/{item}/mentions:
+    get:
+      tags: [suggestions]
+      operationId: getMentions
+      summary: The passages of the work's texts that name a value, its names marked
+      description: |
+        The passages the mentions of a candidate were counted in (Candidate.mentions): a character
+        by its names, a universe by its own name and its characters', a pairing by its two
+        characters named in one paragraph - in the order of the work, each with where it is.
+      parameters:
+        - $ref: '#/components/parameters/Source'
+        - $ref: '#/components/parameters/Item'
+        - name: facet
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: value
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The passages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MentionQuote'
+        '404':
+          description: No such item, or a facet whose values are not counted in the texts
+
   /api/items/{source}/{item}/refresh:
     post:
       tags: [items]
@@ -2540,6 +2574,26 @@ components:
           type: integer
           nullable: true
           description: How many times the work's texts name it (in how many paragraphs, of a pairing); none when not counted
+        url:
+          type: string
+          nullable: true
+          description: Its page in the catalogue of universes (Wikidata), as the dictionary keeps it; none for a value of no catalogue
+
+    MentionQuote:
+      type: object
+      required: [place, text, highlights]
+      properties:
+        place:
+          type: string
+          description: Where in the work the passage is - "Описание", a chapter's title
+        text:
+          type: string
+          description: A paragraph, or the part of a long one around the names, cut with "…"
+        highlights:
+          type: array
+          description: The names of the value in the text, end exclusive
+          items:
+            $ref: '#/components/schemas/TextRange'
 
     UniverseRef:
       type: object
