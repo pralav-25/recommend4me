@@ -83,7 +83,7 @@ class PagesController(
         val pictureMarks = store.marks.pictureMarksOf(itemId)
         return PageItem(
             summary = summary,
-            facets = cards.facets(store, site, chances, corrections, names, texts, empty = true) { it in wanted },
+            facets = cards.facets(store, site, chances, corrections, names, texts, empty = true, complete = store.corrections.completeOf(itemId)) { it in wanted },
             suggestions = suggested,
             // The parts alone: a page shows what moves the work, the dialog every feature
             explanation = recommendations.explanation(key).map { it.toApi(withFeatures = false) },

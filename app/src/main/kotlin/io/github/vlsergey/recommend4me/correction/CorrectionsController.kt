@@ -66,6 +66,20 @@ class CorrectionsController(
         return corrected(store, item)
     }
 
+    override fun completeFacet(source: String, item: String, facet: String): ResponseEntity<ItemDetails> = complete(source, item, facet, true)
+
+    override fun uncompleteFacet(source: String, item: String, facet: String): ResponseEntity<ItemDetails> = complete(source, item, facet, false)
+
+    /** The user's word that the item's values of the [facet] are all named, or its taking back; the facet's chances made current at once. */
+    private fun complete(source: String, item: String, facet: String, complete: Boolean): ResponseEntity<ItemDetails> {
+        val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
+        val def = store.schema.facet(facet) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "У источника нет поля «$facet»")
+        if (!def.editable) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Поле «${def.label}» — слово сайта, оно не исправляется")
+        store.corrections.setComplete(item, facet, complete, Instant.now())
+        suggestions.currentFor(store, item, facet)
+        return corrected(store, item)
+    }
+
     override fun correctField(source: String, item: String, field: String, fieldCorrection: FieldCorrection): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
         if (!knownField(store, field)) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "У источника нет поля «$field»")

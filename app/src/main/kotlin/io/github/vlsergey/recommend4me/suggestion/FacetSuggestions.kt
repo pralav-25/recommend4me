@@ -218,6 +218,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val rejected = data.task.rejected[i].toHashSet()
         val named = data.task.mentions[i]
         fun chance(v: Int, had: Boolean) = Chance(id, facet, data.values[v], had, chances[v].toDouble(), named?.let { it[v] ?: 0 })
+        // All named by the user's word: the item has its own values and is offered no other
+        if (data.complete[i]) return has.map { chance(it, true) }
         // The likeliest of the rest too, likely or not, to offer the work at least so many the site does not give
         val offered = if (allowed != null) emptySet() else {
             val unanswered = chances.indices.filter { it !in has && it !in rejected }
@@ -505,6 +507,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val encoder = plugins.textEncoder() ?: return
         val fingerprint = FacetData.fingerprint(
             site, corrections, store.textVectors.hashes(encoder.id, itemId).values, store.parts.windowCount(itemId, encoder.id),
+            store.corrections.completeOf(itemId),
         )
         val known = facets.associateWith { store.suggestions.fingerprint(itemId, it.key) }
         val stale = facets.filter { known[it] != fingerprint }
@@ -538,6 +541,8 @@ internal class FacetData(
     val task: SuggestionTask,
     /** The values each item has of the facet itself — the site's, the user's answers over them: not the examples the model learns from besides. */
     val held: List<IntArray>,
+    /** Whether the user said each item's values of the facet are all named: it is given no other. */
+    val complete: BooleanArray,
     val fingerprints: LongArray,
     /** The fingerprint of the whole facet: of every item's. */
     val basis: Long,
@@ -546,12 +551,19 @@ internal class FacetData(
         /** The rule of what is kept of an item's chances: 2 — the likeliest others offered besides the likely ones; 3 — the rejected ones too. */
         private const val KEPT = 3
 
-        /** What an item's chances are made of: every value of it, the user's answers, its texts' hashes, its chapters. */
-        fun fingerprint(site: Map<String, List<String>>, corrections: List<FacetCorrection>, textHashes: Collection<String>, windows: Int): Long =
+        /**
+         * What an item's chances are made of: every value of it, the user's answers — the facets said
+         * to be all named ([complete]) among them — its texts' hashes, its chapters.
+         */
+        fun fingerprint(
+            site: Map<String, List<String>>, corrections: List<FacetCorrection>, textHashes: Collection<String>, windows: Int, complete: Collection<String>,
+        ): Long =
             Vectors.keyOf(
                 site.entries.sortedBy { it.key }.joinToString("\u0001") { (f, keys) -> "$f=" + keys.sorted().joinToString(",") } + "\u0002" +
                     corrections.sortedWith(compareBy({ it.facet }, { it.key })).joinToString("\u0001") { "${it.facet}:${it.key}=${it.added}" } + "\u0002" +
-                    textHashes.sorted().joinToString("\u0001") + "\u0002" + windows,
+                    textHashes.sorted().joinToString("\u0001") + "\u0002" + windows +
+                    // Only when said: the fingerprints of the items without stay as they were
+                    (if (complete.isEmpty()) "" else "\u0002complete=" + complete.sorted().joinToString(",")),
             )
 
         /**
@@ -574,6 +586,7 @@ internal class FacetData(
             val site = HashMap<String, HashMap<String, MutableList<String>>>()
             store.items.forEachFacetValue { id, f, key -> site.getOrPut(id) { HashMap() }.getOrPut(f) { ArrayList() } += key }
             val corrections = store.corrections.allFacets().groupBy { it.itemId }
+            val complete = store.corrections.allComplete()
             // The examples are the facet's values as far as the model learns, the user's answers over them
             val learnt = if (examples == null) site else HashMap(site).also { all ->
                 ids.forEach { id ->
@@ -616,12 +629,18 @@ internal class FacetData(
 
             fun indices(list: Collection<String>) = list.mapNotNull { index[it] }.distinct().toIntArray()
             val grouped = groupings?.invoke(values).orEmpty()
+            // An item whose values of the facet are all named: every other value rejected by the user's word
+            val allNamed = BooleanArray(ids.size) { facet.key in complete[ids[it]].orEmpty() }
+            val assigned = ids.map { indices(corrected[it]?.get(facet.key).orEmpty()) }
             val task = SuggestionTask(
                 views = views,
                 values = names,
-                assigned = ids.map { indices(corrected[it]?.get(facet.key).orEmpty()) },
+                assigned = assigned,
                 confirmed = ids.map { id -> indices(corrections[id].orEmpty().filter { it.facet == facet.key && it.added }.map { it.key }) },
-                rejected = ids.map { id -> indices(corrections[id].orEmpty().filter { it.facet == facet.key && !it.added }.map { it.key }) },
+                rejected = ids.mapIndexed { i, id ->
+                    if (allNamed[i]) assigned[i].toHashSet().let { own -> values.indices.filter { it !in own }.toIntArray() }
+                    else indices(corrections[id].orEmpty().filter { it.facet == facet.key && !it.added }.map { it.key })
+                },
                 context = context,
                 contextCount = contextIndex.size,
                 mentions = ids.map { id -> mentions?.invoke(id)?.mapNotNull { (key, n) -> index[key]?.let { it to n } }?.toMap() },
@@ -635,7 +654,7 @@ internal class FacetData(
             val windowCounts = store.parts.windowCounts(encoder.id)
             val fingerprints = LongArray(ids.size) { i ->
                 val id = ids[i]
-                fingerprint(site[id].orEmpty(), corrections[id].orEmpty(), hashes[id].orEmpty(), windowCounts[id] ?: 0)
+                fingerprint(site[id].orEmpty(), corrections[id].orEmpty(), hashes[id].orEmpty(), windowCounts[id] ?: 0, complete[id].orEmpty())
             }
             // The values chosen from and their groups are part of what is learnt: a universe added or
             // removed, a sex learnt of a character, fits again
@@ -647,7 +666,7 @@ internal class FacetData(
             val held = if (examples == null) task.assigned else ids.map { id ->
                 indices(Corrected.facets(site[id].orEmpty(), corrections[id].orEmpty())[facet.key].orEmpty())
             }
-            return FacetData(ids, values, task, held, fingerprints, basis)
+            return FacetData(ids, values, task, held, allNamed, fingerprints, basis)
         }
 
         /** The mean direction of the vectors [read] hands over for each item, a row each; zeros for an item without any. */

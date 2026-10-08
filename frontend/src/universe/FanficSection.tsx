@@ -105,6 +105,7 @@ export function FanficSection({
             type={type}
             label={labelOf(UNIVERSE, "Вселенная")}
             values={valuesOf(UNIVERSE)}
+            complete={facetOf(UNIVERSE)?.complete === true}
             suggested={suggestedOf(UNIVERSE)}
             corrections={corrections}
           />
@@ -277,20 +278,67 @@ function KindChoice({
 /**
  * The work's universes and the suggested ones; a universe of the dictionary is added by the
  * picker, one not yet in the dictionary is found in the catalogue — added to the dictionary and
- * linked to the work at once.
+ * linked to the work at once. Once the user says there are no others ([complete]), the work's own
+ * alone are shown: every other is taken from it, nothing more is offered.
  */
 function Universes({
   type,
   label,
   values,
+  complete,
   suggested,
   corrections,
 }: {
   type: ContentTypeInfo;
   label: string;
   values: FacetValueInfo[];
+  complete: boolean;
   suggested: SuggestedValue[];
   corrections: Corrections;
+}) {
+  const own = values.filter(has);
+  const allNamed = own.length > 0 && (
+    <AsyncButton
+      size="sm"
+      variant={complete ? "secondary" : "ghost"}
+      aria-pressed={complete}
+      onClick={() => corrections.setComplete(UNIVERSE, !complete)}
+      icon={complete ? <CheckIcon /> : undefined}
+      title={
+        complete
+          ? "Названы все вселенные работы: остальные не предлагаются и для модели отклонены. Нажмите, чтобы снять"
+          : "Все вселенные работы уже названы: остальные не предлагать и считать отклонёнными"
+      }
+    >
+      Других вселенных нет
+    </AsyncButton>
+  );
+  if (complete)
+    return (
+      <Block label={label}>
+        <Chips facet={UNIVERSE} values={own} corrections={corrections} />
+        <div>{allNamed}</div>
+      </Block>
+    );
+  return <OpenUniverses type={type} label={label} values={values} suggested={suggested} corrections={corrections} allNamed={allNamed} />;
+}
+
+/** The work's universes while others may be: every value, the suggested ones, the picker and the search in the catalogue. */
+function OpenUniverses({
+  type,
+  label,
+  values,
+  suggested,
+  corrections,
+  allNamed,
+}: {
+  type: ContentTypeInfo;
+  label: string;
+  values: FacetValueInfo[];
+  suggested: SuggestedValue[];
+  corrections: Corrections;
+  /** The button saying there are no others. */
+  allNamed: ReactNode;
 }) {
   const dictionary = useUniverses(type.id);
   const linked = (value: string) => values.some((v) => v.key === value && has(v));
@@ -331,6 +379,7 @@ function Universes({
             </div>
           </DialogContent>
         </Dialog>
+        {allNamed}
       </div>
     </Block>
   );

@@ -549,6 +549,46 @@ paths:
               schema:
                 $ref: '#/components/schemas/ItemDetails'
 
+  /api/items/{source}/{item}/corrections/complete:
+    put:
+      tags: [corrections]
+      operationId: completeFacet
+      summary: Says the work's values of a facet are all named - every other is taken from it, in what is shown and what is learnt
+      parameters:
+        - $ref: '#/components/parameters/Source'
+        - $ref: '#/components/parameters/Item'
+        - name: facet
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The item after the correction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemDetails'
+    delete:
+      tags: [corrections]
+      operationId: uncompleteFacet
+      summary: Takes back that the work's values of a facet are all named
+      parameters:
+        - $ref: '#/components/parameters/Source'
+        - $ref: '#/components/parameters/Item'
+        - name: facet
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The item after the correction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemDetails'
+
   /api/items/{source}/{item}/corrections/fields/{field}:
     put:
       tags: [corrections]
@@ -1469,6 +1509,10 @@ components:
         original:
           type: string
           description: The facet's values as the site writes them, shown above the worked out ones
+        complete:
+          type: boolean
+          nullable: true
+          description: The user said the work's values of it are all named - no other is offered, every other counts as rejected; none when not said
 
     Prediction:
       type: object

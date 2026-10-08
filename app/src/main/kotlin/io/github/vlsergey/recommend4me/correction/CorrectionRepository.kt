@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.correction
 
+import io.github.vlsergey.recommend4me.database.corrections.tables.references.FACET_COMPLETE
 import io.github.vlsergey.recommend4me.database.corrections.tables.references.FACET_CORRECTION
 import io.github.vlsergey.recommend4me.database.corrections.tables.references.FIELD_CORRECTION
 import io.github.vlsergey.recommend4me.database.corrections.tables.references.ITEM_LINK
@@ -11,8 +12,8 @@ import java.time.Instant
 data class FacetCorrection(val itemId: String, val facet: String, val key: String, val added: Boolean, val name: String?)
 
 /**
- * The user's corrections of one source's items: facet values added and taken away, fields
- * overridden, and items of the source that are one work.
+ * The user's corrections of one source's items: facet values added and taken away, facets whose
+ * values are all named, fields overridden, and items of the source that are one work.
  */
 class CorrectionRepository(private val db: DSLContext) {
 
@@ -83,6 +84,35 @@ class CorrectionRepository(private val db: DSLContext) {
     fun allFields(): Map<String, Map<String, String>> =
         db.select(FIELD_CORRECTION.ITEM_ID, FIELD_CORRECTION.FIELD, FIELD_CORRECTION.CONTENT).from(FIELD_CORRECTION).fetch()
             .groupBy({ it.value1()!! }, { it.value2()!! to it.value3()!! }).mapValues { it.value.toMap() }
+
+    // --- Facets whose values are all named ---
+
+    /** The user's word that the item's values of the facet are all named ([complete]), or its taking back. */
+    fun setComplete(itemId: String, facet: String, complete: Boolean, now: Instant) {
+        if (complete) {
+            db.insertInto(FACET_COMPLETE).set(FACET_COMPLETE.ITEM_ID, itemId).set(FACET_COMPLETE.FACET, facet).set(FACET_COMPLETE.COMPLETED_AT, now)
+                .onDuplicateKeyIgnore().execute()
+        } else {
+            db.deleteFrom(FACET_COMPLETE).where(FACET_COMPLETE.ITEM_ID.eq(itemId), FACET_COMPLETE.FACET.eq(facet)).execute()
+        }
+    }
+
+    /** The facets whose values the user said are all named, of each of the items [ids] that has any. */
+    fun completeOf(ids: Collection<String>): Map<String, Set<String>> {
+        val out = HashMap<String, MutableSet<String>>()
+        ids.distinct().chunked(BATCH).forEach { chunk ->
+            db.select(FACET_COMPLETE.ITEM_ID, FACET_COMPLETE.FACET).from(FACET_COMPLETE).where(FACET_COMPLETE.ITEM_ID.`in`(chunk))
+                .fetch { out.getOrPut(it.value1()!!) { HashSet() } += it.value2()!! }
+        }
+        return out
+    }
+
+    fun completeOf(itemId: String): Set<String> = completeOf(listOf(itemId))[itemId].orEmpty()
+
+    /** Every item with a facet whose values are all named: they are few, the user says it by hand. */
+    fun allComplete(): Map<String, Set<String>> =
+        db.select(FACET_COMPLETE.ITEM_ID, FACET_COMPLETE.FACET).from(FACET_COMPLETE).fetch()
+            .groupBy({ it.value1()!! }, { it.value2()!! }).mapValues { it.value.toSet() }
 
     // --- Links within the source ---
 

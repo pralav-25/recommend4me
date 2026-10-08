@@ -43,6 +43,16 @@ export function useCorrections(item: ItemRef, typeId: string) {
     resetFacet: async (facet: string, key: string) =>
       done(unwrap(await api.DELETE("/api/items/{source}/{item}/corrections/facets", { params: { path, query: { facet, key } } }))),
 
+    /** The work's values of the facet are all named ([complete]): every other is taken from it — or that is taken back. */
+    setComplete: async (facet: string, complete: boolean) =>
+      done(
+        unwrap(
+          complete
+            ? await api.PUT("/api/items/{source}/{item}/corrections/complete", { params: { path, query: { facet } } })
+            : await api.DELETE("/api/items/{source}/{item}/corrections/complete", { params: { path, query: { facet } } }),
+        ),
+      ),
+
     /** The other item is the same work: both keep their cards, which now name each other — the lists are asked for anew. */
     link: async (other: ItemRef) => {
       const details = done(

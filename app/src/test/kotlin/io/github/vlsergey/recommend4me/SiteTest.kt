@@ -411,6 +411,23 @@ class SiteTest {
         val offeredUniverses = suggestionsApi.getCandidates("site", "f1", "universe").body!!.map { it.key }
         assertEquals("fake:U2", (universes + offeredUniverses).first(), "given $universes, offered $offeredUniverses")
 
+        // Its universes all named: no other is offered, the work has its own alone
+        this.universes.addUniverse("books", UniverseRef("fake", "U1"))
+        // The other universe: given by the model or offered among the candidates
+        fun other(details: io.github.vlsergey.recommend4me.api.model.ItemDetails) =
+            details.allFacets.single { it.facet == "universe" }.propertyValues.any { it.key == "fake:U1" } ||
+                suggestionsApi.getCandidates("site", "f1", "universe").body!!.any { it.key == "fake:U1" }
+        assertTrue(other(corrections.correctFacet("site", "f1", FacetCorrection(facet = "universe", added = true, key = "fake:U2")).body!!))
+        val named = corrections.completeFacet("site", "f1", "universe").body!!.allFacets.single { it.facet == "universe" }
+        assertEquals(true, named.complete)
+        assertEquals(listOf("fake:U2"), named.propertyValues.filter { it.corrected != FacetValueInfo.Corrected.REMOVED }.map { it.key }, "values ${named.propertyValues}")
+        assertEquals(emptyList(), suggestionsApi.getCandidates("site", "f1", "universe").body!!.map { it.key })
+        // Taken back, the others are offered again
+        val reopened = corrections.uncompleteFacet("site", "f1", "universe").body!!
+        assertNull(reopened.allFacets.single { it.facet == "universe" }.complete)
+        assertTrue(other(reopened))
+        this.universes.removeUniverse("books", "fake", "U1")
+
         // An original work and an alternative history have no universe of another's
         capture("o1|Our own world|space|Ships of the fleet|")
         corrections.correctFacet("site", "o1", FacetCorrection(facet = "kind", added = true, key = "alternative-history"))

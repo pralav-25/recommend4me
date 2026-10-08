@@ -51,6 +51,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
         texts: Map<String, String> = emptyMap(),
         /** Every facet asked for, one the work has no values of included: a page adds values to it. */
         empty: Boolean = false,
+        /** The facets the user said the work's values of are all named: none offered besides. */
+        complete: Set<String> = emptySet(),
         only: (String) -> Boolean,
     ): List<ItemFacet> {
         val schema = store.schema
@@ -68,7 +70,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val siteKeys = site[def.key].orEmpty().toSet()
             // Of a facet of the layer the model works out, the likeliest values the work is not shown
             // with, the user has not answered on and the site does not give — to make at least so many
-            val offered = if (!(def.infer && def.editable)) emptyList() else {
+            val offered = if (!(def.infer && def.editable) || def.key in complete) emptyList() else {
                 val fromSite = siteKeys + def.examplesFrom?.let { from ->
                     val keys = site[from].orEmpty()
                     store.items.facetNames(from, keys).let { n -> keys.map { LayerValues.keyOf(n[it] ?: it) } }
@@ -99,6 +101,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     info(k, if (k in added) (if (given) FacetValueInfo.Corrected.CONFIRMED else FacetValueInfo.Corrected.ADDED) else null)
                 } + offered.map { info(it, null, offer = true) } + removed.map { info(it, FacetValueInfo.Corrected.REMOVED) },
                 original = original,
+                complete = (def.key in complete).takeIf { it },
             )
         }
     }

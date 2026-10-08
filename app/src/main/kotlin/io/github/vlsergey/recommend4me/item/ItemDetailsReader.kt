@@ -81,7 +81,7 @@ class ItemDetailsReader(
         return ItemDetails(
             summary = summary,
             titleCorrected = Corrected.TITLE in fields,
-            allFacets = cards.facets(store, site, chances, corrections, names, texts) { true },
+            allFacets = cards.facets(store, site, chances, corrections, names, texts, complete = store.corrections.completeOf(key.id)) { true },
             texts = schema.texts.filter { it.key !in originals }.mapNotNull { def ->
                 texts[def.key]?.let { TextValue(def.key, def.label, it, def.spoiler, Corrected.textField(def.key) in fields) }
             },
