@@ -10,6 +10,7 @@ import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
+import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -27,6 +28,7 @@ class CorrectionsController(
     private val stores: Stores,
     private val details: ItemDetailsReader,
     private val recommendations: Recommendations,
+    private val suggestions: FacetSuggestions,
     private val events: ApplicationEventPublisher,
 ) : CorrectionsApi {
 
@@ -52,12 +54,15 @@ class CorrectionsController(
         // A name is kept for a value the site does not name: one the user made up
         val known = store.items.facetNames(c.facet, listOf(key)).isNotEmpty()
         store.corrections.setFacet(item, c.facet, key, c.added, name.takeIf { !known }, Instant.now())
+        // The next likeliest values of the facet are offered at once
+        suggestions.currentFor(store, item, c.facet)
         return corrected(store, item)
     }
 
     override fun uncorrectFacet(source: String, item: String, facet: String, key: String): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
         store.corrections.unsetFacet(item, facet, key)
+        suggestions.currentFor(store, item, facet)
         return corrected(store, item)
     }
 

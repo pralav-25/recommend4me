@@ -138,21 +138,16 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      * weights fitted last (fitted now only when there are none); not waiting long for a refresh of
      * a facet under way — that one is left to the background.
      */
+    /**
+     * The item's chances of the [facets] made now, by the weights fitted last. Not under the lock of
+     * the facet: a refit of the whole facet takes seconds, and the user waits for these. A refit
+     * under way may write the item's chances made of what it read before; their fingerprint then
+     * tells they are stale, and they are made again.
+     */
     private fun refreshNow(store: SourceStore, itemId: String, facets: List<FacetDef>) {
         val suggester = plugins.suggester ?: return
         val encoder = plugins.textEncoder() ?: return
-        facets.forEach { facet ->
-            val lock = lockOf(store, facet)
-            if (!lock.tryLock(WAIT_SECONDS, TimeUnit.SECONDS)) {
-                changed(store.id)
-                return@forEach
-            }
-            try {
-                refreshFacet(store, facet, suggester, encoder, itemId)
-            } finally {
-                lock.unlock()
-            }
-        }
+        facets.forEach { facet -> refreshFacet(store, facet, suggester, encoder, itemId) }
     }
 
     /** The facet worked out: of every item whose fingerprint changed — of the item [only], by the weights fitted last, when given. */
@@ -160,14 +155,18 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val started = System.currentTimeMillis()
         val vocabulary = universeVocabulary(store, facet) ?: examplesVocabulary(store, facet)
         val data = FacetData.load(
-            store, facet, encoder, vocabulary?.values.orEmpty(), ofValues = vocabulary == null, mentions = vocabulary?.mentions(store), allowed = vocabulary?.allowed,
-            groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
+            store, facet, encoder, vocabulary?.values.orEmpty(), ofValues = vocabulary == null,
+            // Counted in the texts of the item [only] alone: no other item's chances are made
+            mentions = vocabulary?.mentions(store)?.let { of -> if (only == null) of else { id -> if (id == only) of(id) else null } },
+            allowed = vocabulary?.allowed, groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
         )
         val read = System.currentTimeMillis() - started
         if (data.values.isEmpty()) return
         val now = Instant.now()
         val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id }
         val kept = stored?.let { suggester.unpack(it.content, data.task) }
+        // Never fitted: fitted now on the whole facet, every item's mentions counted
+        if (kept == null && only != null) return refreshFacet(store, facet, suggester, encoder, null)
         val current = kept != null && stored.basis == data.basis
         val fitted = when {
             current || (only != null && kept != null) -> kept!!
@@ -472,14 +471,26 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     }
 
     /**
-     * The item's chances of the facets the model gives values of made current now, by the weights
-     * fitted last: after the user answered on a value the next likeliest are offered at once, not
-     * after the refresh of the whole source in the background.
+     * The item's chances of the facet the user just [answered] on, and of the facets worked out
+     * after it — made of its values — made current now, by the weights fitted last: the next
+     * likeliest values are offered at once, not after the refresh of the whole source in the
+     * background. The other facets are refreshed there.
      */
-    fun currentFor(store: SourceStore, itemId: String) {
+    fun currentFor(store: SourceStore, itemId: String, answered: String) {
+        val facets = facetsOf(store).filter { it.infer }
+        val from = facets.indexOfFirst { it.key == answered }
+        if (from < 0 || store.items.find(itemId) == null) return
+        ensure(store, itemId, facets.drop(from), store.items.facets(itemId), store.corrections.facetsOf(itemId), now = true)
+    }
+
+    /**
+     * The item's chances of the facets the model gives values of: made now when it has none, else
+     * refreshed in the background when what they were made of changed.
+     */
+    fun ensureFor(store: SourceStore, itemId: String) {
         val facets = facetsOf(store).filter { it.infer }
         if (facets.isEmpty() || store.items.find(itemId) == null) return
-        ensure(store, itemId, facets, store.items.facets(itemId), store.corrections.facetsOf(itemId), now = true)
+        ensure(store, itemId, facets, store.items.facets(itemId), store.corrections.facetsOf(itemId))
     }
 
     /**
@@ -510,9 +521,6 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     companion object {
         /** The quiet after the last change before a source is refreshed: a page sends itself several times as it grows. */
         private const val DELAY_SECONDS = 5L
-
-        /** How long a page waits for a refresh under way before its item is left to it. */
-        private const val WAIT_SECONDS = 5L
 
         /** Items scored at once and written in one transaction: memory, not meaning. */
         private const val CHUNK = 2_000

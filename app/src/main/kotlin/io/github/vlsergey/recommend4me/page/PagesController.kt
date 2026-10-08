@@ -70,9 +70,9 @@ class PagesController(
         val summary = cards.cards(type, listOf(key)).firstOrNull() ?: return null
         val schema = store.schema
         val wanted = decor?.facets.orEmpty().map { it.facet }.toSet() + schema.facets.filter { it.suggest || it.infer }.map { it.key }
-        // First: a work just opened gets its chances made here; after an answer the next likeliest are offered at once
+        // First: a work just opened gets its chances made here; an answer made those it changed current itself
         val suggested = suggestions.ofItem(store, itemId).map { it.toApi() }
-        suggestions.currentFor(store, itemId)
+        suggestions.ensureFor(store, itemId)
         val site = store.items.facets(itemId)
         val corrections = store.corrections.facetsOf(itemId)
         val chances = store.suggestions.ofItems(listOf(itemId))[itemId]
