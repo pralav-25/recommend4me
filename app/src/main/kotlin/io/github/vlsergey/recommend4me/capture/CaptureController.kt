@@ -4,6 +4,7 @@ import io.github.vlsergey.recommend4me.api.CaptureApi
 import io.github.vlsergey.recommend4me.api.model.CapturePatterns
 import io.github.vlsergey.recommend4me.api.model.CaptureRequest
 import io.github.vlsergey.recommend4me.api.model.CaptureResult
+import io.github.vlsergey.recommend4me.api.model.CapturedPart as ApiCapturedPart
 import io.github.vlsergey.recommend4me.api.model.CapturedPageInfo
 import io.github.vlsergey.recommend4me.api.model.ExtensionInfo
 import io.github.vlsergey.recommend4me.api.model.LinkedItem
@@ -40,7 +41,10 @@ class CaptureController(
         val items = captured.items.mapNotNull { key ->
             stores.source(key.source)?.items?.find(key.id)?.let { LinkedItem(key.source, key.id, it.title, it.url) }
         }
-        return ResponseEntity.ok(CaptureResult(items, captured.source))
+        val parts = captured.parts.map { p ->
+            ApiCapturedPart(p.item.source, p.item.id, p.length, stores.source(p.item.source)?.items?.find(p.item.id)?.title, p.title)
+        }
+        return ResponseEntity.ok(CaptureResult(items, captured.source, parts))
     }
 
     override fun recentCaptures(): ResponseEntity<List<CapturedPageInfo>> =

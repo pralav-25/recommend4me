@@ -2370,6 +2370,28 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/LinkedItem'
+        parts:
+          type: array
+          description: The parts (chapters) whose text the page gave and the source saved
+          items:
+            $ref: '#/components/schemas/CapturedPart'
+
+    CapturedPart:
+      type: object
+      required: [source, item, length]
+      properties:
+        source:
+          type: string
+        item:
+          type: string
+        itemTitle:
+          type: string
+        title:
+          type: string
+          description: The part's title; none when the page does not name it
+        length:
+          type: integer
+          description: How many characters its text has
 
     CapturedPageInfo:
       type: object

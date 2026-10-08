@@ -2,6 +2,9 @@ package io.github.vlsergey.recommend4me.capture
 
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.source.CapturedPage
+import io.github.vlsergey.recommend4me.source.ItemStore
+import io.github.vlsergey.recommend4me.source.PartData
+import io.github.vlsergey.recommend4me.source.SourceContext
 import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.SourceMode
 import io.github.vlsergey.recommend4me.source.SourceStore
@@ -15,8 +18,11 @@ import java.time.Instant
 
 private val log = LoggerFactory.getLogger(Captures::class.java)
 
-/** What a captured page gave: the source that took it and the items it touched. */
-class Captured(val source: String?, val items: List<ItemKey>)
+/** A part whose text a captured page gave: the item, the part's title, how long its text is. */
+class CapturedPart(val item: ItemKey, val title: String?, val length: Int)
+
+/** What a captured page gave: the source that took it, the items it touched, the parts whose text it gave. */
+class Captured(val source: String?, val items: List<ItemKey>, val parts: List<CapturedPart> = emptyList())
 
 /**
  * THE BROWSER TRACKING MODE: the pages the user opens, sent by the extension. Every page a source
@@ -34,7 +40,17 @@ class Captures(private val stores: Stores, private val contexts: SourceContexts)
     fun capture(url: String, html: String): Captured {
         val store = tracking().firstOrNull { s -> s.source.capturePatterns.any { it.matches(url) } } ?: return Captured(null, emptyList())
         val now = Instant.now()
-        val context = contexts.of(store.id)
+        // The parts whose text the page gave, as the source saves them: the user sees a chapter's text went
+        val texts = ArrayList<CapturedPart>()
+        val own = contexts.of(store.id)
+        val context = object : SourceContext by own {
+            override val items: ItemStore = object : ItemStore by own.items {
+                override fun saveParts(itemId: String, parts: List<PartData>) {
+                    own.items.saveParts(itemId, parts)
+                    parts.forEach { p -> p.content?.let { texts += CapturedPart(ItemKey(store.id, itemId), p.title, it.length) } }
+                }
+            }
+        }
         val items = try {
             store.source.capture(CapturedPage(url, html, now), context)
         } catch (e: Exception) {
@@ -42,8 +58,8 @@ class Captures(private val stores: Stores, private val contexts: SourceContexts)
             emptyList()
         }
         store.pages.keep(url, html, items.firstOrNull(), now, store.source.parserVersion)
-        log.info("{}: {} gave {} items", store.id, url, items.size)
-        return Captured(store.id, items.map { ItemKey(store.id, it) })
+        log.info("{}: {} gave {} items, the text of {} parts", store.id, url, items.size, texts.size)
+        return Captured(store.id, items.map { ItemKey(store.id, it) }, texts)
     }
 
     /** The pages kept last of every source, newest first. */

@@ -37,9 +37,12 @@ footer {
 .ok { color: #2e7d32; }
 .error { color: #c62828; }
 .muted { color: #777; }
+/* A chapter whose text went with the page */
+.part { padding-left: 1em; color: #2e7d32; font-size: 12px; }
 
 @media (prefers-color-scheme: dark) {
   body { background: #1e1e1e; color: #ddd; }
   li { border-color: #333; }
   .muted { color: #999; }
+  .part { color: #81c784; }
 }

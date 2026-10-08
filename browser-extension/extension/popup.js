@@ -28,7 +28,18 @@ async function render() {
       li.className = "muted";
       li.textContent = `${time} ${entry.url} — ни одному источнику не нужна`;
     } else {
-      li.textContent = `${time} ${entry.source}: ${entry.items.map((i) => i.title).join(", ") || "ничего нового"}`;
+      const parts = entry.parts || [];
+      const works = entry.items.map((i) => i.title).join(", ");
+      li.textContent = `${time} ${entry.source}: ${works || (parts.length ? "" : "ничего нового")}`;
+      // Every chapter whose text went: its title and how long it is
+      parts.forEach((p) => {
+        const line = document.createElement("div");
+        line.className = "part";
+        const title = p.title ? `«${p.title}»` : "глава без названия";
+        const of = p.itemTitle && !works.includes(p.itemTitle) ? ` (${p.itemTitle})` : "";
+        line.textContent = `текст ${title}${of}: ${p.length.toLocaleString("ru-RU")} знаков`;
+        li.appendChild(line);
+      });
     }
     list.appendChild(li);
   });

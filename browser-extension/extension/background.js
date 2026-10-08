@@ -95,6 +95,8 @@ async function capture(url, html, tabId) {
     const result = await response.json();
     entry.items = result.items;
     entry.source = result.source;
+    // The chapters whose text the page gave: the user sees it went, not only the work's card
+    entry.parts = result.parts || [];
     if (tabId !== undefined) {
       await browser.action.setBadgeBackgroundColor({ color: "#2e7d32", tabId });
       await browser.action.setBadgeText({ text: result.items.length ? String(result.items.length) : "✓", tabId });
