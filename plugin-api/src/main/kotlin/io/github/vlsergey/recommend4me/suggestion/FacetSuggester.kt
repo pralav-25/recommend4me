@@ -3,14 +3,17 @@ package io.github.vlsergey.recommend4me.suggestion
 import io.github.vlsergey.recommend4me.matrix.Matrix
 
 /**
- * One view of the items' texts: a vector per item, of unit length, a row of zeros for an item
- * without it — the description, the chapters read, the facet's values as the site writes them.
- *
- * [ofValues]: the view is the item's own values of the facet as the site writes them. Its likeness
- * to a value's name would only repeat what the site gave the item; only what the items alike in
- * it have says something.
+ * One input of the items, as the model of the grades reads them too: a vector per item, as it was
+ * encoded — a text (the title, the description, the notes, a line of the site), a picture, a set
+ * of vectors made one (the reviews, the windows of the chapters, the screenshots) — and whether the
+ * item has it; a row of zeros for an item without. [name]: stable, the weights learnt of the input
+ * are kept by it.
  */
-class TextView(val name: String, val vectors: Matrix, val ofValues: Boolean = false)
+class InputBlock(val name: String, val vectors: Matrix, val present: BooleanArray) {
+    init {
+        require(present.size == vectors.rows) { "$name: ${vectors.rows} rows, ${present.size} marks" }
+    }
+}
 
 /**
  * A way the values of a facet fall into groups alike in what goes with them — the pairings of two
@@ -22,27 +25,31 @@ class ValueGrouping(val name: String, val groupOf: IntArray, val groupCount: Int
 
 /**
  * Everything a suggester knows of one facet of one source ([FacetDef.suggest][io.github.vlsergey.recommend4me.source.FacetDef.suggest],
- * [FacetDef.infer][io.github.vlsergey.recommend4me.source.FacetDef.infer]): every item — its texts
- * in several views, the facet's values it has, the values of its other facets — and every value
- * that may be suggested, with the vector of its name.
+ * [FacetDef.infer][io.github.vlsergey.recommend4me.source.FacetDef.infer]): every item — every input
+ * of it, the facet's values it has, the values of its other facets — and every value that may be
+ * suggested, with the vector of its name.
  *
- * Rows of the views and of the lists are items, rows of [values] values; [assigned], [confirmed]
- * and [rejected] hold indices of [values], [context] indices of the [contextCount] values of the
- * other facets.
+ * Rows of the inputs and of the lists are items, rows of [values] values; [assigned], [confirmed]
+ * and [rejected] hold indices of [values] ([valueKeys]), [context] indices of [contextKeys].
  */
 class SuggestionTask(
-    val views: List<TextView>,
+    /** The id of every item, in the order of the rows: an item is held out of what is learnt by it, the same way every time. */
+    val itemIds: List<String>,
+    val inputs: List<InputBlock>,
     /** One row per value: the vector of its name as a query, of unit length; zeros when not encoded. */
     val values: Matrix,
+    /** The key of every value, in the order of [values]: what is learnt of a value is kept by it. */
+    val valueKeys: List<String>,
     /** The values each item has now: the site's, with the user's corrections applied. */
     val assigned: List<IntArray>,
     /** The values the user said the item has: added by hand or accepted when suggested. */
     val confirmed: List<IntArray>,
     /** The values the user said the item does not have: taken from it, or rejected when suggested. */
     val rejected: List<IntArray>,
-    /** The values of the item's other facets — its fandom, its tags, its author. */
+    /** The values of the item's other facets — its fandom, its tags, its author: indices of [contextKeys]. */
     val context: List<IntArray>,
-    val contextCount: Int,
+    /** Every value of the other facets, as "<facet>\u0001<value>": what is learnt of one is kept by it. */
+    val contextKeys: List<String>,
     /**
      * How many times the item's own texts name each value — a character mentioned in the chapters,
      * two named in one paragraph: value index to count, the values not named left out; null for an
@@ -74,12 +81,14 @@ class SuggestionTask(
 ) {
     val itemCount: Int get() = assigned.size
     val valueCount: Int get() = values.rows
+    val contextCount: Int get() = contextKeys.size
 
     init {
-        require(views.isNotEmpty()) { "No view of the texts" }
-        require(views.all { it.vectors.rows == itemCount && it.vectors.cols == values.cols }) {
-            "Views of ${views.map { "${it.vectors.rows}×${it.vectors.cols}" }}, $itemCount items, values of ${values.cols}"
-        }
+        require(itemIds.size == itemCount) { "${itemIds.size} ids of $itemCount items" }
+        require(inputs.all { it.vectors.rows == itemCount }) { "Inputs of ${inputs.map { "${it.name} ${it.vectors.rows}×${it.vectors.cols}" }}, $itemCount items" }
+        require(inputs.map { it.name }.toSet().size == inputs.size) { "Inputs named twice: ${inputs.map { it.name }}" }
+        require(valueKeys.size == valueCount) { "${valueKeys.size} keys of $valueCount values" }
+        require(context.all { c -> c.all { it in 0 until contextCount } }) { "A context out of the $contextCount keys" }
         require(
             confirmed.size == itemCount && rejected.size == itemCount && context.size == itemCount && mentions.size == itemCount && allowed.size == itemCount,
         ) {
@@ -87,8 +96,7 @@ class SuggestionTask(
         }
         require(groupings.all { g -> g.groupOf.size == valueCount && g.groupOf.all { it in -1 until g.groupCount } }) { "A grouping not of the $valueCount values" }
         require(lackWeight > 0 && lackWeight <= 1) { "A lacking value weighs $lackWeight" }
-        require(examples.size == itemCount) { "$itemCount items, ${examples.size} lists of examples" }
-    }
+        require(examples.size == itemCount) { "$itemCount items, ${examples.size} lists of examples" }    }
 }
 
 /**

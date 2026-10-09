@@ -32,7 +32,7 @@ dependencies {
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.h2)
     // The suggestions of tags, worked out by the plugin of this build
-    testImplementation(project(":plugins:suggester-tags"))
+    testImplementation(project(":plugins:suggester-bilinear"))
     // A model to explain: the pairwise scorer of this build
     testImplementation(project(":plugins:scorer-pairwise"))
 }

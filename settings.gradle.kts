@@ -25,7 +25,7 @@ include(
     "plugins:scorer-pairwise",
     "plugins:scorer-knn",
     "plugins:search-lucene",
-    "plugins:suggester-tags",
+    "plugins:suggester-bilinear",
     "plugins:source-author-today",
     "plugins:source-ficbook",
 )

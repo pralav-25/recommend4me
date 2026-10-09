@@ -9,9 +9,11 @@ import io.github.vlsergey.recommend4me.layer.LayerValues
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import io.github.vlsergey.recommend4me.part.PartsSaved
 import io.github.vlsergey.recommend4me.plugin.Plugins
+import io.github.vlsergey.recommend4me.setvector.SetKind
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
+import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
 import io.github.vlsergey.recommend4me.universe.CharacterSex
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
@@ -155,7 +157,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val started = System.currentTimeMillis()
         val vocabulary = universeVocabulary(store, facet) ?: examplesVocabulary(store, facet)
         val data = FacetData.load(
-            store, facet, encoder, vocabulary?.values.orEmpty(), ofValues = vocabulary == null,
+            store, facet, encoder, vocabulary?.values.orEmpty(),
+            imageEncoder = plugins.imageEncoder()?.id, sets = stores.typeOf(store.id).embeddings.ids(), only = only,
             // Counted in the texts of the item [only] alone: no other item's chances are made
             mentions = vocabulary?.mentions(store)?.let { of -> if (only == null) of else { id -> if (id == only) of(id) else null } },
             allowed = vocabulary?.allowed, groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
@@ -169,7 +172,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         if (kept == null && only != null) return refreshFacet(store, facet, suggester, encoder, null)
         val current = kept != null && stored.basis == data.basis
         val fitted = when {
-            current || (only != null && kept != null) -> kept!!
+            current || only != null -> kept ?: return
             else -> {
                 val made = suggester.fit(data.task) ?: return
                 store.suggestions.saveSuggester(facet.key, suggester.id, now, data.basis, made.pack())
@@ -568,13 +571,15 @@ internal class FacetData(
 
         /**
          * [known]: values of the facet the application knows besides the items' — the universes and
-         * characters of the dictionary — with the text their names are encoded from. [ofValues]: the
-         * facet's line on the site ([FacetDef.original]) is the facet's own values written out.
+         * characters of the dictionary — with the text their names are encoded from. [imageEncoder]
+         * and [sets] (kind to the directions in use): the pictures' and the sets' vectors read.
          * [examples]: the values the site gives an item as examples of the facet, the item's own as
          * far as the model learns ([FacetDef.examplesFrom]); a value it lacks weighs [lackWeight].
+         * [only]: the inputs of that item alone are read — its chances alone are made.
          */
         fun load(
-            store: SourceStore, facet: FacetDef, encoder: TextEncoder, known: Map<String, String> = emptyMap(), ofValues: Boolean = true,
+            store: SourceStore, facet: FacetDef, encoder: TextEncoder, known: Map<String, String> = emptyMap(),
+            imageEncoder: String? = null, sets: Map<SetKind, Long> = emptyMap(), only: String? = null,
             mentions: ((String) -> Map<String, Int>?)? = null,
             allowed: ((String) -> Set<String>)? = null,
             groupings: ((List<String>) -> List<ValueGrouping>)? = null,
@@ -587,7 +592,8 @@ internal class FacetData(
             store.items.forEachFacetValue { id, f, key -> site.getOrPut(id) { HashMap() }.getOrPut(f) { ArrayList() } += key }
             val corrections = store.corrections.allFacets().groupBy { it.itemId }
             val complete = store.corrections.allComplete()
-            // The examples are the facet's values as far as the model learns, the user's answers over them
+            // The examples are the facet's values as far as the model learns, the user's answers over
+            // them — the facet the user corrects; the site's facet they come from is among the item's inputs
             val learnt = if (examples == null) site else HashMap(site).also { all ->
                 ids.forEach { id ->
                     val own = examples(id)
@@ -601,7 +607,7 @@ internal class FacetData(
                 corrections.values.flatten().filter { it.facet == facet.key }.map { it.key } + known.keys).distinct().sorted()
             val index = values.withIndex().associate { (i, k) -> k to i }
 
-            // The other facets' values as the context — of the facets the source has now
+            // The other facets' values as the context — of the facets the source has now, the site's own among them
             val facets = schema.facets.map { it.key }.toSet()
             val contextIndex = HashMap<String, Int>()
             val context = ids.map { id ->
@@ -611,16 +617,10 @@ internal class FacetData(
             }
 
             val d = encoder.dim
-            val described = schema.texts.filter { it.block != null && it.key != facet.original }.map { it.key }
-            val views = ArrayList<TextView>()
-            views += TextView("description", mean(ids, d) { action -> store.textVectors.forEach(encoder.id, described) { id, _, v -> action(id, v) } })
-            if (schema.partsLabel != null) {
-                val windows = store.parts.windows(store.parts.windowCounts(encoder.id).keys.toList(), encoder.id)
-                views += TextView("parts", mean(ids, d) { action -> windows.forEach { (id, list) -> list.forEach { action(id, it) } } })
-            }
-            facet.original?.let { key ->
-                views += TextView("original", mean(ids, d) { action -> store.textVectors.forEach(encoder.id, listOf(key)) { id, _, v -> action(id, v) } }, ofValues)
-            }
+            // A facet the site gives values of has them as its labels: its own line on the site is
+            // those values written out, no input of it — as the facet is none of its own context
+            val ownLine = facet.original?.takeIf { site.values.any { facet.key in it } }
+            val inputs = inputs(store, ids, encoder, imageEncoder, sets, only, leaveOut = setOfNotNull(ownLine))
 
             val names = Matrix(values.size, d)
             nameVectors(store, facet.key, values, corrections.values.flatten(), known, encoder).forEach { (key, v) ->
@@ -633,8 +633,10 @@ internal class FacetData(
             val allNamed = BooleanArray(ids.size) { facet.key in complete[ids[it]].orEmpty() }
             val assigned = ids.map { indices(corrected[it]?.get(facet.key).orEmpty()) }
             val task = SuggestionTask(
-                views = views,
+                itemIds = ids,
+                inputs = inputs,
                 values = names,
+                valueKeys = values,
                 assigned = assigned,
                 confirmed = ids.map { id -> indices(corrections[id].orEmpty().filter { it.facet == facet.key && it.added }.map { it.key }) },
                 rejected = ids.mapIndexed { i, id ->
@@ -642,7 +644,7 @@ internal class FacetData(
                     else indices(corrections[id].orEmpty().filter { it.facet == facet.key && !it.added }.map { it.key })
                 },
                 context = context,
-                contextCount = contextIndex.size,
+                contextKeys = contextIndex.entries.sortedBy { it.value }.map { it.key },
                 mentions = ids.map { id -> mentions?.invoke(id)?.mapNotNull { (key, n) -> index[key]?.let { it to n } }?.toMap() },
                 allowed = ids.map { id -> allowed?.invoke(id)?.let(::indices) },
                 groupings = grouped,
@@ -669,16 +671,39 @@ internal class FacetData(
             return FacetData(ids, values, task, held, allNamed, fingerprints, basis)
         }
 
-        /** The mean direction of the vectors [read] hands over for each item, a row each; zeros for an item without any. */
-        private fun mean(ids: List<String>, d: Int, read: ((String, FloatArray) -> Unit) -> Unit): Matrix {
-            val sums = HashMap<String, FloatArray>()
-            read { id, v ->
-                val sum = sums.getOrPut(id) { FloatArray(d) }
-                for (q in 0 until minOf(d, v.size)) sum[q] += v[q]
+        /**
+         * Every input of the [ids], as the model of the grades reads them: a block of every text
+         * that has vectors (the title, the description, the notes, the site's lines), of every
+         * picture block, of every set (the reviews, the windows of the chapters, the screenshots).
+         * Of the item [only] alone when given — no other item's chances are made — the rows of
+         * the others left empty.
+         */
+        private fun inputs(
+            store: SourceStore, ids: List<String>, encoder: TextEncoder, imageEncoder: String?, sets: Map<SetKind, Long>, only: String?,
+            /** The texts not read, by their keys. */
+            leaveOut: Set<String>,
+        ): List<InputBlock> {
+            val row = ids.withIndex().associate { (i, id) -> id to i }
+            val blocks = LinkedHashMap<String, Pair<Matrix, BooleanArray>>()
+            fun put(id: String, block: String, v: FloatArray) {
+                val i = row[id] ?: return
+                val (m, present) = blocks.getOrPut(block) { Matrix(ids.size, v.size) to BooleanArray(ids.size) }
+                // A vector of another length is of another encoder: not of this block
+                if (v.size != m.cols) return
+                m.held.put(v, 0, m.row(i), v.size)
+                present[i] = true
             }
-            val out = Matrix(ids.size, d)
-            ids.forEachIndexed { i, id -> sums[id]?.let { Vectors.meanDirection(listOf(it)) }?.let { out.held.put(it, 0, out.row(i), d) } }
-            return out
+            val texts = TextVectors.blocks(store.schema).mapValues { it.value.first } - leaveOut
+            if (only == null) {
+                store.textVectors.forEach(encoder.id, texts.keys) { id, key, v -> put(id, texts.getValue(key), v) }
+                imageEncoder?.let { e -> store.pictures.forEachItemVector(e) { id, block, v -> put(id, block, v) } }
+                store.setVectors.forEach(sets) { id, block, v -> put(id, block, v) }
+            } else {
+                store.textVectors.ofMany(listOf(only), encoder.id)[only]?.forEach { (key, v) -> texts[key]?.let { put(only, it, v) } }
+                imageEncoder?.let { e -> store.pictures.itemVectorsOf(listOf(only), e)[only]?.forEach { (block, v) -> put(only, block, v) } }
+                store.setVectors.ofMany(listOf(only), sets)[only]?.forEach { (block, v) -> put(only, block, v) }
+            }
+            return blocks.map { (name, b) -> InputBlock(name, b.first, b.second) }
         }
 
         /** The vectors of the values' names as queries — of [known]'s texts for those it has — encoded now where missing or the name changed. */

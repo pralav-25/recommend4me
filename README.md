@@ -30,7 +30,7 @@ folder of jars in `plugins/`:
 | `scorer-knn` | the k nearest graded works by cosine, a baseline |
 | `search-lucene` | search by words (English and Russian forms) and by meaning |
 | `catalogue-wikidata` | the universes of fan fiction and their characters from Wikidata, asked only when you press the button |
-| `suggester-tags` | the chance of every tag of a work from its texts and its other tags; tags to confirm or reject, pairings and characters worked out |
+| `suggester-bilinear` | one model of every work and every value: the chance of every tag, universe, character and pairing of a work from all it is — its title, texts, reviews, chapters, pictures and the site's own fields |
 
 A source has up to three modes: **scrape all** (the whole catalogue, resumable), **updates** (what
 is new since the last time) and **browser tracking**: the pages you open in Firefox are sent to the

@@ -3,6 +3,7 @@ package io.github.vlsergey.recommend4me.textvector
 import io.github.vlsergey.recommend4me.correction.Corrected
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.plugin.Plugins
+import io.github.vlsergey.recommend4me.source.SourceSchema
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.vector.Vectors
@@ -24,8 +25,8 @@ private val log = LoggerFactory.getLogger(TextVectors::class.java)
 data class TextVectorsChanged(val source: String, val ids: List<String>)
 
 /**
- * Vectors of the items' texts — those the model reads ([TextDef.block][io.github.vlsergey.recommend4me.source.TextDef.block])
- * and those searched by meaning — of the text as the user corrected it, kept with its hash and the
+ * Vectors of the items' texts — those the model reads ([TextDef.block][io.github.vlsergey.recommend4me.source.TextDef.block]),
+ * those searched by meaning, and the title ([TITLE]) — of the text as the user corrected it, kept with its hash and the
  * encoder that made them: a text is encoded again when it or the encoder changed.
  *
  * On start every source is gone through; afterwards the items whose texts were written are encoded
@@ -101,25 +102,31 @@ class TextVectors(
         running = true
         try {
             val keys = store.schema.texts.filter { it.block != null || it.searchByMeaning }.map { it.key }
-            if (keys.isEmpty()) return 0
             val stored = if (only == null) store.textVectors.hashes(encoder.id) else only.flatMap { store.textVectors.hashes(encoder.id, it).entries }.associate { it.toPair() }
             val known = if (only == null) store.textVectors.keys() else only.flatMap { store.textVectors.keys(it) }.toSet()
             val fields = if (only == null) store.corrections.allFields() else store.corrections.fieldsOf(only)
+            // The title of every item, as the user corrected it: a text the models read like any other
+            val titles = if (only == null) store.items.titles() else store.items.heads(only).mapValues { it.value.title }
 
             class Todo(val itemId: String, val key: String, val text: String, val hash: String)
             val todo = ArrayList<Todo>()
             val present = HashSet<Pair<String, String>>()
             fun consider(itemId: String, site: Map<String, String>) {
-                val texts = Corrected.texts(site, fields[itemId].orEmpty())
-                keys.forEach { key ->
-                    val text = texts[key] ?: return@forEach
+                val own = fields[itemId].orEmpty()
+                val texts = Corrected.texts(site, own) + listOfNotNull(titles[itemId]?.let { TITLE to Corrected.title(it, own) })
+                (keys + TITLE).forEach { key ->
+                    val text = texts[key]?.takeIf { it.isNotBlank() } ?: return@forEach
                     present += itemId to key
                     val hash = Vectors.hash(text)
                     if (stored[itemId to key] != hash) todo += Todo(itemId, key, text, hash)
                 }
             }
-            if (only == null) store.items.forEachTexts(keys) { id, texts -> consider(id, texts) }
-            else store.items.textsOf(only, keys).let { all -> only.forEach { id -> consider(id, all[id].orEmpty()) } }
+            val considered = HashSet<String>()
+            if (only == null) {
+                if (keys.isNotEmpty()) store.items.forEachTexts(keys) { id, texts -> considered += id; consider(id, texts) }
+                // The items with a title and no other text
+                titles.keys.filter { it !in considered }.forEach { consider(it, emptyMap()) }
+            } else store.items.textsOf(only, keys).let { all -> only.forEach { id -> consider(id, all[id].orEmpty()) } }
             val gone = known.filter { it !in present && (only == null || it.first in only) }
             gone.forEach { (id, key) -> store.textVectors.delete(id, key) }
             if (gone.isNotEmpty()) events.publishEvent(TextVectorsChanged(store.id, gone.map { it.first }.distinct()))
@@ -160,6 +167,18 @@ class TextVectors(
     }
 
     companion object {
+        /** The key the title of an item is kept under among its texts' vectors. */
+        const val TITLE = "title"
+
+        /**
+         * Every text of the source's items the models read, by its key, with the block of the
+         * models' input it is and its label: every text that has vectors — those of the source's
+         * own blocks, the lines searched by meaning (the site's line of characters) — and the title.
+         */
+        fun blocks(schema: SourceSchema): Map<String, Pair<String, String>> =
+            schema.texts.filter { it.block != null || it.searchByMeaning }.associate { it.key to ((it.block ?: "text:${it.key}") to it.label) } +
+                (TITLE to ("text:$TITLE" to "Название"))
+
         /** Texts per encoder call; their windows share batches of the graph. */
         private const val BATCH = 32
         private const val DELAY_SECONDS = 5L

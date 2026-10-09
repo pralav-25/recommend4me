@@ -4,7 +4,7 @@ import org.springframework.boot.autoconfigure.AutoConfiguration
 import org.springframework.context.annotation.Bean
 
 @AutoConfiguration
-class TagSuggesterAutoConfiguration {
+class BilinearSuggesterAutoConfiguration {
     @Bean
-    fun tagSuggester(): FacetSuggester = TagSuggester()
+    fun bilinearSuggester(): FacetSuggester = BilinearSuggester()
 }

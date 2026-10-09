@@ -277,6 +277,10 @@ class ItemRepository(
     }
 
     /** Every text of the [keys] of every item, streamed item by item. */
+    /** The title of every item as the site gives it: item to title. */
+    fun titles(): Map<String, String> =
+        db.select(ITEM.ITEM_ID, ITEM.TITLE).from(ITEM).fetchSize(5000).fetchMap({ it.value1()!! }, { it.value2()!! })
+
     fun forEachTexts(keys: Collection<String>, action: (itemId: String, texts: Map<String, String>) -> Unit) {
         var current: String? = null
         val texts = HashMap<String, String>()

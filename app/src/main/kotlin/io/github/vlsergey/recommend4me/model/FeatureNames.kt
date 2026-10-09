@@ -3,6 +3,7 @@ package io.github.vlsergey.recommend4me.model
 import io.github.vlsergey.recommend4me.picture.PictureRepository
 import io.github.vlsergey.recommend4me.setvector.SetKind
 import io.github.vlsergey.recommend4me.likeness.MarkLikeness
+import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.NumberDef
 import io.github.vlsergey.recommend4me.source.Source
@@ -49,7 +50,7 @@ object FeatureNames {
         sources.forEach { s ->
             s.schema.facets.forEach { facetLabels.putIfAbsent(facetId(s.source, it), it.label) }
             s.schema.numbers.forEach { numberLabels.putIfAbsent(numberId(s.source, it), it.label) }
-            s.schema.texts.forEach { t -> t.block?.let { blockLabels.putIfAbsent(it, t.label) } }
+            TextVectors.blocks(s.schema).values.forEach { (block, label) -> blockLabels.putIfAbsent(block, label) }
         }
         // The names of the facet values, asked of every source that has the facet
         val wanted = features.mapNotNull(::parseFacet).groupBy({ it.first }, { it.second })

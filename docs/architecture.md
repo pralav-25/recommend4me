@@ -20,7 +20,7 @@ neural encoder, every way of turning vectors into scores and the search are plug
 | `plugins/scorer-knn` | k nearest rated neighbours by cosine — a baseline. |
 | `plugins/search-lucene` | Search by words and by meaning over one Lucene index per content type. |
 | `plugins/catalogue-wikidata` | The universes of fan fiction and their characters, from Wikidata. |
-| `plugins/suggester-tags` | The tags a work should have, from its text, its other tags and every other work. |
+| `plugins/suggester-bilinear` | The values a work should have — tags, universes, characters, pairings — by one model of every work and every value. |
 | `plugins/source-author-today` | author.today, browser tracking only. |
 | `plugins/source-ficbook` | ficbook.net, browser tracking only. |
 | `browser-extension` | The Firefox extension of the browser tracking mode. |
@@ -142,18 +142,21 @@ work has, and of every value it lacks that it more likely has than not:
 The user says of any value that the work has it (✓) or has it not (✕): a correction, applied over
 any chance, seen at once by the model, the filters and the search.
 
-The work is the `FacetSuggester` plugin's (`suggester-tags`). It is handed every item of the
-source — its texts in several views (the description, the chapters read, the site's own line of
-the values), its values with the user's corrections, the values of its other facets — and every
-value with the vector of its name as a query. It weighs its witnesses by a logistic regression
-over every work and every value: in every view, the share of the value among the other works
-weighed by likeness on the work's own scale; how much nearer the view is to the value's name
-than usually; how much more often the value goes with the work's other values, and with the
-values of its other facets, than by chance. Nothing in it is chosen by hand: every count leaves
-the work itself out and is drawn by the Jeffreys half; the regression is Firth's (the
-likelihood with the Jeffreys prior), finite where a witness tells the examples apart outright; a
-work with no value of the facet at all is unknown, not denied; and the weights are learnt for
-every set of views the works have, so a work is judged by the views it has.
+The work is the `FacetSuggester` plugin's (`suggester-bilinear`). It is handed every item of the
+source — every input the model of the grades reads, each a block of its own (the title, the
+description, the notes, the site's lines, the reviews and the windows of the chapters as sets,
+the pictures), its values with the user's corrections, the values of its other facets, the site's
+own among them — and every value with the vector of its name as a query. One model scores every
+pair of a work and a value: σ((xA)·(zB + e) + b + w·p) — the work's inputs and the value's name
+and groups carried to a few coordinates where they meet, the value's own coordinates and bias,
+and the pair's own features (the site gives the value as an example, the texts name it, the
+common bias). It is learnt by the weighted logistic loss over every pair: a value the work has
+weighs 1, one the user rejected 1, one it merely lacks less (the rule of succession over the
+user's answers), one it may not have at all and every value of a work with none of the facet
+nought. Every work is judged by a model that did not learn from it (five folds by the work's id),
+so a value the site gave it that nothing else supports comes out unlikely, and an answer on a
+work does not move its own chances. The rank and the penalty are chosen by the held-out loss —
+the strongest penalty within one standard error of the least.
 
 The chances are kept in the model database with what each was made of (a fingerprint of the
 work's values, the user's answers, its texts and chapters). The suggester is fitted again

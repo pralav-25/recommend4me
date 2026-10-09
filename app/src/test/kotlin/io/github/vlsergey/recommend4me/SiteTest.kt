@@ -195,11 +195,20 @@ class SiteTest {
                 k % 7 == 3 -> "$own, $other"
                 else -> own
             }
-            capture("s$k|Space $k|${tags("space", "ships")}|Starships cross the galaxy, pilots fight in orbit near distant planets $k|${pairing("Pilot/Captain", "Knight/Princess")}")
-            capture("d$k|Dragons $k|${tags("dragons", "magic")}|A dragon guards the castle, wizards cast spells and magic $k|${pairing("Knight/Princess", "Pilot/Captain")}")
+            // Titles of all sorts, that tell nothing of the kind: the description does
+            val names = listOf("Anna", "Boris", "Clara", "Denis", "Elena", "Fedor", "Galina", "Igor", "Kira", "Leonid", "Maria", "Nikita", "Olga", "Pavel")
+            fun title(i: Int) = "${names[i % names.size]} and ${names[(i * 5 + 3) % names.size]} ${listOf("Story", "Summer", "Letters", "Road", "Winter")[i % 5]}"
+            capture("s$k|${title(2 * k)}|${tags("space", "ships")}|Starships cross the galaxy, pilots fight in orbit near distant planets $k|${pairing("Pilot/Captain", "Knight/Princess")}")
+            capture("d$k|${title(2 * k + 1)}|${tags("dragons", "magic")}|A dragon guards the castle, wizards cast spells and magic $k|${pairing("Knight/Princess", "Pilot/Captain")}")
         }
         capture("w1|Wrong tag|space,ships,magic|Starships cross the galaxy, pilots fight in orbit near distant planets|Pilot/Captain")
         capture("x1|Lost fleet||Pilots of starships lost beyond the galaxy fight near planets|")
+        // The user's tags of some works the site left untagged: where the work's tags part from the
+        // site's, the model learns what the texts say of them
+        listOf(5, 10, 15).forEach { k ->
+            listOf("space", "ships").forEach { corrections.correctFacet("site", "s$k", FacetCorrection(facet = "tags", added = true, key = it)) }
+            listOf("dragons", "magic").forEach { corrections.correctFacet("site", "d$k", FacetCorrection(facet = "tags", added = true, key = it)) }
+        }
         val store = stores.source("site")!!
         textVectors.refresh(store)
         suggestions.refresh(store)
@@ -260,7 +269,9 @@ class SiteTest {
         corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, name = "MAGIC"))
         corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, name = "Космос"))
         val values = items.getItem("site", "x1").body!!.allFacets.single { it.facet == "tags" }.propertyValues
-        assertEquals(setOf("magic", "космос"), values.filter { it.corrected == FacetValueInfo.Corrected.ADDED }.map { it.key }.toSet())
+        // Added — or confirmed, where the model gave it too
+        val answeredYes = setOf(FacetValueInfo.Corrected.ADDED, FacetValueInfo.Corrected.CONFIRMED)
+        assertEquals(setOf("space", "magic", "космос"), values.filter { it.corrected in answeredYes }.map { it.key }.toSet())
         assertEquals("Космос", values.single { it.key == "космос" }.name)
         assertEquals(listOf("magic"), items.listFacetValues("site", "tags", "mag", 10).body!!.map { it.key })
 
@@ -392,8 +403,9 @@ class SiteTest {
         capture("n1|The captain|space|The Captain commands. The Captain waits. The Captain sleeps, the captain of the guard does not|")
         corrections.correctFacet("site", "n1", FacetCorrection(facet = "universe", added = true, key = "fake:U2"))
         textVectors.refresh(store)
-        val given = items.getItem("site", "n1").body!!.allFacets.find { it.facet == "characters" }?.propertyValues.orEmpty().filter { it.offered != true }.map { it.key }
+        // The candidates first: asked for, the work's chances are made current, and the card read after them shows the same
         val offered = suggestionsApi.getCandidates("site", "n1", "characters").body!!
+        val given = items.getItem("site", "n1").body!!.allFacets.find { it.facet == "characters" }?.propertyValues.orEmpty().filter { it.offered != true }.map { it.key }
         assertEquals(setOf("fake:C1", "fake:C2", "oc:female", "oc:male"), (offered.map { it.key } + given).toSet(), "offered $offered, given $given")
         assertTrue(offered.none { it.key in given }, "offered $offered, given $given")
         assertTrue(offered.zipWithNext().all { (a, b) -> a.chance!! >= b.chance!! }, "the likeliest first: $offered")
