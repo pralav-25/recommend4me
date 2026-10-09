@@ -67,6 +67,12 @@ class Design(
     private val valueIndex = valueKeys.withIndex().associate { (i, k) -> k to i }
 
     val itemWidth: Int = 1 + blocks.sumOf { 1 + it.dim } + contextKeys.size
+
+    /** Where each block's mark of having it lies among an item's features; its vector follows the mark. */
+    val blockOffsets: List<Int> = blocks.runningFold(1) { at, b -> at + 1 + b.dim }.dropLast(1)
+
+    /** The blocks a text of a work is read in — the title, the description, the notes, the site's lines — of vectors of [dim]: indices of [blocks]. */
+    fun textBlocks(dim: Int): List<Int> = blocks.indices.filter { blocks[it].name.startsWith("text:") && blocks[it].dim == dim }
     val valueWidth: Int = 2 + nameDim + groupings.sumOf { it.second }
 
     /** Whether the task can be read by this layout: its blocks of the same names and its names of the same length. */

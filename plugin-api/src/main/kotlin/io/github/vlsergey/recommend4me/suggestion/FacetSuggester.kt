@@ -16,6 +16,16 @@ class InputBlock(val name: String, val vectors: Matrix, val present: BooleanArra
 }
 
 /**
+ * A text that names a value, learnt from as a work would be: one of the names of a character, of a
+ * universe (its own, its characters'), of a pairing — "Гермиона", "Hermione Granger" — read as a
+ * text of a work, the work's every text, which names the [value] and none of the values [against]
+ * (the other characters of its universe). The works the model learns from are few; the names of
+ * the values tell it how a text that names one looks. [vector]: the name encoded as a text of a
+ * work is, of the length of the task's text inputs.
+ */
+class NameHint(val vector: FloatArray, val value: Int, val against: IntArray)
+
+/**
  * A way the values of a facet fall into groups alike in what goes with them — the pairings of two
  * men, of two women, of a man and a woman; the characters of either sex. What is learnt of a group
  * holds for every value in it, a value never seen with a work's tags too. [groupOf]: the group of
@@ -78,6 +88,8 @@ class SuggestionTask(
      * value the site gives the work is likelier the work's, however rare; empty for a facet without.
      */
     val examples: List<IntArray> = List(assigned.size) { IntArray(0) },
+    /** The names of the values as texts that name them ([NameHint]); none for a facet whose values are not named in texts. */
+    val hints: List<NameHint> = emptyList(),
 ) {
     val itemCount: Int get() = assigned.size
     val valueCount: Int get() = values.rows
@@ -96,7 +108,8 @@ class SuggestionTask(
         }
         require(groupings.all { g -> g.groupOf.size == valueCount && g.groupOf.all { it in -1 until g.groupCount } }) { "A grouping not of the $valueCount values" }
         require(lackWeight > 0 && lackWeight <= 1) { "A lacking value weighs $lackWeight" }
-        require(examples.size == itemCount) { "$itemCount items, ${examples.size} lists of examples" }    }
+        require(examples.size == itemCount) { "$itemCount items, ${examples.size} lists of examples" }
+        require(hints.all { h -> h.value in 0 until valueCount && h.against.all { it in 0 until valueCount } }) { "A hint of a value not of the task" }    }
 }
 
 /**

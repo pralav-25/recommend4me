@@ -162,6 +162,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             // Counted in the texts of the item [only] alone: no other item's chances are made
             mentions = vocabulary?.mentions(store)?.let { of -> if (only == null) of else { id -> if (id == only) of(id) else null } },
             allowed = vocabulary?.allowed, groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
+            hintNames = vocabulary?.hintNames.orEmpty(), hintAgainst = vocabulary?.hintAgainst ?: { emptyList() },
         )
         val read = System.currentTimeMillis() - started
         if (data.values.isEmpty()) return
@@ -260,6 +261,10 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val examples: ((String) -> List<String>)? = null,
         /** How much a value an item lacks counts as one it has not ([SuggestionTask.lackWeight]). */
         val lackWeight: Double = 1.0,
+        /** Every name each value goes by, each a text that names it ([NameHint]); none for a facet whose values are not named in texts. */
+        val hintNames: Map<String, List<String>> = emptyMap(),
+        /** The values a text naming a value does not name: its rivals — the other characters of its universe. */
+        val hintAgainst: (String) -> Collection<String> = { emptyList() },
     ) {
         /** How often each item's own texts name each value, by [naming]; null when the values are not counted. */
         fun mentions(store: SourceStore): ((String) -> Map<String, Int>?)? =
@@ -331,10 +336,15 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                 }
                 // A universe is named by itself or by a character of it
                 val naming = Naming(Mentions(names), valuesOf = { value -> ofCharacter[value] ?: setOf(value).filter { it in all } })
+                // Every name of a universe and of each of its characters is a text that names it, and no other universe
+                val hintNames = HashMap<String, MutableList<String>>()
+                names.forEach { (value, own) -> (ofCharacter[value] ?: setOf(value).filter { it in all }).forEach { u -> hintNames.getOrPut(u) { ArrayList() } += own } }
                 Vocabulary(
                     all,
                     allowed = { id -> if (original(id)) emptySet() else all.keys },
                     naming = { id -> naming.takeUnless { original(id) } },
+                    hintNames = hintNames.mapValues { it.value.distinct() },
+                    hintAgainst = { u -> all.keys - u },
                 )
             }
             UniverseFacets.CHARACTERS -> {
@@ -356,8 +366,13 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                 val universes = linked(store, UniverseFacets.UNIVERSE)
                 fun of(id: String) = universes[id].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet()
                 val sexes = UniverseFacet.sexes(type.universes)
+                // A name of a character names it and none of the other characters of its universes
+                val universesOf = HashMap<String, MutableSet<String>>()
+                ofUniverse.forEach { (u, members) -> members.forEach { universesOf.getOrPut(it) { HashSet() } += u } }
                 Vocabulary(
                     values,
+                    hintNames = names,
+                    hintAgainst = { c -> universesOf[c].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet() - c },
                     allowed = { id -> of(id) + UniverseFacet.ORIGINAL_CHARACTERS.keys },
                     // The characters of a work's universes, counted in its texts: a work of none is not counted
                     naming = { id -> of(id).takeIf { it.isNotEmpty() }?.let { own -> Naming(Mentions(own.associateWith { names[it].orEmpty() })) } },
@@ -394,8 +409,14 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                 type.universes.all().forEach { u -> type.universes.characters(u.catalogue, u.id).forEach { known[UniverseFacet.valueOf(u.catalogue, it.id)] = it.names } }
                 // The sexes of a pairing's two characters, and whether they are one sex: two groupings
                 val kinds = CharacterSex.entries.flatMap { x -> CharacterSex.entries.filter { it >= x }.map { x to it } }
+                // A pairing of two characters of the dictionary is named "A / B"; it names no other pairing of either of them
+                val ofMember = HashMap<String, MutableSet<String>>()
+                values.keys.forEach { p -> UniverseFacet.members(p)?.toList()?.forEach { ofMember.getOrPut(it) { HashSet() } += p } }
+                val named = values.filterKeys { p -> UniverseFacet.members(p)?.toList()?.none { it in UniverseFacet.ORIGINAL_CHARACTERS } == true }
                 Vocabulary(
                     values,
+                    hintNames = named.mapValues { listOf(it.value) },
+                    hintAgainst = { p -> UniverseFacet.members(p)?.toList().orEmpty().flatMap { ofMember[it].orEmpty() }.toSet() - p },
                     allowed = { id -> pairs[id].orEmpty() },
                     naming = { id ->
                         // The original characters have no names to count
@@ -585,6 +606,8 @@ internal class FacetData(
             groupings: ((List<String>) -> List<ValueGrouping>)? = null,
             examples: ((String) -> List<String>)? = null,
             lackWeight: Double = 1.0,
+            hintNames: Map<String, List<String>> = emptyMap(),
+            hintAgainst: (String) -> Collection<String> = { emptyList() },
         ): FacetData {
             val schema = store.schema
             val ids = store.items.keys().map { it.id }
@@ -650,6 +673,10 @@ internal class FacetData(
                 groupings = grouped,
                 lackWeight = lackWeight,
                 examples = ids.map { id -> examples?.invoke(id)?.let(::indices) ?: IntArray(0) },
+                // What is learnt from, not what is judged: none when the item [only] is judged by the weights fitted last
+                hints = if (only != null) emptyList() else hints(store, facet.key, hintNames, encoder).mapNotNull { (key, vector) ->
+                    index[key]?.let { v -> NameHint(vector, v, indices(hintAgainst(key))) }
+                },
             )
             val hashes = HashMap<String, MutableList<String>>()
             store.textVectors.hashes(encoder.id).forEach { (k, hash) -> hashes.getOrPut(k.first) { ArrayList() } += hash }
@@ -661,9 +688,11 @@ internal class FacetData(
             // The values chosen from and their groups are part of what is learnt: a universe added or
             // removed, a sex learnt of a character, fits again
             // What is kept of the chances is part of it too: a new rule of what to keep makes them again
+            // And the names the values go by: an alias added to the dictionary is a new text to learn from
             val basis = Vectors.keyOf(
                 ids.indices.sortedBy { ids[it] }.joinToString(",") { "${ids[it]}:${fingerprints[it]}" } + "\u0002" + values.joinToString("\u0001") +
-                    "\u0002" + grouped.joinToString("\u0001") { g -> g.name + "=" + g.groupOf.joinToString(",") } + "\u0002" + KEPT,
+                    "\u0002" + grouped.joinToString("\u0001") { g -> g.name + "=" + g.groupOf.joinToString(",") } + "\u0002" + KEPT +
+                    "\u0002" + Vectors.keyOf(hintNames.entries.sortedBy { it.key }.joinToString("\u0001") { (v, names) -> v + "=" + names.joinToString("|") }),
             )
             val held = if (examples == null) task.assigned else ids.map { id ->
                 indices(Corrected.facets(site[id].orEmpty(), corrections[id].orEmpty())[facet.key].orEmpty())
@@ -724,6 +753,31 @@ internal class FacetData(
                 val rows = batch.indices.mapNotNull { k -> vectors[k]?.let { Triple(batch[k].first, Vectors.hash(batch[k].second), it) } }
                 store.valueNames.save(facet, encoder.id, rows)
                 rows.forEach { (key, _, v) -> out[key] = v }
+            }
+            return out
+        }
+
+        /**
+         * Every name of every value as a text of a work is encoded — a passage, not a query — each
+         * with the value it names; kept with the source's vectors of names under "hint:<facet>",
+         * encoded again only when new.
+         */
+        private fun hints(store: SourceStore, facet: String, names: Map<String, List<String>>, encoder: TextEncoder): List<Pair<String, FloatArray>> {
+            if (names.isEmpty()) return emptyList()
+            val kept = "hint:$facet"
+            val stored = store.valueNames.of(kept, encoder.id)
+            val wanted = names.flatMap { (value, list) -> list.distinct().map { value to it } }
+            val out = ArrayList<Pair<String, FloatArray>>()
+            val todo = ArrayList<Pair<String, String>>()
+            wanted.forEach { (value, name) ->
+                val have = stored["$value\u0001$name"]
+                if (have != null && have.first == Vectors.hash(name)) out += value to have.second else todo += value to name
+            }
+            todo.chunked(ENCODE_BATCH).forEach { batch ->
+                val vectors = encoder.encode(batch.map { it.second }, TextKind.PASSAGE)
+                val rows = batch.indices.mapNotNull { k -> vectors[k]?.let { Triple("${batch[k].first}\u0001${batch[k].second}", Vectors.hash(batch[k].second), it) } }
+                store.valueNames.save(kept, encoder.id, rows)
+                batch.indices.forEach { k -> vectors[k]?.let { out += batch[k].first to it } }
             }
             return out
         }
