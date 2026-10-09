@@ -51,20 +51,22 @@ class BlockScale(val name: String, val center: FloatArray, val scale: Float) {
  * vector; a one-hot of every value of its other facets the fitted task knew.
  *
  * A value: a constant; whether its name is encoded and the name's centred and scaled vector; a
- * one-hot of its group in every grouping. What is learnt of a value beyond its name — its own
- * vector and bias — is kept by its key ([valueKeys]).
+ * one in every group of it in every grouping — a pairing has two, one for each of its characters.
+ * What is learnt of a value beyond its name — its own vector and bias — is kept by its key
+ * ([valueKeys]).
  */
 class Design(
     val blocks: List<BlockScale>,
     val contextKeys: List<String>,
     val names: BlockScale?,
     val nameDim: Int,
-    /** Every grouping by its name, with how many groups it has. */
-    val groupings: List<Pair<String, Int>>,
+    /** Every grouping by its name, with the keys of its groups: a column each. */
+    val groupings: List<Pair<String, List<String>>>,
     val valueKeys: List<String>,
 ) {
     private val contextIndex = contextKeys.withIndex().associate { (i, k) -> k to i }
     private val valueIndex = valueKeys.withIndex().associate { (i, k) -> k to i }
+    private val groupIndex = groupings.map { (_, keys) -> keys.withIndex().associate { (i, k) -> k to i } }
 
     val itemWidth: Int = 1 + blocks.sumOf { 1 + it.dim } + contextKeys.size
 
@@ -73,7 +75,7 @@ class Design(
 
     /** The blocks a text of a work is read in — the title, the description, the notes, the site's lines — of vectors of [dim]: indices of [blocks]. */
     fun textBlocks(dim: Int): List<Int> = blocks.indices.filter { blocks[it].name.startsWith("text:") && blocks[it].dim == dim }
-    val valueWidth: Int = 2 + nameDim + groupings.sumOf { it.second }
+    val valueWidth: Int = 2 + nameDim + groupings.sumOf { it.second.size }
 
     /** Whether the task can be read by this layout: its blocks of the same names and its names of the same length. */
     fun reads(task: SuggestionTask): Boolean {
@@ -124,10 +126,12 @@ class Design(
                 for (q in 0 until nameDim) row[2 + q] = (name[q] - names.center[q]) * names.scale
             }
             var at = 2 + nameDim
-            groupings.forEach { (g, count) ->
-                val group = groupingIndex[g]?.takeIf { it.groupCount == count }?.groupOf?.get(v) ?: -1
-                if (group >= 0) row[at + group] = 1f
-                at += count
+            groupings.forEachIndexed { k, (g, keys) ->
+                // The task's groups by their keys: one this layout does not know has no column
+                groupingIndex[g]?.let { grouping ->
+                    grouping.of[v].forEach { group -> groupIndex[k][grouping.groups[group]]?.let { row[at + it] = 1f } }
+                }
+                at += keys.size
             }
             out.held.put(row, 0, out.row(v), valueWidth)
         }
@@ -145,7 +149,7 @@ class Design(
         out.writeBoolean(names != null)
         names?.let { writeScale(out, it) }
         out.writeInt(groupings.size)
-        groupings.forEach { (g, count) -> out.writeUTF(g); out.writeInt(count) }
+        groupings.forEach { (g, keys) -> out.writeUTF(g); writeStrings(out, keys) }
         writeStrings(out, valueKeys)
     }
 
@@ -157,7 +161,7 @@ class Design(
             }))
             return Design(
                 task.inputs.mapNotNull { BlockScale.of(it) }, task.contextKeys, names, task.values.cols,
-                task.groupings.map { it.name to it.groupCount }, task.valueKeys,
+                task.groupings.map { it.name to it.groups }, task.valueKeys,
             )
         }
 
@@ -166,7 +170,7 @@ class Design(
             val context = readStrings(input)
             val nameDim = input.readInt()
             val names = if (input.readBoolean()) readScale(input) else null
-            val groupings = List(input.readInt()) { input.readUTF() to input.readInt() }
+            val groupings = List(input.readInt()) { input.readUTF() to readStrings(input) }
             return Design(blocks, context, names, nameDim, groupings, readStrings(input))
         }
 

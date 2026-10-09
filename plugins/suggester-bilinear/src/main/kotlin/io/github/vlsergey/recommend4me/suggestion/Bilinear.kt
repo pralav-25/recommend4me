@@ -101,6 +101,18 @@ internal class Problem(val task: SuggestionTask, val design: Design, val folds: 
         }
     }
 
+    /** The values no item outside [fold] has: what the model fitted without the fold learns of them is their name and groups alone. */
+    fun unseenOutside(fold: Int): BooleanArray {
+        val unseen = BooleanArray(m) { true }
+        val row = FloatArray(m)
+        for (i in 0 until n) {
+            if (foldOf[i] == fold) continue
+            label.take(row, 0, i * m, m)
+            for (k in 0 until m) if (row[k] > 0f) unseen[k] = false
+        }
+        return unseen
+    }
+
     companion object {
         /** The fold of an item: the same every time, whatever else the task holds. */
         fun foldOf(id: String, folds: Int): Int = (id.hashCode() and Int.MAX_VALUE) % folds
@@ -190,6 +202,13 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
     class Held(var weight: Double = 0.0, var loss: Double = 0.0, var squares: Double = 0.0, var weights: Double = 0.0) {
         val mean: Double get() = if (weight > 0) loss / weight else Double.MAX_VALUE
 
+        fun add(w: Double, l: Double) {
+            weight += w
+            loss += w * l
+            squares += w * l * l
+            weights += w * w
+        }
+
         /** The standard error of [mean]: the weighted spread over the effective number of pairs. */
         val error: Double get() {
             if (weight <= 0 || weights <= 0) return Double.MAX_VALUE
@@ -198,8 +217,13 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         }
     }
 
-    /** The weighted losses of the pairs of the items of [fold] by [theta], added to [into]. */
-    fun heldOutLoss(theta: DoubleArray, fold: Int, into: Held) {
+    /**
+     * The weighted losses of the pairs of the items of [fold] by [theta], added to [into]; those of
+     * the values no item of the other folds has ([Problem.unseenOutside]) to [unseen] besides — how
+     * the model judges a value it learnt nothing of but its name and groups.
+     */
+    fun heldOutLoss(theta: DoubleArray, fold: Int, into: Held, unseen: Held? = null) {
+        val fresh = if (unseen == null) null else p.unseenOutside(fold)
         scores(theta)
         val pair = theta.copyOfRange(size - PAIR, size)
         val bias = size - PAIR - m
@@ -216,10 +240,8 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
                 if (w[k] == 0f) continue
                 val z = row[k] + theta[bias + k]
                 val l = softplus(z) - y[k] * z
-                into.weight += w[k]
-                into.loss += w[k] * l
-                into.squares += w[k] * l * l
-                into.weights += w[k].toDouble() * w[k]
+                into.add(w[k].toDouble(), l)
+                if (fresh != null && fresh[k]) unseen!!.add(w[k].toDouble(), l)
             }
         }
     }

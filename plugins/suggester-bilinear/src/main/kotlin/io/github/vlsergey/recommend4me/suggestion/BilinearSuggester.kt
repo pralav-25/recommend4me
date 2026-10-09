@@ -36,7 +36,7 @@ class BilinearSuggester : FacetSuggester {
         val started = System.currentTimeMillis()
         val design = Design.of(task)
         val problem = Problem(task, design, FOLDS)
-        class Tried(val rank: Int, val lambda: Double, val held: Bilinear.Held, val fitted: Fitted)
+        class Tried(val rank: Int, val lambda: Double, val held: Bilinear.Held, val unseen: Bilinear.Held, val fitted: Fitted)
         val tried = ArrayList<Tried>()
         for (rank in RANKS) {
             // A model of every fold, fitted side by side: the folds share nothing but the problem
@@ -47,13 +47,14 @@ class BilinearSuggester : FacetSuggester {
             var lambda = STRONGEST
             while (lambda >= WEAKEST && worse < 2) {
                 val held = Bilinear.Held()
+                val unseen = Bilinear.Held()
                 // Every penalty from a fresh start: carried from a stronger one, the weights would start
                 // at nought, where the two sides' products have no gradient and stay
                 val step = lambda
                 val thetas = IntStream.range(0, FOLDS).parallel()
                     .mapToObj { k -> models[k].fit(models[k].start(k.toLong() + 1), step, k) }.toList()
-                thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held) }
-                tried += Tried(rank, lambda, held, Fitted(design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }))
+                thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held, unseen) }
+                tried += Tried(rank, lambda, held, unseen, Fitted(design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }))
                 if (held.mean < rankBest) { rankBest = held.mean; worse = 0 } else worse++
                 lambda /= 10
             }
@@ -64,10 +65,12 @@ class BilinearSuggester : FacetSuggester {
         val least = tried.minBy { it.held.mean }
         val chosen = tried.filter { it.held.mean <= least.held.mean + least.held.error }.maxBy { it.lambda }
         log.info(
-            "{} items × {} values, {} features of an item, {} of a value, {} names against {} values: {}; chosen r={} λ={} — in {} ms",
+            "{} items × {} values, {} features of an item, {} of a value, {} names against {} values: {}; chosen r={} λ={} — in {} ms; " +
+                "of the values no item of the other folds has: {}",
             task.itemCount, task.valueCount, design.itemWidth, design.valueWidth, problem.hints.size, problem.hintPairs,
             tried.joinToString("; ") { "r=${it.rank} λ=${it.lambda}: %.4f ± %.4f".format(it.held.mean, it.held.error) },
             chosen.rank, chosen.lambda, System.currentTimeMillis() - started,
+            tried.joinToString("; ") { "λ=${it.lambda}: " + if (it.unseen.weight > 0) "%.4f ± %.4f".format(it.unseen.mean, it.unseen.error) else "none" },
         )
         return chosen.fitted
     }
@@ -145,7 +148,7 @@ class BilinearSuggester : FacetSuggester {
     }
 
     companion object {
-        private const val FORMAT = 2
+        private const val FORMAT = 3
 
         /** The folds an item is held out in: four fifths of the items teach the model judging the fifth. */
         const val FOLDS = 5

@@ -27,11 +27,14 @@ class NameHint(val vector: FloatArray, val value: Int, val against: IntArray)
 
 /**
  * A way the values of a facet fall into groups alike in what goes with them — the pairings of two
- * men, of two women, of a man and a woman; the characters of either sex. What is learnt of a group
- * holds for every value in it, a value never seen with a work's tags too. [groupOf]: the group of
- * every value of the task, -1 for a value of no known group.
+ * men, of two women, of a man and a woman; the characters of either sex; the pairings of one
+ * character. What is learnt of a group holds for every value in it, a value never seen with a
+ * work's tags too. [groups]: the groups by their keys — a group is the same group in every task by
+ * its key, whatever other groups a task has. [of]: the groups of every value of the task, indices
+ * of [groups] — none for a value of no known group, several for a value of several: a pairing is
+ * in the groups of both its characters.
  */
-class ValueGrouping(val name: String, val groupOf: IntArray, val groupCount: Int)
+class ValueGrouping(val name: String, val groups: List<String>, val of: List<IntArray>)
 
 /**
  * Everything a suggester knows of one facet of one source ([FacetDef.suggest][io.github.vlsergey.recommend4me.source.FacetDef.suggest],
@@ -106,7 +109,7 @@ class SuggestionTask(
         ) {
             "$itemCount assigned, ${confirmed.size} confirmed, ${rejected.size} rejected, ${context.size} contexts, ${mentions.size} mentions, ${allowed.size} allowed"
         }
-        require(groupings.all { g -> g.groupOf.size == valueCount && g.groupOf.all { it in -1 until g.groupCount } }) { "A grouping not of the $valueCount values" }
+        require(groupings.all { g -> g.of.size == valueCount && g.of.all { groups -> groups.all { it in g.groups.indices } } }) { "A grouping not of the $valueCount values" }
         require(lackWeight > 0 && lackWeight <= 1) { "A lacking value weighs $lackWeight" }
         require(examples.size == itemCount) { "$itemCount items, ${examples.size} lists of examples" }
         require(hints.all { h -> h.value in 0 until valueCount && h.against.all { it in 0 until valueCount } }) { "A hint of a value not of the task" }    }

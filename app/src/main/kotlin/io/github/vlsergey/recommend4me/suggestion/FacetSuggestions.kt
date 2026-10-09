@@ -399,7 +399,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                     // The characters of a work's universes, counted in its texts: a work of none is not counted
                     naming = { id -> of(id).takeIf { it.isNotEmpty() }?.let { own -> Naming(Mentions(own.associateWith { names[it].orEmpty() })) } },
                     // A work's tags tell the sex of its main characters
-                    groupings = { list -> listOf(ValueGrouping("sex", IntArray(list.size) { sexes[list[it]]?.ordinal ?: -1 }, CharacterSex.entries.size)) },
+                    groupings = { list -> listOf(ValueGrouping("sex", CharacterSex.entries.map { it.name }, list.map { c -> sexes[c]?.let { intArrayOf(it.ordinal) } ?: IntArray(0) })) },
                 )
             }
             UniverseFacets.PAIRINGS -> {
@@ -447,11 +447,18 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                     },
                     groupings = { list ->
                         val of = list.map { UniverseFacet.sexesOf(it, sexes) }
+                        fun one(group: Int?) = group?.let { intArrayOf(it) } ?: IntArray(0)
+                        // A pairing is in the groups of its two characters: what is learnt of a
+                        // character's pairings holds for a pairing of it never seen with a work
+                        val members = list.map { UniverseFacet.members(it)?.toList().orEmpty() }
+                        val characters = members.flatten().distinct().sorted()
+                        val at = characters.withIndex().associate { (i, c) -> c to i }
                         listOf(
-                            ValueGrouping("sexes", IntArray(list.size) { of[it]?.let(kinds::indexOf) ?: -1 }, kinds.size),
-                            ValueGrouping("one sex", IntArray(list.size) { i ->
-                                of[i]?.takeIf { (x, y) -> x != CharacterSex.OTHER && y != CharacterSex.OTHER }?.let { (x, y) -> if (x == y) 0 else 1 } ?: -1
-                            }, 2),
+                            ValueGrouping("sexes", kinds.map { (x, y) -> "$x+$y" }, of.map { one(it?.let(kinds::indexOf)) }),
+                            ValueGrouping("one sex", listOf("same", "different"), of.map { s ->
+                                one(s?.takeIf { (x, y) -> x != CharacterSex.OTHER && y != CharacterSex.OTHER }?.let { (x, y) -> if (x == y) 0 else 1 })
+                            }),
+                            ValueGrouping("characters", characters, members.map { m -> m.map { at.getValue(it) }.toIntArray() }),
                         )
                     },
                 )
@@ -719,7 +726,7 @@ internal class FacetData(
             // And the names the values go by: an alias added to the dictionary is a new text to learn from
             val basis = Vectors.keyOf(
                 ids.indices.sortedBy { ids[it] }.joinToString(",") { "${ids[it]}:${fingerprints[it]}" } + "\u0002" + values.joinToString("\u0001") +
-                    "\u0002" + grouped.joinToString("\u0001") { g -> g.name + "=" + g.groupOf.joinToString(",") } + "\u0002" + KEPT +
+                    "\u0002" + grouped.joinToString("\u0001") { g -> g.name + "=" + g.of.joinToString(",") { groups -> groups.joinToString("+") { g.groups[it] } } } + "\u0002" + KEPT +
                     "\u0002" + Vectors.keyOf(hintNames.entries.sortedBy { it.key }.joinToString("\u0001") { (v, names) -> v + "=" + names.joinToString("|") }),
             )
             val held = if (examples == null) task.assigned else ids.map { id ->
