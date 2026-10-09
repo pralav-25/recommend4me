@@ -6,7 +6,10 @@ import io.github.vlsergey.recommend4me.matrix.Matrix
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.util.Random
+import java.util.stream.IntStream
+import kotlin.math.abs
 import kotlin.math.exp
+import kotlin.math.max
 import kotlin.math.ln
 import kotlin.math.ln1p
 import kotlin.math.sqrt
@@ -75,6 +78,9 @@ internal class Problem(val task: SuggestionTask, val design: Design, val folds: 
         val at = values.withIndex().associate { (i, v) -> v to i }
         HintGroup(rows.toIntArray(), values.toIntArray(), IntArray(rows.size) { at.getValue(hints[rows[it]].value) })
     }
+
+    /** How many pairs of a name and a value the names are judged on. */
+    val hintPairs: Long = hintGroups.sumOf { it.rows.size.toLong() * it.values.size }
 
     init {
         val row = FloatArray(m)
@@ -264,20 +270,40 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             group.rows.forEachIndexed { r, row -> for (q in 0 until rank) gu[r * rank + q] = uh[row * rank + q] }
             group.values.forEachIndexed { j, value -> for (q in 0 until rank) { gv[j * rank + q] = v[value * rank + q]; gvt[q * c + j] = v[value * rank + q] } }
             Blas.product(gu, rank, k, rank, gvt, c, gs)
-            for (r in 0 until k) {
+            // Every pair's loss and slope, a row of names at a time on every core: a large universe
+            // has thousands of names against thousands of characters
+            val rowLoss = DoubleArray(k)
+            val rowSlope = DoubleArray(k)
+            val rowNamed = DoubleArray(k)
+            IntStream.range(0, k).parallel().forEach { r ->
                 val own = group.positive[r]
+                val row = FloatArray(c)
+                gs.take(row, 0, r * c, c)
+                var l = 0.0
+                var slope = 0.0
                 for (j in 0 until c) {
-                    val value = group.values[j]
                     val label = if (j == own) 1.0 else 0.0
-                    var z = gs[r * c + j] + theta[bias + value] + pair[2]
+                    var z = row[j] + theta[bias + group.values[j]] + pair[2]
                     if (j == own) z += pair[1] * named
-                    loss += softplus(z) - label * z
-                    val d = (sigmoid(z) - label) / total
-                    gs[r * c + j] = d.toFloat()
-                    gBias[value] += d
-                    sums[1] += d
-                    if (j == own) sums[0] += d * named
+                    // softplus and sigmoid from one exponent
+                    val e = exp(-abs(z))
+                    l += max(z, 0.0) + ln1p(e) - label * z
+                    val d = ((if (z >= 0) 1 / (1 + e) else e / (1 + e)) - label) / total
+                    row[j] = d.toFloat()
+                    slope += d
+                    if (j == own) rowNamed[r] = d * named
                 }
+                gs.put(row, 0, r * c, c)
+                rowLoss[r] = l
+                rowSlope[r] = slope
+            }
+            loss += rowLoss.sum()
+            sums[1] += rowSlope.sum()
+            sums[0] += rowNamed.sum()
+            val row = FloatArray(c)
+            for (r in 0 until k) {
+                gs.take(row, 0, r * c, c)
+                for (j in 0 until c) gBias[group.values[j]] += row[j]
             }
             // The gradient of the group's coordinates, scattered back
             Blas.product(gs, c, k, c, gv, rank, gdu)

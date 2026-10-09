@@ -7,6 +7,7 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.util.stream.IntStream
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
@@ -38,7 +39,8 @@ class BilinearSuggester : FacetSuggester {
         class Tried(val rank: Int, val lambda: Double, val held: Bilinear.Held, val fitted: Fitted)
         val tried = ArrayList<Tried>()
         for (rank in RANKS) {
-            val model = Bilinear(problem, rank)
+            // A model of every fold, fitted side by side: the folds share nothing but the problem
+            val models = Array(FOLDS) { Bilinear(problem, rank) }
             // From the strongest penalty down by tenfold steps, while the held-out loss still falls
             var worse = 0
             var rankBest = Double.MAX_VALUE
@@ -47,9 +49,11 @@ class BilinearSuggester : FacetSuggester {
                 val held = Bilinear.Held()
                 // Every penalty from a fresh start: carried from a stronger one, the weights would start
                 // at nought, where the two sides' products have no gradient and stay
-                val thetas = Array(FOLDS) { k -> model.fit(model.start(k.toLong() + 1), lambda, k) }
-                thetas.forEachIndexed { k, theta -> model.heldOutLoss(theta, k, held) }
-                tried += Tried(rank, lambda, held, Fitted(design, rank, lambda, thetas.map { model.weights(it) }))
+                val step = lambda
+                val thetas = IntStream.range(0, FOLDS).parallel()
+                    .mapToObj { k -> models[k].fit(models[k].start(k.toLong() + 1), step, k) }.toList()
+                thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held) }
+                tried += Tried(rank, lambda, held, Fitted(design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }))
                 if (held.mean < rankBest) { rankBest = held.mean; worse = 0 } else worse++
                 lambda /= 10
             }
@@ -60,8 +64,8 @@ class BilinearSuggester : FacetSuggester {
         val least = tried.minBy { it.held.mean }
         val chosen = tried.filter { it.held.mean <= least.held.mean + least.held.error }.maxBy { it.lambda }
         log.info(
-            "{} items × {} values, {} features of an item, {} of a value: {}; chosen r={} λ={} — in {} ms",
-            task.itemCount, task.valueCount, design.itemWidth, design.valueWidth,
+            "{} items × {} values, {} features of an item, {} of a value, {} names against {} values: {}; chosen r={} λ={} — in {} ms",
+            task.itemCount, task.valueCount, design.itemWidth, design.valueWidth, problem.hints.size, problem.hintPairs,
             tried.joinToString("; ") { "r=${it.rank} λ=${it.lambda}: %.4f ± %.4f".format(it.held.mean, it.held.error) },
             chosen.rank, chosen.lambda, System.currentTimeMillis() - started,
         )
