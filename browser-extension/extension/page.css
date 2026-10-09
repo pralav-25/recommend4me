@@ -60,6 +60,22 @@ r4m-panel .r4m-muted {
   color: #6a737d;
 }
 
+/* An answer sent and not yet answered by the application: shown as given, pulsing until it is kept */
+r4m-saving-note {
+  color: #6a737d;
+  font-size: 12px;
+}
+
+.r4m-saving {
+  animation: r4m-saving 1s ease-in-out infinite alternate;
+  cursor: progress;
+}
+
+@keyframes r4m-saving {
+  from { opacity: 1; }
+  to { opacity: 0.45; }
+}
+
 r4m-panel .r4m-up {
   color: #1a7f37;
 }

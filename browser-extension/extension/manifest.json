@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "recommend4me",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Отправляет страницы книг и игр, которые вы открываете, в локальное приложение recommend4me, и показывает на них прогноз, оценку, теги и подсказки.",
   "browser_specific_settings": {
     "gecko": {

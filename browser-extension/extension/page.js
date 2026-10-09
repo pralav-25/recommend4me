@@ -38,8 +38,13 @@
   let server = "";
   let message = null;
   let cardsTimer = null;
-  let busy = false;
   let loadedAt = 0;
+
+  /** How many changes are sent and not yet answered, and the values they are about ("facet|key"). */
+  let pending = 0;
+  const saving = new Set();
+  /** The changes, sent one after another in the order made. */
+  let queue = Promise.resolve();
 
   // --- Elements ---
 
@@ -51,30 +56,50 @@
     return e;
   }
 
-  function button(text, title, onClick, className = "r4m-button") {
+  /** A button running [onClick] as a change ([act]); [shown] and [about] as there. */
+  function button(text, title, onClick, className = "r4m-button", shown = null, about = null) {
     const b = el("button", className, text);
     b.type = "button";
     if (title) b.title = title;
     b.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      act(onClick);
+      act(onClick, shown, about);
     });
     return b;
   }
 
-  /** Runs a change, then shows the page again as the application now knows it. */
-  async function act(change) {
-    if (busy) return;
-    busy = true;
-    try {
-      await change();
-      message = null;
-    } catch (e) {
-      message = e.message;
+  /**
+   * Runs a change. ITS EFFECT IS SHOWN AT ONCE: [shown] changes the work as shown the way the
+   * application will keep it, and the value it is [about] is marked as being saved until the
+   * application answers — an answer takes a second or two, and a click must be seen to have
+   * landed. Changes go one after another in the order made, none is dropped; when the last is
+   * answered the page is shown as the application now knows it.
+   */
+  function act(change, shown, about) {
+    if (pending === 0) message = null;
+    pending++;
+    if (about) saving.add(about);
+    if (shown && view && view.item) {
+      try {
+        shown(view.item);
+      } catch (e) {
+        // The application's answer shows it all the same
+      }
     }
-    busy = false;
-    await load();
+    render();
+    queue = queue.then(async () => {
+      try {
+        await change();
+      } catch (e) {
+        message = e.message;
+      }
+      if (about) saving.delete(about);
+      pending--;
+      if (pending === 0) await load();
+      else render();
+    });
+    return queue;
   }
 
   /** A score of 0..10 as a class of colour, red to green. */
@@ -102,7 +127,7 @@
       server = await browser.runtime.sendMessage({ type: "server" });
       view = await api("GET", `/api/pages?url=${enc(location.href)}`);
     } catch (e) {
-      view = null;
+      // What was shown stays, with why it is not current
       message = e.message;
     }
     render();
@@ -123,15 +148,67 @@
     const item = view.item;
     if (!item && !view.itemId) return;
     const placed = new Set();
-    if (item) {
-      (view.decor.facets || []).forEach((decor) => {
-        if (facetInPlace(item, decor)) placed.add(decor.facet);
-      });
-      reviews(item);
-      pictures(item);
+    try {
+      if (item) {
+        (view.decor.facets || []).forEach((decor) => {
+          if (facetInPlace(item, decor)) placed.add(decor.facet);
+        });
+        reviews(item);
+        pictures(item);
+      }
+    } catch (e) {
+      // A part the page could not take: the panel still shows the work, and why
+      console.error("recommend4me", e);
+      message = message || String(e.message || e);
     }
     panel(item, placed);
   }
+
+  // --- What a change looks like before the application answers ---
+
+  /** The value [key] of the [facet] as shown, put there if it is not yet. */
+  function shownValue(item, facet, key, name) {
+    item.facets = item.facets || [];
+    let f = item.facets.find((x) => x.facet === facet);
+    if (!f) {
+      f = { facet, label: facet, values: [] };
+      item.facets.push(f);
+    }
+    f.values = f.values || [];
+    let v = f.values.find((x) => x.key === key);
+    if (!v) {
+      v = { key, name: name || key, offered: true };
+      f.values.push(v);
+    }
+    return v;
+  }
+
+  /**
+   * The user's word on a value as shown: has it — the site's value confirmed, another added; has
+   * it not — taken away. A suggestion answered on is no longer a suggestion.
+   */
+  function answeredShown(facet, value, added) {
+    return (item) => {
+      const s = (item.suggestions || []).find((x) => x.facet === facet);
+      if (s) s.suggested = (s.suggested || []).filter((x) => x.key !== value.key);
+      const v = shownValue(item, facet, value.key, value.name);
+      const site = !v.offered && !v.inferred && v.corrected !== "ADDED";
+      v.corrected = added ? (site ? "CONFIRMED" : "ADDED") : "REMOVED";
+    };
+  }
+
+  /** The user's word on a value taken back, as shown: a value only the user gave goes. */
+  function unansweredShown(facet, key) {
+    return (item) => {
+      const f = (item.facets || []).find((x) => x.facet === facet);
+      const v = f && (f.values || []).find((x) => x.key === key);
+      if (!v) return;
+      if (v.corrected === "ADDED" && !v.inferred) f.values = f.values.filter((x) => x !== v);
+      else v.corrected = null;
+    };
+  }
+
+  const about = (facet, key) => `${facet}|${key}`;
 
   // --- The panel ---
 
@@ -144,6 +221,7 @@
     }
     if (item && item.summary.grade) head.appendChild(el("r4m-grade-mark", null, `★${item.summary.grade}`));
     head.appendChild(el("span", "r4m-spacer"));
+    if (pending) head.appendChild(el("r4m-saving-note", null, pending > 1 ? `сохраняю… (${pending})` : "сохраняю…"));
     if (item) {
       const open = el("a", "r4m-link", "открыть в приложении");
       open.href = `${server}/#item=${enc(item.summary.source)}/${item.summary.item}`;
@@ -222,7 +300,11 @@
         () => current
           ? api("DELETE", `/api/items/${enc(s.source)}/${enc(s.item)}/rating`)
           : api("PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/rating`, { grade }),
-        `r4m-grade${current ? " r4m-current" : ""}`,
+        `r4m-grade${current ? " r4m-current" : ""}${saving.has("grade") ? " r4m-saving" : ""}`,
+        (shown) => {
+          shown.summary.grade = current ? null : grade;
+        },
+        "grade",
       );
       line.appendChild(b);
     });
@@ -257,12 +339,13 @@
    */
   function answers(item, facet, v) {
     const out = [];
+    const on = about(facet, v.key);
     if (v.corrected === "REMOVED") {
-      out.push(button("↺", "Вернуть: вы сказали, что этого у работы нет", () => uncorrect(item, facet, v.key), "r4m-yes"));
+      out.push(button("↺", "Вернуть: вы сказали, что этого у работы нет", () => uncorrect(item, facet, v.key), "r4m-yes", unansweredShown(facet, v.key), on));
       return out;
     }
     if (v.corrected === "ADDED" || v.corrected === "CONFIRMED") {
-      out.push(button("✕", v.corrected === "ADDED" ? "Убрать добавленное вами" : "Снять ваш ответ", () => uncorrect(item, facet, v.key), "r4m-undo"));
+      out.push(button("✕", v.corrected === "ADDED" ? "Убрать добавленное вами" : "Снять ваш ответ", () => uncorrect(item, facet, v.key), "r4m-undo", unansweredShown(facet, v.key), on));
       return out;
     }
     if (v.chance !== undefined && v.chance !== null) {
@@ -271,8 +354,8 @@
         title: unlikely ? "Модель считает, что скорее этого у работы нет" : "Уверенность модели",
       }));
     }
-    out.push(button("✓", "Да, это у работы есть", () => correct(item, facet, { key: v.key }, true), "r4m-yes"));
-    out.push(button("✕", "Нет, этого у работы нет", () => correct(item, facet, { key: v.key }, false), "r4m-no"));
+    out.push(button("✓", "Да, это у работы есть", () => correct(item, facet, { key: v.key }, true), "r4m-yes", answeredShown(facet, v, true), on));
+    out.push(button("✕", "Нет, этого у работы нет", () => correct(item, facet, { key: v.key }, false), "r4m-no", answeredShown(facet, v, false), on));
     return out;
   }
 
@@ -307,6 +390,7 @@
   function valueChip(item, facet, v, editable = true) {
     const mine = v.corrected === "ADDED" || v.corrected === "CONFIRMED";
     const chip = el("r4m-chip", mine ? "r4m-mine" : v.corrected === "REMOVED" ? "r4m-removed-chip" : editable ? (v.offered ? "r4m-open r4m-offered" : "r4m-open") : null);
+    if (saving.has(about(facet, v.key))) chip.classList.add("r4m-saving");
     if (mine) chip.appendChild(Object.assign(el("r4m-check", null, "✓"), { title: "Ваш ответ: это у работы есть" }));
     chip.appendChild(el("span", null, v.name));
     if (editable) answers(item, facet, v).forEach((e) => chip.appendChild(e));
@@ -324,8 +408,11 @@
     chip.title = "Подсказка";
     chip.appendChild(el("span", null, v.name));
     chip.appendChild(el("r4m-chance", null, percent(v.chance)));
-    chip.appendChild(button("✓", "Да, это у работы есть", () => correct(item, facet, { key: v.key }, true), "r4m-yes"));
-    chip.appendChild(button("✕", "Нет, этого у работы нет", () => correct(item, facet, { key: v.key }, false), "r4m-no"));
+    const on = about(facet, v.key);
+    // Answered, it stops being a suggestion: shown as the work's value the user added or rejected
+    const offered = { key: v.key, name: v.name, offered: true };
+    chip.appendChild(button("✓", "Да, это у работы есть", () => correct(item, facet, { key: v.key }, true), "r4m-yes", answeredShown(facet, offered, true), on));
+    chip.appendChild(button("✕", "Нет, этого у работы нет", () => correct(item, facet, { key: v.key }, false), "r4m-no", answeredShown(facet, offered, false), on));
     return chip;
   }
 
@@ -402,7 +489,9 @@
       e.preventDefault();
       const name = input.value.trim();
       const key = keys.get(name);
-      if (name) act(() => correct(item, facet, key ? { key } : { name }, true));
+      if (name) {
+        act(() => correct(item, facet, key ? { key } : { name }, true), answeredShown(facet, { key: key || name, name, offered: true }, true), about(facet, key || name));
+      }
     });
     form.appendChild(input);
     form.appendChild(list);
@@ -427,7 +516,7 @@
     if (editable && open.length > 1) {
       label.appendChild(button(`✓ все (${open.length})`, "Подтвердить все значения без вашего ответа", async () => {
         for (const v of open) await correct(item, facet.facet, { key: v.key }, true);
-      }, "r4m-button r4m-all"));
+      }, "r4m-button r4m-all", (shown) => open.forEach((v) => answeredShown(facet.facet, v, true)(shown))));
     }
     stableOrder(item, facet.facet, values).forEach((v) => line.appendChild(valueChip(item, facet.facet, v, editable)));
     if (editable) {
@@ -464,7 +553,7 @@
       if (!v || v.corrected === "ADDED") return;
       if (v.corrected === "REMOVED") e.classList.add("r4m-removed");
       else if (v.corrected !== "CONFIRMED" && v.chance !== undefined && v.chance !== null && v.chance < 0.5) e.classList.add("r4m-doubted");
-      const tools = el("r4m-tools");
+      const tools = el("r4m-tools", saving.has(about(decor.facet, v.key)) ? "r4m-saving" : null);
       answers(item, decor.facet, v).forEach((a) => tools.appendChild(a));
       e.insertAdjacentElement("afterend", tools);
     });
@@ -480,10 +569,12 @@
 
   // --- Reviews and pictures ---
 
-  function marks(current, put, remove, what) {
-    const bar = el("r4m-marks");
-    bar.appendChild(button("+", `${what}: повод выбрать работу`, () => (current === 1 ? remove() : put(1)), `r4m-mark${current === 1 ? " r4m-current" : ""}`));
-    bar.appendChild(button("−", `${what}: повод отказаться от неё`, () => (current === -1 ? remove() : put(-1)), `r4m-mark${current === -1 ? " r4m-current" : ""}`));
+  /** "+ / −" of a review or a picture; [set] shows the new mark (or none) before the application answers. */
+  function marks(current, put, remove, what, set, on) {
+    const bar = el("r4m-marks", saving.has(on) ? "r4m-saving" : null);
+    const to = (mark) => (current === mark ? null : mark);
+    bar.appendChild(button("+", `${what}: повод выбрать работу`, () => (current === 1 ? remove() : put(1)), `r4m-mark${current === 1 ? " r4m-current" : ""}`, (shown) => set(shown, to(1)), on));
+    bar.appendChild(button("−", `${what}: повод отказаться от неё`, () => (current === -1 ? remove() : put(-1)), `r4m-mark${current === -1 ? " r4m-current" : ""}`, (shown) => set(shown, to(-1)), on));
     return bar;
   }
 
@@ -501,6 +592,11 @@
         (mark) => api("PUT", `${base}/${enc(id)}/mark`, { mark }),
         () => api("DELETE", `${base}/${enc(id)}/mark`),
         "Отзыв",
+        (shown, mark) => {
+          if (mark) shown.reviewMarks[id] = mark;
+          else delete shown.reviewMarks[id];
+        },
+        `review|${id}`,
       );
       if (current) e.classList.add("r4m-marked");
       e.appendChild(bar);
@@ -520,7 +616,14 @@
       if (!picture || done.has(picture.position)) return;
       done.add(picture.position);
       const base = `/api/items/${enc(s.source)}/${enc(s.item)}/pictures/${picture.position}/mark`;
-      const bar = marks(picture.mark, (mark) => api("PUT", base, { mark }), () => api("DELETE", base), picture.position === 0 ? "Обложка" : "Картинка");
+      const bar = marks(
+        picture.mark, (mark) => api("PUT", base, { mark }), () => api("DELETE", base), picture.position === 0 ? "Обложка" : "Картинка",
+        (shown, mark) => {
+          const p = shown.pictures.find((x) => x.position === picture.position);
+          if (p) p.mark = mark;
+        },
+        `picture|${picture.position}`,
+      );
       bar.classList.add("r4m-picture-marks");
       (link || img).insertAdjacentElement("afterend", bar);
     });
@@ -600,6 +703,8 @@
   // not read anew. A work's page: read anew once it is first saved, and then seldom
   browser.runtime.onMessage.addListener((m) => {
     if (m.type !== "captured" || m.url !== location.href) return;
+    // Answers on their way: the page is read anew when the last is answered
+    if (pending) return;
     if (view && !view.item && !view.itemId) {
       pendingSince = Date.now();
       cards();
