@@ -1,22 +1,26 @@
 import { useEffect, useId, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { CheckIcon, PlusIcon } from "lucide-react";
+import { CheckIcon, Loader2Icon, PlusIcon } from "lucide-react";
 import { api, unwrap, type FacetValueInfo, type ItemFacet, type ItemRef, type SourceInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChanceMark, unlikely } from "@/facet/FacetValueMarks";
 import { decided, useStableOrder } from "@/facet/valueOrder";
 import { OriginalOf } from "@/item/WorkFacts";
 import { cn } from "@/lib/utils";
 import { SuggestedValues } from "@/suggestion/Suggestions";
-import { useSuggestions } from "@/suggestion/useSuggestions";
+import { useCandidates, useSuggestions } from "@/suggestion/useSuggestions";
 import { FacetAnswers } from "./FacetAnswers";
 import { EditButton } from "./FieldEditor";
 import type { Corrections } from "./useCorrections";
 
 /** How many values of a facet the line of a new value offers. */
 const OFFERED = 30;
+
+/** How many more candidates a press of "…" shows. */
+const MORE_STEP = 5;
 
 /**
  * Every facet of the item, the user's corrections included. Above the values of a facet the site
@@ -62,7 +66,7 @@ export function FacetCorrections({
       {layer.map((f) => (
         <div key={f.facet}>
           {source && <OriginalOf source={source} facets={allFacets} facet={f.facet} />}
-          <FacetLine facet={f} corrections={corrections} />
+          <FacetLine facet={f} item={item} corrections={corrections} />
         </div>
       ))}
       {editing && addable && <AddFacetValue source={addable} corrections={corrections} />}
@@ -81,10 +85,10 @@ export function FacetCorrections({
 
 /**
  * A facet of the work with its values, in the order first shown: answered on when [corrections]
- * are given — with "✓ все" for every value shown the user has not answered on — shown as it is
- * when not.
+ * are given — with "✓ все" for every value shown the user has not answered on, and "…" for more
+ * candidates of the [item] — shown as it is when not.
  */
-function FacetLine({ facet: f, corrections }: { facet: ItemFacet; corrections?: Corrections }) {
+function FacetLine({ facet: f, item, corrections }: { facet: ItemFacet; item?: ItemRef; corrections?: Corrections }) {
   const values = useStableOrder(f.values);
   // The work's values the user has not answered on — not those only offered
   const open = f.values.filter((v) => !decided(v) && !v.offered);
@@ -105,8 +109,52 @@ function FacetLine({ facet: f, corrections }: { facet: ItemFacet; corrections?: 
         {values.map((v) => (
           <FacetValue key={v.key} facet={f.facet} value={v} corrections={corrections} />
         ))}
+        {item && corrections && <MoreCandidates item={item} facet={f.facet} shown={f.values} corrections={corrections} />}
       </div>
     </div>
+  );
+}
+
+/**
+ * "…" after a facet's values: each press shows the next [MORE_STEP] likeliest candidates the line
+ * does not show yet ([shown]), dashed, to answer on — one answered on gives its place to the next —
+ * until there are none. How many stays while the work is open.
+ */
+export function MoreCandidates({
+  item,
+  facet,
+  shown,
+  corrections,
+}: {
+  item: ItemRef;
+  facet: string;
+  shown: { key: string }[];
+  corrections: Corrections;
+}) {
+  const [asked, setAsked] = useState(0);
+  const candidates = useCandidates(item, facet, asked > 0);
+  const keys = new Set(shown.map((v) => v.key));
+  const rest = (candidates.data ?? []).filter((c) => !keys.has(c.key));
+  if (candidates.isError) return null;
+  const done = candidates.data !== undefined && rest.length <= asked;
+  return (
+    <>
+      {rest.slice(0, asked).map((c) => (
+        <FacetValue key={c.key} facet={facet} value={{ key: c.key, name: c.name, chance: c.chance ?? undefined, offered: true }} corrections={corrections} />
+      ))}
+      {!done && (
+        <Button
+          variant="outline"
+          size="xs"
+          className="h-5 px-1.5"
+          onClick={() => setAsked(asked + MORE_STEP)}
+          disabled={candidates.isFetching}
+          title={`Показать ещё ${MORE_STEP} кандидатов`}
+        >
+          {candidates.isFetching ? <Loader2Icon className="animate-spin" /> : "…"}
+        </Button>
+      )}
+    </>
   );
 }
 

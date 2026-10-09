@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FacetAnswers } from "@/correction/FacetAnswers";
-import { FacetValue } from "@/correction/FacetCorrections";
+import { FacetValue, MoreCandidates } from "@/correction/FacetCorrections";
 import type { Corrections } from "@/correction/useCorrections";
 import { ChanceMark } from "@/facet/FacetValueMarks";
 import { useStableOrder } from "@/facet/valueOrder";
@@ -196,18 +196,35 @@ function Block({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-/** The work's values of a facet as chips, and the suggested ones dashed after them; a dash when there are none. */
-function Chips({ facet, values, suggested = [], corrections }: { facet: string; values: FacetValueInfo[]; suggested?: SuggestedValue[]; corrections: Corrections }) {
+/**
+ * The work's values of a facet as chips, the suggested ones dashed after them, a dash when there
+ * are none; with [item], "…" for more of its candidates.
+ */
+function Chips({
+  facet,
+  values,
+  suggested = [],
+  item,
+  corrections,
+}: {
+  facet: string;
+  values: FacetValueInfo[];
+  suggested?: SuggestedValue[];
+  item?: ItemRef;
+  corrections: Corrections;
+}) {
   const ordered = useStableOrder(values);
-  if (values.length === 0 && suggested.length === 0) return <div className="text-sm text-muted-foreground">—</div>;
+  if (values.length === 0 && suggested.length === 0 && !item) return <div className="text-sm text-muted-foreground">—</div>;
   return (
-    <div className="flex flex-wrap gap-1">
+    <div className="flex flex-wrap items-center gap-1">
+      {values.length === 0 && suggested.length === 0 && <span className="text-sm text-muted-foreground">—</span>}
       {ordered.map((v) => (
         <FacetValue key={v.key} facet={facet} value={v} corrections={corrections} />
       ))}
       {suggested.map((v) => (
         <SuggestedChip key={v.key} facet={facet} value={v} corrections={corrections} />
       ))}
+      {item && <MoreCandidates item={item} facet={facet} shown={[...values, ...suggested]} corrections={corrections} />}
     </div>
   );
 }
@@ -443,7 +460,7 @@ function Characters({
 
   return (
     <Block label={label}>
-      <Chips facet={CHARACTERS} values={values} corrections={corrections} />
+      <Chips facet={CHARACTERS} values={values} item={item} corrections={corrections} />
       <Named type={type} item={item} facet={CHARACTERS} candidates={candidates.data} universes={universes} corrections={corrections} />
       <Picker
         label="Добавить персонажа"
@@ -513,7 +530,7 @@ function Pairings({
 
   return (
     <Block label={label}>
-      <Chips facet={PAIRINGS} values={values} corrections={corrections} />
+      <Chips facet={PAIRINGS} values={values} item={item} corrections={corrections} />
       <Named type={type} item={item} facet={PAIRINGS} candidates={candidates.data} universes={universes} corrections={corrections} />
       {characters.length > 0 && (
         <Picker
