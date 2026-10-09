@@ -11,6 +11,7 @@ neural encoder, every way of turning vectors into scores and the search are plug
 |---|---|
 | `plugin-api` | The contract between the application and its plugins: interfaces and data types only. |
 | `libs/matrix` | Off-heap float arrays, OpenBLAS products, the Vector API loops. Used by the core and by scorers. |
+| `libs/optim` | L-BFGS in ask/tell form, shared by the scorers. |
 | `libs/onnx` | ONNX Runtime sessions on the CPU or CUDA, shared by the encoder plugins. |
 | `app` | The application: storage, background work, training, the HTTP API, the web interface, the plugin loader. |
 | `frontend` | The web interface (React), built into the application's static resources. |
@@ -18,6 +19,9 @@ neural encoder, every way of turning vectors into scores and the search are plug
 | `plugins/encoder-siglip2` | Picture encoder: SigLIP2 NaFlex. |
 | `plugins/scorer-pairwise` | Pairwise logistic ranking (RankNet with a line), C chosen by cross-validation. |
 | `plugins/scorer-knn` | k nearest rated neighbours by cosine — a baseline. |
+| `plugins/scorer-fm` | Pairwise factorization machine: the line and every two features meeting through vectors of rank 8; C chosen by cross-validation. |
+| `plugins/scorer-kernel` | Pairwise kernel ranking with the arc-cosine kernel (no width to choose); C chosen by cross-validation. |
+| `plugins/scorer-boosting` | Gradient boosted trees on the pairwise logistic loss, Newton leaves; the number of trees chosen by cross-validation. |
 | `plugins/search-lucene` | Search by words and by meaning over one Lucene index per content type. |
 | `plugins/catalogue-wikidata` | The universes of fan fiction and their characters, from Wikidata. |
 | `plugins/suggester-bilinear` | The values a work should have — tags, universes, characters, pairings — by one model of every work and every value. |

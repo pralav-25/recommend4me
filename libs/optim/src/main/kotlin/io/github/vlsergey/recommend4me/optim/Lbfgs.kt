@@ -1,4 +1,4 @@
-package io.github.vlsergey.recommend4me.scorer
+package io.github.vlsergey.recommend4me.optim
 
 import kotlin.math.abs
 import kotlin.math.max

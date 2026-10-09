@@ -42,7 +42,7 @@ val providedGroups = setOf(
 )
 
 /** Projects whose jars the application carries itself. */
-val providedProjects = setOf("plugin-api", "matrix")
+val providedProjects = setOf("plugin-api", "matrix", "optim")
 
 val pluginDist = tasks.register<Sync>("pluginDist") {
     group = "distribution"

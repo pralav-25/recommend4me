@@ -39,7 +39,7 @@ class PairwiseScorerTest {
         val works = longArrayOf(1, 2, 3, 4, 5, 5)
         // The last two are two versions of one item
         val items = longArrayOf(1, 2, 3, 4, 5, 5)
-        val pairs = PairwiseScorer.pairs(grades, works, items, IntArray(grades.size) { it })
+        val pairs = RankingPairs.of(grades, works, items, IntArray(grades.size) { it })
         // 3 over 1 (four), 2 over 1 (four); 3 and 2 are one work
         assertEquals(8, pairs.better.size)
         assertEquals(0, pairs.first.size)
@@ -53,7 +53,7 @@ class PairwiseScorerTest {
         val grades = intArrayOf(1, 4, 3)
         val works = longArrayOf(1, 2, 2)
         val items = longArrayOf(1, 2, 3)
-        val pairs = PairwiseScorer.pairs(grades, works, items, IntArray(grades.size) { it })
+        val pairs = RankingPairs.of(grades, works, items, IntArray(grades.size) { it })
         // 4 over 1, 3 over 1; 4 and 3 are one book on two sites: equal, once
         assertEquals(2, pairs.better.size)
         assertEquals(listOf(1 to 2), pairs.first.indices.map { pairs.first[it] to pairs.second[it] })
@@ -65,7 +65,7 @@ class PairwiseScorerTest {
         // Rows 2 and 3: ungraded; 2 is one work with the graded row 1, 3 with nothing graded
         val works = longArrayOf(1, 2, 2, 3)
         val items = longArrayOf(1, 2, 3, 4)
-        val pairs = PairwiseScorer.pairs(grades, works, items, intArrayOf(0, 1), 2 until 4)
+        val pairs = RankingPairs.of(grades, works, items, intArrayOf(0, 1), 2 until 4)
         assertEquals(listOf(1 to 0), pairs.better.indices.map { pairs.better[it] to pairs.worse[it] })
         assertEquals(listOf(1 to 2), pairs.first.indices.map { pairs.first[it] to pairs.second[it] })
     }

@@ -3,10 +3,9 @@ package io.github.vlsergey.recommend4me.scorer
 import io.github.vlsergey.recommend4me.matrix.Blas
 import io.github.vlsergey.recommend4me.matrix.Floats
 import io.github.vlsergey.recommend4me.matrix.Matrix
+import io.github.vlsergey.recommend4me.optim.Lbfgs
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.exp
-import kotlin.math.ln
 import kotlin.math.max
 
 /**
@@ -25,58 +24,16 @@ class PairwiseScorer : Scorer {
     override val defaultParameter = 0.1
 
     override fun fit(task: RankingTask, rows: IntArray, parameter: Double): FittedScorer =
-        fit(task.x, pairs(task.grades, task.works, task.items, rows, task.ungraded), parameter)
+        fit(task.x, RankingPairs.of(task, rows), parameter)
 
     override fun unpack(bytes: ByteArray): FittedScorer = LinearModel.unpack(bytes)
 
-    /**
-     * Rated rows i (better) and j (worse): different grades, different works; every pair of works
-     * weighs the same. Not every pair of grades: the works graded "do not like it" are most of the
-     * rated, and telling them from the rest is most of what the model is for — weighed as one pair
-     * of grades of ten, a pair of grades of four works weighed as much.
-     *
-     * And the rows of two items of one work, [first] and [second]: the work on two sites, EQUAL —
-     * graded or not, their loss is least when their scores are the same. A pair of equals weighs
-     * [equalWeight]: as much as all the pairs of grades of an average graded row together, so that
-     * the two items of a work are held together as firmly as a graded work is held in its place —
-     * whether the work has a grade or not.
-     */
-    class Pairs(val better: IntArray, val worse: IntArray, val first: IntArray, val second: IntArray, val equalWeight: Double) {
-        /** The weight of all the pairs together. */
-        val weight: Double get() = better.size + equalWeight * first.size
-    }
-
     companion object {
-        /** The pairs of the graded rows [subset] and of the rows without a grade, [ungraded], which only have equals. */
-        fun pairs(grades: IntArray, works: LongArray, items: LongArray, subset: IntArray, ungraded: IntRange = IntRange.EMPTY): Pairs {
-            val better = ArrayList<Int>()
-            val worse = ArrayList<Int>()
-            for (a in subset) for (b in subset) {
-                if (works[a] != works[b] && grades[a] > grades[b]) {
-                    better += a
-                    worse += b
-                }
-            }
-            val first = ArrayList<Int>()
-            val second = ArrayList<Int>()
-            (subset.asSequence() + ungraded.asSequence()).groupBy { works[it] }.values.forEach { rows ->
-                for (a in rows) for (b in rows) {
-                    if (items[a] < items[b]) {
-                        first += a
-                        second += b
-                    }
-                }
-            }
-            // Every pair of grades is a pair of two graded rows
-            val equalWeight = if (subset.isEmpty()) 0.0 else 2.0 * better.size / subset.size
-            return Pairs(better.toIntArray(), worse.toIntArray(), first.toIntArray(), second.toIntArray(), equalWeight)
-        }
-
         /**
          * Fits the line on [pairs] of the rows of [x]: the logistic loss of score(better) − score(worse),
          * of an equal pair the loss of a pair either way round with the chance of a half, L2 with [c].
          */
-        fun fit(x: Matrix, pairs: Pairs, c: Double, maxIter: Int = 300, tol: Double = 1e-4): LinearModel {
+        fun fit(x: Matrix, pairs: RankingPairs, c: Double, maxIter: Int = 300, tol: Double = 1e-4): LinearModel {
             val objective = PairObjective(x, pairs, c)
             val solver = Lbfgs(x.cols, maxIter, tol)
             val g = DoubleArray(x.cols + 1)
@@ -90,11 +47,10 @@ class PairwiseScorer : Scorer {
      * (z = X·w), and the gradient one more (Xᵀ·q) once every pair's residual is added to its
      * better row and taken from its worse one.
      */
-    private class PairObjective(val x: Matrix, val pairs: Pairs, val c: Double) {
+    private class PairObjective(val x: Matrix, val pairs: RankingPairs, val c: Double) {
         private val n = x.rows
         private val d = x.cols
         private val count = max(pairs.weight, 1.0)
-        private val equal = pairs.equalWeight
         private val w = Floats(d)
         private val z = Floats(n)
         private val q = Floats(n)
@@ -105,22 +61,7 @@ class PairwiseScorer : Scorer {
             // One part: the cross-validation already fills the cores with fits of its own
             Blas.times(x.held, d, n, d, w, z, parts = 1)
             q.clear()
-            var loss = 0.0
-            for (p in pairs.better.indices) {
-                val s = (z[pairs.better[p]] - z[pairs.worse[p]]).toDouble()
-                loss += softplus(-s)
-                val r = 1.0 / (1.0 + exp(-s)) - 1.0
-                q[pairs.better[p]] = q[pairs.better[p]] + r.toFloat()
-                q[pairs.worse[p]] = q[pairs.worse[p]] - r.toFloat()
-            }
-            for (p in pairs.first.indices) {
-                val s = (z[pairs.first[p]] - z[pairs.second[p]]).toDouble()
-                // −½ log σ(s) − ½ log σ(−s): least at s = 0
-                loss += equal * 0.5 * (softplus(-s) + softplus(s))
-                val r = equal * (1.0 / (1.0 + exp(-s)) - 0.5)
-                q[pairs.first[p]] = q[pairs.first[p]] + r.toFloat()
-                q[pairs.second[p]] = q[pairs.second[p]] - r.toFloat()
-            }
+            val loss = pairs.loss(z, q)
             Blas.transposedTimes(x.held, d, n, d, q, gw)
             var pen = 0.0
             for (k in 0 until d) {
@@ -130,9 +71,6 @@ class PairwiseScorer : Scorer {
             g[d] = 0.0
             return (loss + 0.5 * pen / c) / count
         }
-
-        /** log(1 + exp(s)) without overflow. */
-        private fun softplus(s: Double): Double = if (s > 0) s + ln(1.0 + exp(-s)) else ln(1.0 + exp(s))
     }
 }
 

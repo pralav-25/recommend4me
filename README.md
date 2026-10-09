@@ -28,6 +28,9 @@ folder of jars in `plugins/`:
 | `encoder-siglip2` | pictures → vectors by SigLIP2 NaFlex, proportions kept |
 | `scorer-pairwise` | pairwise logistic ranking (RankNet with a line), the default |
 | `scorer-knn` | the k nearest graded works by cosine, a baseline |
+| `scorer-fm` | a pairwise factorization machine: the line and every two features meeting |
+| `scorer-kernel` | pairwise kernel ranking with the arc-cosine kernel: likeness to the graded works |
+| `scorer-boosting` | gradient boosted trees on the pairwise logistic loss |
 | `search-lucene` | search by words (English and Russian forms) and by meaning |
 | `catalogue-wikidata` | the universes of fan fiction and their characters from Wikidata, asked only when you press the button |
 | `suggester-bilinear` | one model of every work and every value: the chance of every tag, universe, character and pairing of a work from all it is — its title, texts, reviews, chapters, pictures and the site's own fields |
