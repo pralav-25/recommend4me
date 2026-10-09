@@ -7,6 +7,8 @@ import io.github.vlsergey.recommend4me.database.source.tables.references.FACET_V
 import io.github.vlsergey.recommend4me.vector.Vectors
 import org.jooq.DSLContext
 import java.time.Instant
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /** The fitted state of a facet's suggester, and the fingerprint of the whole facet it was fitted on. */
 class StoredSuggester(val suggester: String, val fittedAt: Instant, val basis: Long, val content: ByteArray)
@@ -23,6 +25,9 @@ data class Chance(val itemId: String, val facet: String, val key: String, val ha
  * value an item has, and of every value it lacks that it more likely has than not.
  */
 class SuggestionRepository(private val db: DSLContext, private val source: String) {
+
+    /** Held while the chances of items are written: for milliseconds, not for a fitting. */
+    private val writing = ReentrantLock()
 
     fun suggester(facet: String): StoredSuggester? =
         db.selectFrom(FACET_SUGGESTER).where(FACET_SUGGESTER.SOURCE.eq(source), FACET_SUGGESTER.FACET.eq(facet)).fetchOne()
@@ -49,9 +54,18 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
             .where(FACET_SUGGESTION_BASIS.SOURCE.eq(source), FACET_SUGGESTION_BASIS.ITEM_ID.eq(itemId), FACET_SUGGESTION_BASIS.FACET.eq(facet))
             .fetchOne()?.value1()
 
-    /** Replaces the chances of the items [made] (item to its fingerprint) of the facet with [chances]. */
+    /**
+     * Replaces the chances of the items [made] (item to its fingerprint) of the facet with [chances].
+     * One write at a time: an item's chances made at once after an answer and a refit of the whole
+     * facet may write the same item together, and the second one's insert would meet the first one's
+     * rows, which its delete did not see.
+     */
     fun replace(facet: String, made: Map<String, Long>, chances: List<Chance>, now: Instant) {
         if (made.isEmpty()) return
+        writing.withLock { write(facet, made, chances, now) }
+    }
+
+    private fun write(facet: String, made: Map<String, Long>, chances: List<Chance>, now: Instant) {
         db.transaction { tx ->
             val t = tx.dsl()
             made.keys.chunked(BATCH).forEach { chunk ->
