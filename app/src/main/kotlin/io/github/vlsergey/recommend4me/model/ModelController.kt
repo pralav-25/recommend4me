@@ -10,6 +10,7 @@ import io.github.vlsergey.recommend4me.api.model.ScorerChoice
 import io.github.vlsergey.recommend4me.api.model.ScorerInfo
 import io.github.vlsergey.recommend4me.api.model.ModelWorth as ApiModelWorth
 import io.github.vlsergey.recommend4me.api.model.PartWorth as ApiPartWorth
+import io.github.vlsergey.recommend4me.api.model.ScorerComparison as ApiScorerComparison
 import io.github.vlsergey.recommend4me.api.model.ScorerQuality as ApiScorerQuality
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.rating.Grades
@@ -24,6 +25,7 @@ import java.time.ZoneOffset
 @RestController
 class ModelController(
     private val recommendations: Recommendations,
+    private val comparisons: ScorerComparisons,
     private val plugins: Plugins,
     private val stores: Stores,
 ) : ModelApi {
@@ -44,12 +46,28 @@ class ModelController(
         return ResponseEntity.ok(summary.toApi())
     }
 
-    override fun compareScorers(type: String): ResponseEntity<List<ApiScorerQuality>> {
+    override fun getScorerComparison(type: String): ResponseEntity<ApiScorerComparison> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        return ResponseEntity.ok(recommendations.compare(type).map { q ->
-            ApiScorerQuality(q.scorer, q.title, q.candidates.map { it.toApi() }, q.chosen?.toApi())
-        })
+        val comparison = comparisons.of(type) ?: return ResponseEntity.notFound().build()
+        return ResponseEntity.ok(comparison.toApi())
     }
+
+    override fun startScorerComparison(type: String): ResponseEntity<ApiScorerComparison> {
+        if (stores.type(type) == null) return ResponseEntity.notFound().build()
+        return ResponseEntity.ok(comparisons.start(type).toApi())
+    }
+
+    private fun ScorerComparison.toApi() = ApiScorerComparison(
+        startedAt = startedAt.atOffset(ZoneOffset.UTC),
+        grades = grades,
+        scorers = scorers.map { s ->
+            ApiScorerQuality(
+                scorer = s.scorer, title = s.title, state = ApiScorerQuality.State.valueOf(s.state.name),
+                candidates = s.candidates.map { it.toApi() }, error = s.error, millis = s.millis, chosen = s.chosen?.toApi(),
+            )
+        },
+        finishedAt = finishedAt?.atOffset(ZoneOffset.UTC),
+    )
 
     override fun measurePartWorth(type: String): ResponseEntity<ApiModelWorth> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()

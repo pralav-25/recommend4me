@@ -1017,22 +1017,40 @@ paths:
         '404':
           description: No such type, or too few grades to cross-validate
 
-  /api/types/{type}/model/compare:
-    post:
+  /api/types/{type}/model/comparison:
+    get:
       tags: [model]
-      operationId: compareScorers
-      summary: Cross-validates every scorer on the current grades; nothing is kept
+      operationId: getScorerComparison
+      summary: The comparison of the scorers under way or last made, every scorer's result as soon as it is measured
       parameters:
         - $ref: '#/components/parameters/Type'
       responses:
         '200':
-          description: The quality of every scorer
+          description: The comparison
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ScorerQuality'
+                $ref: '#/components/schemas/ScorerComparison'
+        '404':
+          description: No such type, or no comparison made since the application started
+    post:
+      tags: [model]
+      operationId: startScorerComparison
+      summary: Starts cross-validating every scorer on the current grades in the background; nothing is kept
+      description: |
+        A comparison under way is answered as it stands, not started again. The scorers are measured
+        one after another; each one's result appears as soon as it is measured.
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      responses:
+        '200':
+          description: The comparison as it stands
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScorerComparison'
+        '404':
+          description: No such type
 
   /api/settings:
     get:
@@ -2218,14 +2236,42 @@ components:
         metrics:
           $ref: '#/components/schemas/ModelMetrics'
 
+    ScorerComparison:
+      type: object
+      required: [startedAt, grades, scorers]
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+          description: Absent while scorers are still being measured
+        grades:
+          type: integer
+          description: How many grades the scorers are measured on; 0 when there are too few to cross-validate
+        scorers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScorerQuality'
+
     ScorerQuality:
       type: object
-      required: [scorer, title, candidates]
+      required: [scorer, title, state, candidates]
       properties:
         scorer:
           type: string
         title:
           type: string
+        state:
+          type: string
+          enum: [WAITING, MEASURING, DONE, FAILED]
+        error:
+          type: string
+        millis:
+          type: integer
+          format: int64
+          description: How long its measuring took, once done
         chosen:
           $ref: '#/components/schemas/ModelCandidate'
         candidates:

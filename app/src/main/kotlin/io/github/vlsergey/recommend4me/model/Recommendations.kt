@@ -648,14 +648,13 @@ class Recommendations(
         )
     }
 
-    /** Every scorer measured by cross-validation on the current grades; nothing is kept. */
-    fun compare(typeId: String): List<ScorerQuality> = lock(typeId).withLock {
-        val catalogue = reader.read(type(typeId))
-        val p = prepare(catalogue) ?: return@withLock emptyList()
-        plugins.scorers.map { scorer ->
-            val candidates = CrossValidation.measureAll(p.task, scorer, p.xFor)
-            ScorerQuality(scorer.id, scorer.title, CrossValidation.choose(candidates)?.result(), candidates.map { it.result() })
-        }
+    /**
+     * What every scorer is measured on: the rows of the current grades, read under the type's lock;
+     * the measuring itself needs no lock — it reads nothing more. Null when there are too few grades.
+     */
+    fun measuringInput(typeId: String): MeasuringInput? = lock(typeId).withLock {
+        val p = prepare(reader.read(type(typeId))) ?: return@withLock null
+        MeasuringInput(p.task, p.xFor, p.grades.size)
     }
 
     /**

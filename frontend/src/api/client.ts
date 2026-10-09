@@ -38,6 +38,7 @@ export type JobStatus = Schemas["JobStatus"];
 export type ModelInfo = Schemas["ModelInfo"];
 export type ModelCandidate = Schemas["ModelCandidate"];
 export type ScorerQuality = Schemas["ScorerQuality"];
+export type ScorerComparison = Schemas["ScorerComparison"];
 export type GradeOnScale = Schemas["GradeOnScale"];
 export type SourceSettings = Schemas["SourceSettings"];
 export type SettingValue = Schemas["SettingValue"];

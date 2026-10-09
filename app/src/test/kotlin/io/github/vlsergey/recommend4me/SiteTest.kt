@@ -11,7 +11,9 @@ import io.github.vlsergey.recommend4me.correction.CorrectionsController
 import io.github.vlsergey.recommend4me.encoder.TextEncoder
 import io.github.vlsergey.recommend4me.encoder.TextKind
 import io.github.vlsergey.recommend4me.item.ItemsController
+import io.github.vlsergey.recommend4me.model.MeasuringState
 import io.github.vlsergey.recommend4me.model.Recommendations
+import io.github.vlsergey.recommend4me.model.ScorerComparisons
 import io.github.vlsergey.recommend4me.page.PagesController
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.CardDecor
@@ -174,6 +176,7 @@ class SiteTest {
     @Autowired lateinit var suggestions: FacetSuggestions
     @Autowired lateinit var universes: UniversesController
     @Autowired lateinit var recommendations: Recommendations
+    @Autowired lateinit var comparisons: ScorerComparisons
 
     private fun capture(body: String) = captures.capturePage(CaptureRequest("https://site.example/work/${body.substringBefore('|')}", body))
 
@@ -296,6 +299,18 @@ class SiteTest {
         assertTrue(explained.zipWithNext().all { (a, b) -> abs(a.contribution) >= abs(b.contribution) }, "strongest first")
         val onPage = pages.getPage("https://site.example/work/x1").body!!.item!!.explanation
         assertTrue(onPage.isNotEmpty() && onPage.all { it.features.isEmpty() }, "on a page $onPage")
+
+        // The scorers are compared in the background, each one's result there once it is measured;
+        // a comparison under way is answered as it stands, not started again
+        val comparison = comparisons.start("books")
+        val again = comparisons.start("books")
+        if (again !== comparison) assertNotNull(comparison.finishedAt, "a second comparison started while the first was under way")
+        val until = System.currentTimeMillis() + 60_000
+        while (comparison.finishedAt == null && System.currentTimeMillis() < until) Thread.sleep(50)
+        assertTrue(comparison.grades > 0, "measured on ${comparison.grades} grades")
+        val measured = comparison.scorers.single()
+        assertEquals(MeasuringState.DONE, measured.state, measured.error)
+        assertTrue(measured.chosen != null && measured.millis != null, "the line measured: ${measured.chosen}")
 
         // Graded works answered on before the model is trained again: a tag two graded works now
         // have is a feature the kept model does not know, and a work is still told of as it is now

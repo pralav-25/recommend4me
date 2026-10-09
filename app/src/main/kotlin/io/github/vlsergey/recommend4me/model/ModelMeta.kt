@@ -1,5 +1,8 @@
 package io.github.vlsergey.recommend4me.model
 
+import io.github.vlsergey.recommend4me.matrix.Matrix
+import io.github.vlsergey.recommend4me.scorer.RankingTask
+
 /**
  * What a feature adds to a work's score, in points of 0..10; for a categorical feature against the
  * average work of the catalogue — so a liked tag the work does NOT have ([present] false) shows as
@@ -64,4 +67,5 @@ data class ModelSummary(
 )
 
 /** A scorer's quality on the current grades. */
-class ScorerQuality(val scorer: String, val title: String, val chosen: RankingResult?, val candidates: List<RankingResult>)
+/** The rows a scorer is cross-validated on, as a fold sees them ([xFor]), and how many grades they are. */
+class MeasuringInput(val task: RankingTask, val xFor: ((Set<Long>) -> Matrix)?, val grades: Int)

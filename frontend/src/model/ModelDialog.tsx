@@ -1,17 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { BrainCircuitIcon, Loader2Icon, RefreshCwIcon, ScaleIcon, StarIcon, TriangleAlertIcon } from "lucide-react";
-import {
-  api,
-  unwrap,
-  type ContentTypeInfo,
-  type Grade,
-  type GradeOnScale,
-  type ModelCandidate,
-  type ModelInfo,
-  type ScorerQuality,
-} from "@/api/client";
-import { AsyncButton } from "@/components/AsyncButton";
+import { BrainCircuitIcon, Loader2Icon, RefreshCwIcon, StarIcon, TriangleAlertIcon } from "lucide-react";
+import { api, unwrap, type ContentTypeInfo, type Grade, type GradeOnScale, type ModelCandidate, type ModelInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { ALL_GRADES, gradeLabel } from "@/contenttype/types";
@@ -19,6 +9,7 @@ import { formatDate, number, percent, score } from "@/i18n";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
 import { FeatureBars } from "./FeatureBars";
+import { ScorerComparisonDialog } from "./ScorerComparisonDialog";
 import { useModel } from "./useModel";
 
 /** The model's state in the header, opening the details. */
@@ -173,7 +164,6 @@ function Candidates({ candidates, chosen }: { candidates: ModelCandidate[]; chos
 
 function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
   const queryClient = useQueryClient();
-  const [comparison, setComparison] = useState<ScorerQuality[] | null>(null);
   const trained = (data: ModelInfo) => {
     queryClient.setQueryData(["model", type.id], data);
     queryClient.invalidateQueries({ queryKey: [ITEMS, type.id] });
@@ -186,8 +176,6 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
     mutationFn: async (scorer: string) => unwrap(await api.PUT("/api/types/{type}/model/scorer", { params: { path: { type: type.id } }, body: { scorer } })),
     onSuccess: trained,
   });
-  const compare = async () =>
-    setComparison(unwrap(await api.POST("/api/types/{type}/model/compare", { params: { path: { type: type.id } } })));
 
   const busy = m.training || train.isPending || choose.isPending;
   const rated = m.ratingCounts.reduce((a, b) => a + b, 0);
@@ -236,14 +224,9 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
                 </Button>
               ))}
             </div>
-            {m.scorers.length > 1 && (
-              <AsyncButton size="sm" variant="ghost" onClick={compare} icon={<ScaleIcon />} className="ml-auto" title="Кросс-валидация каждого способа на текущих оценках; ничего не сохраняется">
-                Сравнить способы
-              </AsyncButton>
-            )}
+            {m.scorers.length > 1 && <ScorerComparisonDialog type={type} current={m.scorer} onChoose={(s) => choose.mutate(s)} busy={busy} />}
           </div>
           {choose.isError && <div className="text-sm text-destructive">Не удалось сменить способ: {String(choose.error.message)}</div>}
-          {comparison && <Comparison comparison={comparison} current={m.scorer} />}
         </section>
       )}
 
@@ -326,47 +309,6 @@ function Warning({ children }: { children: ReactNode }) {
     <div className="flex gap-2 rounded-lg border border-maybe/50 bg-maybe/10 p-3 text-sm">
       <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-maybe" />
       <div>{children}</div>
-    </div>
-  );
-}
-
-/** Every scorer's candidate chosen by the same cross-validation, side by side. */
-function Comparison({ comparison, current }: { comparison: ScorerQuality[]; current: string }) {
-  return (
-    <div className="overflow-hidden rounded-lg border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/60 text-xs text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 text-left font-medium">Способ</th>
-            <th className="px-3 py-2 text-right font-medium">Параметр</th>
-            <th className="px-3 py-2 text-right font-medium">Порядок пар, %</th>
-            <th className="px-3 py-2 text-right font-medium">ρ</th>
-            <th className="px-3 py-2 text-right font-medium">AUC</th>
-          </tr>
-        </thead>
-        <tbody>
-          {comparison.map((q) => (
-            <tr key={q.scorer} className={cn("border-t", q.scorer === current && "bg-yes/10 font-medium")}>
-              <td className="px-3 py-1.5">{q.title}</td>
-              {q.chosen ? (
-                <>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{number(q.chosen.parameter)}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">
-                    {Math.round(q.chosen.metrics.concordance * 100)}
-                    {se(q.chosen.metrics.concordanceSe)}
-                  </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{q.chosen.metrics.spearman?.toFixed(2) ?? "—"}</td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{q.chosen.metrics.auc?.toFixed(3) ?? "—"}</td>
-                </>
-              ) : (
-                <td colSpan={4} className="px-3 py-1.5 text-right text-muted-foreground">
-                  мало оценок для сравнения
-                </td>
-              )}
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
