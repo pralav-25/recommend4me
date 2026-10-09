@@ -41,11 +41,11 @@ class BilinearSuggester : FacetSuggester {
         for (rank in RANKS) {
             // A model of every fold, fitted side by side: the folds share nothing but the problem
             val models = Array(FOLDS) { Bilinear(problem, rank) }
-            // From the strongest penalty down by tenfold steps, while the held-out loss still falls
-            var worse = 0
-            var rankBest = Double.MAX_VALUE
+            // Every penalty from the strongest down by tenfold steps, to the weakest: the held-out loss
+            // is not a valley — the characters' was flat from 10 to 0.1, worse at 0.01 and least at
+            // 1e-4 — and a search stopped at the first rise never reaches the better side of it
             var lambda = STRONGEST
-            while (lambda >= WEAKEST && worse < 2) {
+            while (lambda >= WEAKEST) {
                 val held = Bilinear.Held()
                 val unseen = Bilinear.Held()
                 // Every penalty from a fresh start: carried from a stronger one, the weights would start
@@ -55,7 +55,6 @@ class BilinearSuggester : FacetSuggester {
                     .mapToObj { k -> models[k].fit(models[k].start(k.toLong() + 1), step, k) }.toList()
                 thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held, unseen) }
                 tried += Tried(rank, lambda, held, unseen, Fitted(design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }))
-                if (held.mean < rankBest) { rankBest = held.mean; worse = 0 } else worse++
                 lambda /= 10
             }
         }
@@ -148,7 +147,7 @@ class BilinearSuggester : FacetSuggester {
     }
 
     companion object {
-        private const val FORMAT = 3
+        private const val FORMAT = 4
 
         /** The folds an item is held out in: four fifths of the items teach the model judging the fifth. */
         const val FOLDS = 5
