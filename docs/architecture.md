@@ -17,6 +17,7 @@ neural encoder, every way of turning vectors into scores and the search are plug
 | `frontend` | The web interface (React), built into the application's static resources. |
 | `plugins/encoder-e5` | Text encoder: multilingual-e5-small. |
 | `plugins/encoder-siglip2` | Picture encoder: SigLIP2 NaFlex. |
+| `plugins/reranker-bge` | Reranker: bge-reranker-v2-m3 reads two texts together; the likeness of every work's description to the graded works' (`likeness/WorkLikeness`). |
 | `plugins/scorer-pairwise` | Pairwise logistic ranking (RankNet with a line), C chosen by cross-validation. |
 | `plugins/scorer-knn` | k nearest rated neighbours by cosine — a baseline. |
 | `plugins/scorer-fm` | Pairwise factorization machine: the line and every two features meeting through vectors of rank 8; C chosen by cross-validation. |

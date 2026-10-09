@@ -26,6 +26,7 @@ folder of jars in `plugins/`:
 | `source-ficbook` | [ficbook.net](https://ficbook.net) fanfics and originals, browser tracking only |
 | `encoder-e5` | texts → vectors by multilingual-e5-small (any language, one space) |
 | `encoder-siglip2` | pictures → vectors by SigLIP2 NaFlex, proportions kept |
+| `reranker-bge` | bge-reranker-v2-m3 reads a work's description together with every graded work's: the likeness the model reads |
 | `scorer-pairwise` | pairwise logistic ranking (RankNet with a line), the default |
 | `scorer-knn` | the k nearest graded works by cosine, a baseline |
 | `scorer-fm` | a pairwise factorization machine: the line and every two features meeting |
@@ -88,8 +89,18 @@ curl -L -o "$LOCALAPPDATA/recommend4me/models/e5-small.onnx" https://huggingface
 curl -L -o "$LOCALAPPDATA/recommend4me/models/e5-small-tokenizer.json" https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/tokenizer.json
 ```
 
+The reranker (1.1 GB, in half precision; fast on a card, slow on the CPU):
+
+```bash
+curl -L -o "$LOCALAPPDATA/recommend4me/models/bge-reranker-v2-m3-fp16.onnx" https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/onnx/model_fp16.onnx
+```
+
+```bash
+curl -L -o "$LOCALAPPDATA/recommend4me/models/bge-reranker-v2-m3-tokenizer.json" https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/tokenizer.json
+```
+
 SigLIP2 is exported by [`plugins/encoder-siglip2/tools/export_siglip2_naflex.py`](plugins/encoder-siglip2/tools/export_siglip2_naflex.py).
-Without them the model reads no texts or pictures. With `-Drecommend4me.gpu=true` the encoders run
+Without them the model reads no texts or pictures; without the reranker, no likeness of the descriptions to the graded works. With `-Drecommend4me.gpu=true` the encoders run
 on an NVIDIA card; [`tools/fetch-cuda.ps1`](tools/fetch-cuda.ps1) fetches the CUDA libraries.
 
 ### Access from other devices
