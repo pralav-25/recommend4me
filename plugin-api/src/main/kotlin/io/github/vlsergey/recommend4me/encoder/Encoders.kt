@@ -26,6 +26,24 @@ interface TextEncoder {
     fun encodeWindows(texts: List<String>): List<List<FloatArray>>
 }
 
+/**
+ * A CROSS-ENCODER (a reranker): reads two texts TOGETHER and says how much the second answers the
+ * first. Two vectors compared by their cosine are two texts each read alone, squeezed into a few
+ * hundred numbers before they meet; read together, a trope, a kind of hero, a turn of the plot told
+ * in other words is seen. Its scores are the model's own numbers: only their order means anything,
+ * and only among the scores of one first text.
+ */
+interface TextReranker {
+    /** Stable: kept with every score; scores of another reranker are made again. */
+    val id: String
+
+    /** Whether its files are in place; a reranker that is not ready is skipped. */
+    fun ready(): Boolean
+
+    /** The score of every pair (first, second) of texts. */
+    fun score(pairs: List<Pair<String, String>>): FloatArray
+}
+
 /** A picture made ready for an encoder: decoded, resized, cut — the costly part, done off the encoder's thread. */
 interface PreparedPicture
 

@@ -23,6 +23,7 @@ include(
     "plugins:catalogue-wikidata",
     "plugins:encoder-e5",
     "plugins:encoder-siglip2",
+    "plugins:reranker-bge",
     "plugins:scorer-pairwise",
     "plugins:scorer-knn",
     "plugins:scorer-fm",
