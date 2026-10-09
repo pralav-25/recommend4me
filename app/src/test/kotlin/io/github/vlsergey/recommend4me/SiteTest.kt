@@ -290,6 +290,13 @@ class SiteTest {
         val onPage = pages.getPage("https://site.example/work/x1").body!!.item!!.explanation
         assertTrue(onPage.isNotEmpty() && onPage.all { it.features.isEmpty() }, "on a page $onPage")
 
+        // Graded works answered on before the model is trained again: a tag two graded works now
+        // have is a feature the kept model does not know, and a work is still told of as it is now
+        corrections.correctFacet("site", "s4", FacetCorrection(facet = "tags", added = true, name = "Совсем новый тег"))
+        corrections.correctFacet("site", "s3", FacetCorrection(facet = "tags", added = true, name = "Совсем новый тег"))
+        val graded = pages.getPage("https://site.example/work/s3").body!!.item!!
+        assertTrue(graded.facets.single { it.facet == "tags" }.propertyValues.any { it.key == "совсем новый тег" }, "s3 ${graded.facets}")
+
         // The other works of the series, with the user's grades
         capture("s1|Space 1|space|Starships cross the galaxy 1|Pilot/Captain|Галактика")
         capture("s2|Space 2|space|Starships cross the galaxy 2|Pilot/Captain|Галактика")

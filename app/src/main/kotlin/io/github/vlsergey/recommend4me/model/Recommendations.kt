@@ -327,7 +327,16 @@ class Recommendations(
         val fitted = scorer.fit(RankingTask(x, p.grades, p.works, p.items), train, model.meta.parameter)
         val all = fitted.scores(x).map { it.toDouble() }
         val (mean, sd) = CrossValidation.standardisation(train.map { all[it] })
-        val foldModel = TrainedModel(model.meta.copy(scoreMean = mean, scoreSd = sd), fitted)
+        // Fitted on the catalogue as it is now, so laid out as it is now: an answer given since the
+        // model was trained adds or drops a feature, and the kept model's layout no longer fits
+        val foldModel = TrainedModel(
+            model.meta.copy(
+                categorical = p.layout.categorical, categoricalShare = categoricalShare(p.layout, catalogue),
+                vectorCenters = p.spreads.mapValues { it.value.center }, vectorSpreads = p.spreads.mapValues { it.value.spread },
+                numbers = p.numbers, scoreMean = mean, scoreSd = sd,
+            ),
+            fitted,
+        )
         // The work as the fold saw it: its current input, its likeness to the marks of the fold's works left out
         val excluded = underTest.flatMap { p.keysOfWork[it].orEmpty() }.toSet()
         val current = CatalogueReader.previousGradesOfCurrentVersions(catalogue.ratings, catalogue::versionOf)[key]
