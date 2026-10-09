@@ -152,18 +152,40 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         facets.forEach { facet -> refreshFacet(store, facet, suggester, encoder, itemId) }
     }
 
+    /** What the model of the facet reads — of the item [only] alone, when given. */
+    private fun load(store: SourceStore, facet: FacetDef, encoder: TextEncoder, vocabulary: Vocabulary?, only: String?) = FacetData.load(
+        store, facet, encoder, vocabulary?.values.orEmpty(),
+        imageEncoder = plugins.imageEncoder()?.id, sets = stores.typeOf(store.id).embeddings.ids(), only = only,
+        // Counted in the texts of the item [only] alone: no other item's chances are made
+        mentions = vocabulary?.mentions(store)?.let { of -> if (only == null) of else { id -> if (id == only) of(id) else null } },
+        allowed = vocabulary?.allowed, groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
+        hintNames = vocabulary?.hintNames.orEmpty(), hintAgainst = vocabulary?.hintAgainst ?: { emptyList() },
+    )
+
+    /**
+     * The chance of EVERY value of the facet for the item, made now by the weights fitted last and
+     * not kept: of a facet whose values a work may have are not limited ([Vocabulary.allowed]) only
+     * the likeliest of an item's chances are kept, and the user who asks for more gets the rest
+     * from here. Null when the facet was never fitted.
+     */
+    private fun everyChance(store: SourceStore, facet: FacetDef, itemId: String): List<Chance>? {
+        val suggester = plugins.suggester ?: return null
+        val encoder = plugins.textEncoder() ?: return null
+        val data = load(store, facet, encoder, universeVocabulary(store, facet) ?: examplesVocabulary(store, facet), itemId)
+        val i = data.ids.indexOf(itemId).takeIf { it >= 0 } ?: return null
+        val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id } ?: return null
+        val fitted = suggester.unpack(stored.content, data.task) ?: return null
+        val chances = fitted.on(data.task).of(intArrayOf(i)).single()
+        val has = data.held[i].toHashSet()
+        val named = data.task.mentions[i]
+        return chances.indices.map { v -> Chance(itemId, facet.key, data.values[v], v in has, chances[v].toDouble(), named?.let { it[v] ?: 0 }) }
+    }
+
     /** The facet worked out: of every item whose fingerprint changed — of the item [only], by the weights fitted last, when given. */
     private fun refreshFacet(store: SourceStore, facet: FacetDef, suggester: FacetSuggester, encoder: TextEncoder, only: String?) {
         val started = System.currentTimeMillis()
         val vocabulary = universeVocabulary(store, facet) ?: examplesVocabulary(store, facet)
-        val data = FacetData.load(
-            store, facet, encoder, vocabulary?.values.orEmpty(),
-            imageEncoder = plugins.imageEncoder()?.id, sets = stores.typeOf(store.id).embeddings.ids(), only = only,
-            // Counted in the texts of the item [only] alone: no other item's chances are made
-            mentions = vocabulary?.mentions(store)?.let { of -> if (only == null) of else { id -> if (id == only) of(id) else null } },
-            allowed = vocabulary?.allowed, groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
-            hintNames = vocabulary?.hintNames.orEmpty(), hintAgainst = vocabulary?.hintAgainst ?: { emptyList() },
-        )
+        val data = load(store, facet, encoder, vocabulary, only)
         val read = System.currentTimeMillis() - started
         if (data.values.isEmpty()) return
         val now = Instant.now()
@@ -487,7 +509,10 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val site = store.items.facets(itemId)
         // The facet and those worked out before it, its values made of theirs: not the long fittings after it
         ensure(store, itemId, facets.take(facets.indexOf(def) + 1), site, corrections, now = true)
-        val chances = store.suggestions.ofItems(listOf(itemId))[itemId].orEmpty()[facet].orEmpty().values
+        // A work's universes, characters and pairings are chosen among those it may have, every one
+        // of them kept; of any other facet only the likeliest are kept, the rest made now
+        val chances = (if (facet in CHOSEN) null else everyChance(store, def, itemId))
+            ?: store.suggestions.ofItems(listOf(itemId))[itemId].orEmpty()[facet].orEmpty().values
         val answered = corrections.filter { it.facet == facet }.map { it.key }.toSet()
         val current = site[facet].orEmpty().toSet()
         // A value the model gives the work is the work's already
@@ -551,6 +576,9 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
 
         /** Items scored at once and written in one transaction: memory, not meaning. */
         private const val CHUNK = 2_000
+
+        /** The facets whose values a work is chosen among those it may have: every chance of them is kept. */
+        private val CHOSEN = setOf(UniverseFacets.UNIVERSE, UniverseFacets.CHARACTERS, UniverseFacets.PAIRINGS)
     }
 }
 

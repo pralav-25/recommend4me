@@ -249,13 +249,16 @@ paths:
     get:
       tags: [suggestions]
       operationId: getCandidates
-      summary: Every value the work may be given of a facet that says which, to choose among
+      summary: Every value the work may be given of a facet, to choose among
       description: |
-        Of the facets of the universes - "characters" (the characters of the work's universes and
-        the original ones), "pairings" (pairs of its characters), "universe" - every value the work
-        does not have and the user has not answered on, with the model's chance and how many times
-        the work's own texts name it (a character in the chapters read, two characters in one
-        paragraph); the likeliest first, then the most named.
+        Every value of the facet the work does not have and the user has not answered on, with the
+        model's chance and how many times the work's own texts name it (a character in the chapters
+        read, two characters in one paragraph); the likeliest first, then the most named. Of the
+        facets of the universes - "characters" (the characters of the work's universes and the
+        original ones), "pairings" (pairs of its characters), "universe" - those the work may have;
+        of any other facet the model works out (the tags), every value, its chances made now: the
+        values offered beside the work's are the likeliest of these, and the rest are here for the
+        user who asks for more.
       parameters:
         - $ref: '#/components/parameters/Source'
         - $ref: '#/components/parameters/Item'

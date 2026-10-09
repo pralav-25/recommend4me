@@ -46,6 +46,15 @@
   /** The changes, sent one after another in the order made. */
   let queue = Promise.resolve();
 
+  /**
+   * How many of a facet's candidates the user asked to see besides what the page shows, by facet
+   * — kept while the page is open — and the candidates read for them, the likeliest first.
+   */
+  const more = new Map();
+  const candidatesOf = new Map();
+  /** How many more a press of "…" shows. */
+  const MORE_STEP = 5;
+
   // --- Elements ---
 
   function el(tag, className, text) {
@@ -126,6 +135,8 @@
     try {
       server = await browser.runtime.sendMessage({ type: "server" });
       view = await api("GET", `/api/pages?url=${enc(location.href)}`);
+      // The candidates asked for are read anew too: an answer changes which the work may yet have
+      if (view.item) for (const facet of more.keys()) await readCandidates(view.item, facet);
     } catch (e) {
       // What was shown stays, with why it is not current
       message = e.message;
@@ -416,6 +427,52 @@
     return chip;
   }
 
+  async function readCandidates(item, facet) {
+    const s = item.summary;
+    try {
+      candidatesOf.set(facet, await api("GET", `/api/items/${enc(s.source)}/${enc(s.item)}/candidates?facet=${enc(facet)}`));
+    } catch (e) {
+      // A facet the model does not work on has none to show
+      candidatesOf.set(facet, []);
+    }
+  }
+
+  /**
+   * The candidates the user asked to see more of — those the line does not show yet ([shown]
+   * keys), as many as asked, as suggestions — and "…" to see [MORE_STEP] more, while there are.
+   */
+  function moreOf(item, facet, line, shown) {
+    const asked = more.get(facet) || 0;
+    const all = candidatesOf.get(facet);
+    const rest = (all || []).filter((c) => !shown.has(c.key));
+    rest.slice(0, asked).forEach((c) => {
+      const chip = suggestedChip(item, facet, c);
+      const named = mentionsText(c.mentions);
+      if (named) chip.title = `Кандидат: ${named}`;
+      line.appendChild(chip);
+    });
+    if (all && rest.length <= asked) return;
+    const b = el("button", "r4m-button r4m-more", "…");
+    b.type = "button";
+    b.title = `Показать ещё ${MORE_STEP} кандидатов`;
+    b.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      more.set(facet, (more.get(facet) || 0) + MORE_STEP);
+      if (!candidatesOf.has(facet)) {
+        b.classList.add("r4m-saving");
+        await readCandidates(item, facet);
+      }
+      render();
+    });
+    line.appendChild(b);
+  }
+
+  /** The keys of the values a facet's line shows: the work's, the user's, the suggested. */
+  function shownKeys(facet, suggestions) {
+    return new Set([...(facet.values || []), ...((suggestions && suggestions.suggested) || [])].map((v) => v.key));
+  }
+
   /** "упоминается 3 раза" — how often the work's texts name a candidate; empty when they were not counted. */
   function mentionsText(n) {
     if (n === undefined || n === null) return "";
@@ -521,6 +578,7 @@
     stableOrder(item, facet.facet, values).forEach((v) => line.appendChild(valueChip(item, facet.facet, v, editable)));
     if (editable) {
       ((suggestions && suggestions.suggested) || []).forEach((v) => line.appendChild(suggestedChip(item, facet.facet, v)));
+      moreOf(item, facet.facet, line, shownKeys(facet, suggestions));
       line.appendChild(addField(item, facet.facet, facet.label));
     }
     block.appendChild(line);
@@ -560,6 +618,7 @@
     const after = el("r4m-chips");
     values.filter((v) => v.corrected === "ADDED" || (v.inferred && v.corrected !== "REMOVED")).forEach((v) => after.appendChild(valueChip(item, decor.facet, v)));
     ((suggestions && suggestions.suggested) || []).forEach((v) => after.appendChild(suggestedChip(item, decor.facet, v)));
+    moreOf(item, decor.facet, after, shownKeys(facet, suggestions));
     after.appendChild(addField(item, decor.facet, facet.label));
     const last = elements[elements.length - 1];
     (last.nextElementSibling && last.nextElementSibling.tagName === "R4M-TOOLS" ? last.nextElementSibling : last)

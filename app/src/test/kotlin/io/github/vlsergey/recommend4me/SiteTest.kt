@@ -233,6 +233,13 @@ class SiteTest {
         assertTrue(given.none { it.key == "dragons" && it.offered != true }, "given $given")
         // Beside what it is given, the likeliest others are offered: three the site does not give, at least
         assertEquals(3, given.count { it.corrected == null }, "given $given")
+        // Asked for more: every other value of the facet, the likeliest first — the offered ones
+        // among them, beyond them those whose chances are not kept
+        val more = suggestionsApi.getCandidates("site", "x1", "tags").body!!
+        val offeredKeys = given.filter { it.offered == true }.map { it.key }.toSet()
+        assertTrue(more.map { it.key }.containsAll(offeredKeys) && more.size > offeredKeys.size, "more $more, offered $offeredKeys")
+        assertTrue(more.none { c -> given.any { it.key == c.key && it.offered != true } }, "none the work is given: $more")
+        assertTrue(more.zipWithNext().all { (a, b) -> a.chance!! >= b.chance!! }, "the likeliest first: $more")
 
         // The pairing of its kind is given to it at once, marked as the model's
         val pairing = item.facets.single { it.facet == "pairing" }.propertyValues.single()
