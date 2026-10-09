@@ -2,6 +2,7 @@ package io.github.vlsergey.recommend4me.plugin
 
 import io.github.vlsergey.recommend4me.contenttype.ContentType
 import io.github.vlsergey.recommend4me.encoder.ImageEncoder
+import io.github.vlsergey.recommend4me.encoder.TextReranker
 import io.github.vlsergey.recommend4me.encoder.TextEncoder
 import io.github.vlsergey.recommend4me.scorer.Scorer
 import io.github.vlsergey.recommend4me.search.SearchProvider
@@ -24,6 +25,7 @@ class Plugins(
     sources: ObjectProvider<Source>,
     textEncoders: ObjectProvider<TextEncoder>,
     imageEncoders: ObjectProvider<ImageEncoder>,
+    rerankers: ObjectProvider<TextReranker>,
     scorers: ObjectProvider<Scorer>,
     searches: ObjectProvider<SearchProvider>,
     suggesters: ObjectProvider<FacetSuggester>,
@@ -34,6 +36,7 @@ class Plugins(
     val sources: List<Source> = sources.orderedStream().toList()
     val textEncoders: List<TextEncoder> = textEncoders.orderedStream().toList()
     val imageEncoders: List<ImageEncoder> = imageEncoders.orderedStream().toList()
+    val rerankers: List<TextReranker> = rerankers.orderedStream().toList()
     val scorers: List<Scorer> = scorers.orderedStream().toList()
     val search: SearchProvider? = searches.orderedStream().toList().firstOrNull()
     val suggester: FacetSuggester? = suggesters.orderedStream().toList().firstOrNull()
@@ -46,8 +49,8 @@ class Plugins(
         }
         require(this.sources.map { it.id }.distinct().size == this.sources.size) { "Two sources of one id: ${this.sources.map { it.id }}" }
         log.info(
-            "sources {}, text encoders {}, picture encoders {}, scorers {}, search {}, suggester {}, catalogues {}",
-            this.sources.map { it.id }, this.textEncoders.map { it.id }, this.imageEncoders.map { it.id },
+            "sources {}, text encoders {}, picture encoders {}, rerankers {}, scorers {}, search {}, suggester {}, catalogues {}",
+            this.sources.map { it.id }, this.textEncoders.map { it.id }, this.imageEncoders.map { it.id }, this.rerankers.map { it.id },
             this.scorers.map { it.id }, search?.id, suggester?.id, this.catalogues.map { it.id },
         )
     }
@@ -65,6 +68,9 @@ class Plugins(
     fun textEncoder(): TextEncoder? = choose(textEncoders, "encoder.text", { it.id }, { it.ready() })
 
     fun imageEncoder(): ImageEncoder? = choose(imageEncoders, "encoder.image", { it.id }, { it.ready() })
+
+    /** The reranker in use: the one named by the setting `encoder.reranker`, or the first that is ready. */
+    fun reranker(): TextReranker? = choose(rerankers, "encoder.reranker", { it.id }, { it.ready() })
 
     /** The scorer a content type is ranked by: the one named by `scorer.<type>`, or the pairwise ranking, or the first. */
     fun scorer(typeId: String): Scorer? =

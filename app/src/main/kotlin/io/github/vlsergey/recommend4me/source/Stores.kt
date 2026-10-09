@@ -9,6 +9,7 @@ import io.github.vlsergey.recommend4me.folder.DataFolder
 import io.github.vlsergey.recommend4me.item.ItemRepository
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.likeness.MarkLikenessRepository
+import io.github.vlsergey.recommend4me.likeness.WorkLikenessRepository
 import io.github.vlsergey.recommend4me.mark.MarkRepository
 import io.github.vlsergey.recommend4me.model.ModelRepository
 import io.github.vlsergey.recommend4me.part.PartRepository
@@ -90,6 +91,7 @@ class TypeStore(val type: ContentType, val sources: List<SourceStore>, databases
     val models = ModelRepository(databases.model(type.id))
     val embeddings = SetEmbeddingRepository(databases.model(type.id))
     val likeness = MarkLikenessRepository(databases.model(type.id))
+    val workLikeness = WorkLikenessRepository(databases.model(type.id))
 
     fun source(id: String): SourceStore? = sources.firstOrNull { it.id == id }
 }

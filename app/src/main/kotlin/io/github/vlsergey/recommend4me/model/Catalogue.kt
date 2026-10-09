@@ -99,12 +99,15 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
         val keys = items.map { it.key }.toSet()
         val graded = ratings.map { it.key }.filter { it in keys }.toSet()
         val center = centerSum?.takeIf { pictures > 0 }?.let { sum -> FloatArray(sum.size) { (sum[it] / pictures).toFloat() } }
-        val likeness = if (withLikeness) likenesses.forTraining(type, center, graded) else likenesses.stored(type)
+        val clusters = works.of(type)
+        // The latest grade of every graded item: what the likeness to the graded works reads
+        val grades = ratings.filter { it.key in keys }.groupBy { it.key }.mapValues { (_, r) -> r.maxBy { it.ratedAt }.grade }
+        val likeness = if (withLikeness) likenesses.forTraining(type, center, graded, grades, clusters::work) else likenesses.stored(type)
         log.info(
             "{}: catalogue of {} items read in {} ms, likeness in {} ms",
             type.id, items.size, read - started, System.currentTimeMillis() - read,
         )
-        return Catalogue(type, items, ratings.filter { it.key in keys }, vectors, likeness, works.of(type))
+        return Catalogue(type, items, ratings.filter { it.key in keys }, vectors, likeness, clusters)
     }
 
     /**

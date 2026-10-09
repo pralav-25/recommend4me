@@ -4,6 +4,8 @@ import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.likeness.Likenesses
 import io.github.vlsergey.recommend4me.likeness.MarkLikeness
 import io.github.vlsergey.recommend4me.likeness.TypeLikeness
+import io.github.vlsergey.recommend4me.likeness.WorkLikeness
+import io.github.vlsergey.recommend4me.likeness.WorkLikenessChanged
 import io.github.vlsergey.recommend4me.mark.MarksChanged
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import io.github.vlsergey.recommend4me.picture.PictureRepository
@@ -103,6 +105,10 @@ class Recommendations(
 
     @EventListener
     fun marksChanged(event: MarksChanged) = scheduleRetrain(event.type)
+
+    /** The reranker read more works against the graded ones: features of the works. */
+    @EventListener
+    fun workLikenessChanged(event: WorkLikenessChanged) = scheduleRetrain(event.type)
 
     /** The model gave works other pairings, characters: features of the works. */
     @EventListener
@@ -214,6 +220,7 @@ class Recommendations(
             catalogue.vectors.values.forEach { blocks -> blocks.forEach { (key, v) -> action(key, v) } }
             likeness.pictures.forEach { _, v -> action(MarkLikeness.PICTURES, v) }
             likeness.reviews.forEach { _, v -> action(MarkLikeness.REVIEWS, v) }
+            likeness.works.forEach { _, v -> action(WorkLikeness.WORKS, v) }
         }
         val numbers = FeatureLayout.numberSpreads(catalogue.items.map { ItemInput(it.key, emptyMap(), emptySet(), it.numeric) })
         val layout = FeatureLayout.of(perItem, spreads, numbers)
@@ -721,6 +728,6 @@ class Recommendations(
         private const val TOP_FEATURES = 25
         private const val SCORE_CHUNK = 1024
         private const val MAX_IMPORTANCE_ITEMS = 1500
-        private val MARK_KEYS = setOf(MarkLikeness.PICTURES, MarkLikeness.REVIEWS)
+        private val MARK_KEYS = setOf(MarkLikeness.PICTURES, MarkLikeness.REVIEWS, WorkLikeness.WORKS)
     }
 }

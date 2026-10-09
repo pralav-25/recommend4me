@@ -3,6 +3,7 @@ package io.github.vlsergey.recommend4me.model
 import io.github.vlsergey.recommend4me.picture.PictureRepository
 import io.github.vlsergey.recommend4me.setvector.SetKind
 import io.github.vlsergey.recommend4me.likeness.MarkLikeness
+import io.github.vlsergey.recommend4me.likeness.WorkLikeness
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.NumberDef
@@ -107,5 +108,6 @@ object FeatureNames {
         SetKind.PARTS.key to "Текст по фрагментам",
         MarkLikeness.PICTURES to "Похожесть на отмеченные картинки",
         MarkLikeness.REVIEWS to "Похожесть на отмеченные отзывы",
+        WorkLikeness.WORKS to "Похожесть описания на оценённые работы",
     )
 }
