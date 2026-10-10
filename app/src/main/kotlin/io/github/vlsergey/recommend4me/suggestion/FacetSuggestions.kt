@@ -187,17 +187,27 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val vocabulary = universeVocabulary(store, facet) ?: examplesVocabulary(store, facet)
         val data = load(store, facet, encoder, vocabulary, only)
         val read = System.currentTimeMillis() - started
-        if (data.values.isEmpty()) return
         val now = Instant.now()
+        if (data.values.isEmpty()) return nothingToGive(store, facet, data, only, now)
         val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id }
         val kept = stored?.let { suggester.unpack(it.content, data.task) }
-        // Never fitted: fitted now on the whole facet, every item's mentions counted
-        if (kept == null && only != null) return refreshFacet(store, facet, suggester, encoder, null)
+        if (kept == null && only != null) {
+            // Worked out before with nothing to learn from, and still none: the item waits for the
+            // background, not the page for a fitting of the whole facet that has nothing to fit.
+            // The first answer of the user is something: fitted now, the candidates follow it
+            val nothing = store.corrections.allFacets().none { it.facet == facet.key && it.added }
+            if (nothing && store.suggestions.fingerprints(facet.key).isNotEmpty()) {
+                nothingToGive(store, facet, data, only, now)
+                return changed(store.id)
+            }
+            // Never fitted: fitted now on the whole facet, every item's mentions counted
+            return refreshFacet(store, facet, suggester, encoder, null)
+        }
         val current = kept != null && stored.basis == data.basis
         val fitted = when {
             current || only != null -> kept ?: return
             else -> {
-                val made = suggester.fit(data.task) ?: return
+                val made = suggester.fit(data.task) ?: return nothingToGive(store, facet, data, null, now)
                 store.suggestions.saveSuggester(facet.key, suggester.id, now, data.basis, made.pack())
                 log.info("{}: the suggester of {} fitted on {} items, {} values in {} ms, {} of them reading", store.id, facet.key, data.ids.size, data.values.size, System.currentTimeMillis() - started, read)
                 made
@@ -230,6 +240,19 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
         if (changedIds.isNotEmpty()) events.publishEvent(FacetChancesChanged(store.id, changedIds))
         if (rows.size > 1) log.info("{}: chances of {} of {} items made in {} ms", store.id, facet.key, rows.size, System.currentTimeMillis() - started)
+    }
+
+    /**
+     * The facet has nothing to give: no values, or no work the user said has one to learn from (the
+     * secondary characters before the first answer). Every item — the item [only], when given — is
+     * kept as worked out with no chances, by its fingerprint: a read does not try again, a change of
+     * the item or of what the facet learns from does.
+     */
+    private fun nothingToGive(store: SourceStore, facet: FacetDef, data: FacetData, only: String?, now: Instant) {
+        val known = store.suggestions.fingerprints(facet.key)
+        val made = data.ids.indices.filter { (only == null || data.ids[it] == only) && known[data.ids[it]] != data.fingerprints[it] }
+            .associate { data.ids[it] to data.fingerprints[it] }
+        made.keys.chunked(CHUNK).forEach { chunk -> store.suggestions.replace(facet.key, chunk.associateWith { made.getValue(it) }, emptyList(), now) }
     }
 
     /**
