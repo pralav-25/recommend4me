@@ -20,9 +20,11 @@ class BilinearBench {
         val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)
         println("BENCH ${task.itemCount} items × ${task.valueCount} values, ${problem.active.sumOf { it.size.toLong() }} pairs that weigh anything, ${problem.hintPairs} pairs of names")
         // On the card when there is one, as the application fits
-        val card = NamesOnCard(Onnx(defaultModelsDir(), gpu = true))
-        println("BENCH the names' loss on the card: ${card.ready()}")
-        val suggester = BilinearSuggester(card.takeIf { it.ready() })
+        val onnx = Onnx(defaultModelsDir(), gpu = true)
+        var started = System.nanoTime()
+        val card = StepOnCard.open(onnx, problem, BilinearSuggester.RANKS.first())
+        println("BENCH the task on the card: ${card != null}, in ${(System.nanoTime() - started) / 1_000_000} ms")
+        val suggester = BilinearSuggester(onnx)
         // One loss and gradient, and one fold's fitting from scratch, on the processor and on the card
         val where = listOf("processor" to Bilinear(problem, 16), "card" to Bilinear(problem, 16, card))
         for ((where, model) in where.filter { (w, _) -> System.getenv("BENCH_ON") == null || w == System.getenv("BENCH_ON") }) {
@@ -38,8 +40,9 @@ class BilinearBench {
             Lbfgs.minimize(theta, Bilinear.MAX_STEPS) { x, g -> calls++; model.lossAndGradient(x, g, 1e-4f, trains) }
             println("BENCH on the $where: one loss $one ms; a fold from scratch $calls losses in ${(System.nanoTime() - t) / 1_000_000} ms")
         }
+        card?.close()
         if (System.getenv("BENCH_WHOLE") == null) return
-        var started = System.nanoTime()
+        started = System.nanoTime()
         val scratch = suggester.fit(task)!!
         println("BENCH from scratch: ${(System.nanoTime() - started) / 1_000_000} ms")
         // One answer more: a value the user gives a work of a universe that it had not

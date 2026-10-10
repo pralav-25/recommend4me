@@ -2,6 +2,7 @@ package io.github.vlsergey.recommend4me.suggestion
 
 import io.github.vlsergey.recommend4me.matrix.Blas
 import io.github.vlsergey.recommend4me.matrix.Floats
+import io.github.vlsergey.recommend4me.onnx.Onnx
 import org.slf4j.LoggerFactory
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -36,8 +37,8 @@ private val log = LoggerFactory.getLogger(BilinearSuggester::class.java)
  * state does not read the task.
  */
 class BilinearSuggester internal constructor(
-    /** The names' loss on the card, when there is one: on the processor without. */
-    private val card: NamesOnCard?,
+    /** The runtime a step of the fitting goes to the card through, when there is one: on the processor without. */
+    private val onnx: Onnx?,
 ) : FacetSuggester {
     constructor() : this(null)
 
@@ -48,7 +49,6 @@ class BilinearSuggester internal constructor(
         val started = System.currentTimeMillis()
         val design = Design.of(task)
         val problem = Problem(task, design, FOLDS)
-        class Tried(val rank: Int, val lambda: Double, val held: Bilinear.Held, val unseen: Bilinear.Held, val fitted: Fitted, val losses: List<Int>, val millis: Long)
         val tried = ArrayList<Tried>()
         // Every penalty from the strongest down by tenfold steps, to the weakest: the held-out loss is
         // not a valley — the characters' was flat from 10 to 0.1, worse at 0.01 and least at 1e-4 —
@@ -63,32 +63,13 @@ class BilinearSuggester internal constructor(
         val lambdas = if (last == null) grid else grid.indices.minBy { abs(ln(grid[it] / last.lambda)) }.let { at ->
             grid.subList(maxOf(0, at - 1), minOf(grid.size, at + 2))
         }
+        var onCard = false
         for (rank in ranks) {
-            // A model of every fold, fitted side by side: the folds share nothing but the problem
-            val models = Array(FOLDS) { Bilinear(problem, rank, card) }
-            for (lambda in lambdas) {
-                val held = Bilinear.Held()
-                val unseen = Bilinear.Held()
-                // Every penalty from its own last weights carried to this task — those of the penalty
-                // nearest to it when it had none — or from a fresh start: from scratch, or when the
-                // last weights are all nought, where the two sides' products have no gradient and stay.
-                // From scratch every penalty from a fresh start: carried from a stronger one, the
-                // weights would start at nought
-                val own = last?.nearest(lambda)
-                val starts = Array(FOLDS) { k ->
-                    own?.let { models[k].carried(it[k], last.design) }?.takeIf { theta -> theta.any { it != 0f } } ?: models[k].start(k.toLong() + 1)
-                }
-                val step = lambda.toFloat()
-                val before = models.map { it.losses }
-                val begun = System.currentTimeMillis()
-                val thetas = IntStream.range(0, FOLDS).parallel()
-                    .mapToObj { k -> models[k].fit(starts[k], step, k) }.toList()
-                thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held, unseen) }
-                tried += Tried(
-                    rank, lambda, held, unseen, Fitted(design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }),
-                    models.indices.map { models[it].losses - before[it] }, System.currentTimeMillis() - begun,
-                )
-            }
+            // The task put on the card once for every fold and penalty of the rank, when there is a
+            // card: closed with the fitting, and the card's memory given back
+            val card = onnx?.let { StepOnCard.open(it, problem, rank) }
+            onCard = onCard || card != null
+            card.use { tried += fitRank(problem, rank, lambdas, last, card) }
         }
         // The one-standard-error rule (Breiman et al.): of the penalties that hold out no worse than
         // the best by more than its standard error, the strongest — the data cannot tell them apart,
@@ -99,7 +80,7 @@ class BilinearSuggester internal constructor(
             "{} items × {} values, {} features of an item, {} of a value, {} names against {} values, {}: {}; chosen r={} λ={} — in {} ms; " +
                 "of the values no item of the other folds has: {}",
             task.itemCount, task.valueCount, design.itemWidth, design.valueWidth, problem.hints.size, problem.hintPairs,
-            if (last == null) "from scratch" else "from the last state",
+            (if (last == null) "from scratch" else "from the last state") + (if (onCard) ", on the card" else ", on the processor"),
             tried.joinToString("; ") { "r=${it.rank} λ=${it.lambda}: %.4f ± %.4f (losses %s in %d ms)".format(it.held.mean, it.held.error, it.losses, it.millis) },
             chosen.rank, chosen.lambda, System.currentTimeMillis() - started,
             tried.joinToString("; ") { "λ=${it.lambda}: " + if (it.unseen.weight > 0) "%.4f ± %.4f".format(it.unseen.mean, it.unseen.error) else "none" },
@@ -110,6 +91,38 @@ class BilinearSuggester internal constructor(
         val nearby = tried.filter { it.rank == chosen.rank && it.lambda in beside }.associate { it.lambda to it.fitted.folds }
         return Fitted(design, chosen.rank, chosen.lambda, chosen.fitted.folds, nearby)
     }
+
+    /** A penalty tried: what its folds held out, the folds' weights, how many losses each took and how long. */
+    private class Tried(val rank: Int, val lambda: Double, val held: Bilinear.Held, val unseen: Bilinear.Held, val fitted: Fitted, val losses: List<Int>, val millis: Long)
+
+    /** Every penalty of [lambdas] at [rank], the folds fitted side by side — on the [card] when there is one. */
+    private fun fitRank(problem: Problem, rank: Int, lambdas: List<Double>, last: Fitted?, card: StepOnCard?): List<Tried> =
+        // Every penalty side by side, its own models of the folds — they share nothing but the
+        // problem and the card: the card is kept busy while the slowest fold of one walks its last steps
+        lambdas.parallelStream().map { lambda ->
+            val models = Array(FOLDS) { Bilinear(problem, rank, card) }
+            val held = Bilinear.Held()
+            val unseen = Bilinear.Held()
+            // Every penalty from its own last weights carried to this task — those of the penalty
+            // nearest to it when it had none — or from a fresh start: from scratch, or when the
+            // last weights are all nought, where the two sides' products have no gradient and stay.
+            // From scratch every penalty from a fresh start: carried from a stronger one, the
+            // weights would start at nought
+            val own = last?.nearest(lambda)
+            val starts = Array(FOLDS) { k ->
+                own?.let { models[k].carried(it[k], last.design) }?.takeIf { theta -> theta.any { it != 0f } } ?: models[k].start(k.toLong() + 1)
+            }
+            val step = lambda.toFloat()
+            val before = models.map { it.losses }
+            val begun = System.currentTimeMillis()
+            val thetas = IntStream.range(0, FOLDS).parallel()
+                .mapToObj { k -> models[k].fit(starts[k], step, k) }.toList()
+            thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held, unseen) }
+            Tried(
+                rank, lambda, held, unseen, Fitted(problem.design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }),
+                models.indices.map { models[it].losses - before[it] }, System.currentTimeMillis() - begun,
+            )
+        }.toList()
 
     override fun unpack(bytes: ByteArray, task: SuggestionTask): FittedSuggester? = runCatching {
         DataInputStream(GZIPInputStream(ByteArrayInputStream(bytes))).use { input ->

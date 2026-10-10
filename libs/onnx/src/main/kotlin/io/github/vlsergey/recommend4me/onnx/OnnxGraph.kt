@@ -3,6 +3,7 @@ package io.github.vlsergey.recommend4me.onnx
 import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.FloatBuffer
 
 /**
  * AN ONNX GRAPH MADE IN CODE, written out as the bytes of a ModelProto ([Onnx.session]): a
@@ -26,6 +27,13 @@ class OnnxGraph(private val name: String) {
     fun constant(name: String, values: FloatArray, vararg dims: Long) = apply {
         val raw = ByteBuffer.allocate(values.size * Float.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN).also { b -> values.forEach { b.putFloat(it) } }.array()
         constants += tensor(name, FLOAT, dims, raw)
+    }
+
+    /** A tensor of floats known when the graph is made, read from a buffer — a matrix of data, without a copy of it on the heap first. */
+    fun constant(name: String, values: FloatBuffer, vararg dims: Long) = apply {
+        val raw = ByteBuffer.allocate(values.remaining() * Float.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN)
+        raw.asFloatBuffer().put(values.duplicate())
+        constants += tensor(name, FLOAT, dims, raw.array())
     }
 
     /** A tensor of 64-bit integers known when the graph is made. */

@@ -42,25 +42,27 @@ class BilinearTest {
     }
 
     @Test
-    fun `the names' loss on the card is the processor's`() {
-        val card = NamesOnCard(Onnx(defaultModelsDir(), gpu = true))
-        assumeTrue(card.ready(), "no card to run on")
+    fun `a step on the card is the processor's`() {
         val task = task()
         val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)
-        val onProcessor = Bilinear(problem, 3)
-        val onCard = Bilinear(problem, 3, card)
-        val random = Random(11)
-        val theta = FloatArray(onProcessor.size) { (random.nextGaussian() * 0.3).toFloat() }
-        val trains: (Int) -> Boolean = { problem.foldOf[it] != 0 }
-        val g1 = FloatArray(onProcessor.size)
-        val g2 = FloatArray(onProcessor.size)
-        val l1 = onProcessor.lossAndGradient(theta, g1, 0.01f, trains)
-        val l2 = onCard.lossAndGradient(theta, g2, 0.01f, trains)
-        assertTrue(abs(l1 - l2) < 1e-4 * abs(l1), "loss $l1 on the processor, $l2 on the card")
-        // The card's matrix products round to TF32, ten bits of mantissa: a part in a thousand, where
-        // a wrong graph would be wrong by the whole
-        val worst = g1.indices.maxOf { abs(g1[it] - g2[it]) / max(1e-4f, abs(g1[it])) }
-        assertTrue(worst < 1e-2, "the worst relative difference of the gradient $worst")
+        val card = StepOnCard.open(Onnx(defaultModelsDir(), gpu = true), problem, 3)
+        assumeTrue(card != null, "no card to run on")
+        card.use {
+            val onProcessor = Bilinear(problem, 3)
+            val onCard = Bilinear(problem, 3, card)
+            val random = Random(11)
+            val theta = FloatArray(onProcessor.size) { (random.nextGaussian() * 0.3).toFloat() }
+            val trains: (Int) -> Boolean = { problem.foldOf[it] != 0 }
+            val g1 = FloatArray(onProcessor.size)
+            val g2 = FloatArray(onProcessor.size)
+            val l1 = onProcessor.lossAndGradient(theta, g1, 0.01f, trains)
+            val l2 = onCard.lossAndGradient(theta, g2, 0.01f, trains)
+            assertTrue(abs(l1 - l2) < 1e-4 * abs(l1), "loss $l1 on the processor, $l2 on the card")
+            // Floats added in another order on the card: the last digits differ, where a wrong graph
+            // would be wrong by the whole
+            val worst = g1.indices.maxOf { abs(g1[it] - g2[it]) / max(1e-4f, abs(g1[it])) }
+            assertTrue(worst < 1e-3, "the worst relative difference of the gradient $worst")
+        }
     }
 
     @Test

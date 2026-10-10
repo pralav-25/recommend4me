@@ -84,6 +84,21 @@ class Onnx(
         return session
     }
 
+    /**
+     * A session of a graph made in memory for one piece of work — its data among the graph's
+     * constants — on the card, in single precision without TF32; null without a card. Not kept: the
+     * caller closes it when the work is done, and the card's memory is given back.
+     */
+    fun onCard(graph: ByteArray): OrtSession? {
+        if (!gpu || !synchronized(this) { cudaReady() }) return null
+        return try {
+            open(graph, 0, cuda = true, tf32 = false)
+        } catch (e: OrtException) {
+            log.warn("A graph of {} bytes cannot run on CUDA: {}", graph.size, e.message)
+            null
+        }
+    }
+
     /** Whether the graph [name], opened already, runs on the card. */
     @Synchronized
     fun opened(name: String): Boolean? = if (name in sessions) name in onGpu else null
@@ -106,6 +121,8 @@ class Onnx(
     private fun options(threads: Int, cuda: Boolean, tf32: Boolean = true): OrtSession.SessionOptions {
         val options = OrtSession.SessionOptions()
         options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+        // The time of every node of every run written out, when asked for: where a graph's time goes
+        System.getenv(PROFILE)?.let { options.enableProfiling(it) }
         if (cuda) {
             if (tf32) options.addCUDA(0)
             else options.addCUDA(OrtCUDAProviderOptions(0).apply { add("use_tf32", "0") })
@@ -174,6 +191,11 @@ class Onnx(
         } finally {
             inputs.values.forEach { it.close() }
         }
+    }
+
+    companion object {
+        /** The environment variable naming the file prefix ONNX Runtime writes its profile of every session to; unset, none is written. */
+        const val PROFILE = "RECOMMEND4ME_ORT_PROFILE"
     }
 }
 
