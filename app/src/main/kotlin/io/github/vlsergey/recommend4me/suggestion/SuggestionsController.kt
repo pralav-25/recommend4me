@@ -45,6 +45,6 @@ class SuggestionsController(private val stores: Stores, private val suggestions:
 
     companion object {
         /** The facets whose values are entries of a catalogue of universes. */
-        private val PAGED = setOf(UniverseFacets.UNIVERSE, UniverseFacets.CHARACTERS)
+        private val PAGED = setOf(UniverseFacets.UNIVERSE, UniverseFacets.CHARACTERS, UniverseFacets.SECONDARY_CHARACTERS)
     }
 }

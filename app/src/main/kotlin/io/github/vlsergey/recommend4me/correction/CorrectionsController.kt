@@ -11,6 +11,7 @@ import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
+import io.github.vlsergey.recommend4me.universe.UniverseFacet
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -54,6 +55,10 @@ class CorrectionsController(
         // A name is kept for a value the site does not name: one the user made up
         val known = store.items.facetNames(c.facet, listOf(key)).isNotEmpty()
         store.corrections.setFacet(item, c.facet, key, c.added, name.takeIf { !known }, Instant.now())
+        // A character is the work's main one or its secondary one: said to be one, it is the other no more
+        UniverseFacet.otherCharacters(c.facet)?.takeIf { c.added && key !in UniverseFacet.ORIGINAL_CHARACTERS }?.let { other ->
+            if (store.corrections.facetsOf(item).any { it.facet == other && it.key == key && it.added }) store.corrections.unsetFacet(item, other, key)
+        }
         // The next likeliest values of the facet are offered at once
         suggestions.currentFor(store, item, c.facet)
         return corrected(store, item)

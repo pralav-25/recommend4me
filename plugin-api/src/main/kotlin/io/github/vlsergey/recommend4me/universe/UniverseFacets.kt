@@ -15,6 +15,7 @@ import io.github.vlsergey.recommend4me.source.FacetRole
  * - [UNIVERSE]: the universes of the dictionary the work is fan fiction of — one or several; a
  *   realistic work, an alternative history and an original work have none;
  * - [CHARACTERS]: its main characters, of those universes;
+ * - [SECONDARY_CHARACTERS]: its secondary characters, of those universes — never one of its main ones;
  * - [PAIRINGS]: its pairings, each two of its characters ("pair:<character>|<character>", the two
  *   in the order of their keys).
  *
@@ -49,6 +50,7 @@ object UniverseFacets {
 
     const val UNIVERSE = "universe"
     const val CHARACTERS = "characters"
+    const val SECONDARY_CHARACTERS = "secondary-characters"
     const val PAIRINGS = "pairings"
 
     /** The fandoms as a site writes them: the site's word of what the universes of the work are, shown above them. */

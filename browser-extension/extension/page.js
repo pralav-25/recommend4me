@@ -28,7 +28,7 @@
   const UNIVERSE = "universe";
 
   /** The facets that say which values a work may have — its universes, their characters, the pairs of them — hinted by its candidates. */
-  const CHOSEN = ["universe", "characters", "pairings"];
+  const CHOSEN = ["universe", "characters", "secondary-characters", "pairings"];
 
   /** How long a shown work is not read again for every new send of a growing page. */
   const RELOAD_AFTER = 15 * 1000;
@@ -509,6 +509,8 @@
   /** The facets the user may say are all named, with how the button and its hints name them. */
   const ALL_NAMED = {
     [UNIVERSE]: { others: "других вселенных нет", what: "вселенные" },
+    characters: { others: "других главных нет", what: "главные персонажи" },
+    "secondary-characters": { others: "других второстепенных нет", what: "второстепенные персонажи" },
     pairings: { others: "других пэйрингов нет", what: "пэйринги" },
   };
 

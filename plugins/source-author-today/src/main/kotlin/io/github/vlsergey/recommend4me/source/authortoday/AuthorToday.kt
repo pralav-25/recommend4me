@@ -56,6 +56,8 @@ class AuthorToday : Source {
         ),
         reviewsLabel = "Рецензии",
         partsLabel = "Главы",
+        // A work of the genre "Фанфик" is fan fiction, of "Альтернативная история" our world changed
+        kindFrom = GENRE,
     )
 
     override val capturePatterns = listOf(

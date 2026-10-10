@@ -13,9 +13,11 @@ import io.github.vlsergey.recommend4me.source.SourceSchema
  * - the universes are worked out of every universe of the dictionary for a work that is not known
  *   to have none, and given to it: the work's characters are chosen within them;
  * - the main characters are worked out of the characters of the work's universes and the original
- *   characters, the pairings of pairs of the work's characters — given to the work at once.
+ *   characters, the secondary ones the same way, the pairings of pairs of the work's main
+ *   characters — given to the work at once. A character is a work's main one or its secondary one,
+ *   never both ([leftOut]).
  *
- * All four are of the application's layer over the source: the user corrects them.
+ * All five are of the application's layer over the source: the user corrects them.
  */
 object UniverseFacet {
     const val KEY = UniverseFacets.UNIVERSE
@@ -31,8 +33,9 @@ object UniverseFacet {
     fun defs(schema: SourceSchema): List<FacetDef> {
         fun keyOf(standard: Any) = schema.facets.firstOrNull { it.standard === standard }?.key
         return listOf(
-            // The site may say it, but it is the layer's: the user's answer is the work's kind
-            UniverseFacets.KIND_FACET.asLayerFacet(examplesFrom = null),
+            // The site may say it, but it is the layer's: the user's answer is the work's kind. The
+            // site's facet it is told by is shown above it
+            UniverseFacets.KIND_FACET.asLayerFacet(examplesFrom = null, originalFacet = schema.kindFrom),
             FacetDef(
                 KEY, "Вселенная",
                 filter = true,
@@ -44,6 +47,11 @@ object UniverseFacet {
                 UniverseFacets.CHARACTERS, "Главные персонажи",
                 shared = UniverseFacets.CHARACTERS, searchWeight = 0.8f, infer = true, original = schema.universeLine, editable = true,
                 originalFacet = keyOf(UniverseFacets.PAIRINGS_FACET),
+            ),
+            // After the main ones: what the work has of those is left out of these
+            FacetDef(
+                UniverseFacets.SECONDARY_CHARACTERS, "Второстепенные персонажи",
+                shared = UniverseFacets.SECONDARY_CHARACTERS, searchWeight = 0.6f, infer = true, original = schema.universeLine, editable = true,
             ),
             FacetDef(
                 UniverseFacets.PAIRINGS, "Пэйринги",
@@ -63,6 +71,33 @@ object UniverseFacet {
         "oc:female" to "ОЖП (оригинальный женский персонаж)",
         "oc:male" to "ОМП (оригинальный мужской персонаж)",
     )
+
+    /** The two facets of a work's characters: a character is in one of them, never in both. */
+    val CHARACTER_FACETS = listOf(UniverseFacets.CHARACTERS, UniverseFacets.SECONDARY_CHARACTERS)
+
+    /** The other facet of a work's characters; null for any other facet. */
+    fun otherCharacters(facet: String): String? = when (facet) {
+        UniverseFacets.CHARACTERS -> UniverseFacets.SECONDARY_CHARACTERS
+        UniverseFacets.SECONDARY_CHARACTERS -> UniverseFacets.CHARACTERS
+        else -> null
+    }
+
+    /**
+     * The characters left out of the [facet] of a work — not given, not offered, not shown even
+     * crossed out — for they are in its other facet of characters:
+     * - of the secondary ones, every main one the work has: the user's, the model's;
+     * - of the main ones, every one the user said is secondary and not main.
+     * The model's word alone yields to the user's; of the model's word alone the main characters,
+     * worked out first, come first. The original characters are many persons: never left out.
+     *
+     * [has] gives what the work has of a facet — the site's and the model's with the user's
+     * answers on top; [said] what the user said it has.
+     */
+    fun leftOut(facet: String, has: (String) -> Collection<String>, said: (String) -> Collection<String>): Set<String> = when (facet) {
+        UniverseFacets.SECONDARY_CHARACTERS -> has(UniverseFacets.CHARACTERS).toSet()
+        UniverseFacets.CHARACTERS -> said(UniverseFacets.SECONDARY_CHARACTERS).toSet() - said(UniverseFacets.CHARACTERS).toSet()
+        else -> emptySet()
+    } - ORIGINAL_CHARACTERS.keys
 
     /** The sexes of the original characters. */
     val ORIGINAL_SEXES = mapOf("oc:female" to CharacterSex.FEMALE, "oc:male" to CharacterSex.MALE)

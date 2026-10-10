@@ -369,7 +369,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                     hintAgainst = { u -> all.keys - u },
                 )
             }
-            UniverseFacets.CHARACTERS -> {
+            // The main characters and the secondary ones alike, each without what the other has
+            UniverseFacets.CHARACTERS, UniverseFacets.SECONDARY_CHARACTERS -> {
                 // Every character of every universe — by all its names: the fans write the one they like —
                 // and the original characters; a work is given those of its own universes
                 val ofUniverse = HashMap<String, Set<String>>()
@@ -384,9 +385,11 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                         names[value] = c.names
                     }
                 }
-                store.items.nameFacetValues(UniverseFacets.CHARACTERS, UniverseFacet.ORIGINAL_CHARACTERS)
+                // Shown by the first of their names, as the dictionary names them; only a name changed is written
+                store.items.nameFacetValues(facet.key, UniverseFacet.ORIGINAL_CHARACTERS + names.mapValues { (key, own) -> own.firstOrNull() ?: key })
                 val universes = linked(store, UniverseFacets.UNIVERSE)
-                fun of(id: String) = universes[id].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet()
+                val out = leftOut(store, facet.key)
+                fun of(id: String) = universes[id].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet() - out(id)
                 val sexes = UniverseFacet.sexes(type.universes)
                 // A name of a character names it and none of the other characters of its universes
                 val universesOf = HashMap<String, MutableSet<String>>()
@@ -467,6 +470,26 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
     }
 
+    /**
+     * The characters left out of the [facet] of every item ([UniverseFacet.leftOut]): those of its
+     * other facet of characters — the user's answers, and the main ones the model gives it. The
+     * main characters are worked out before the secondary ones: their chances are current here.
+     */
+    private fun leftOut(store: SourceStore, facet: String): (String) -> Set<String> {
+        if (UniverseFacet.otherCharacters(facet) == null) return { emptySet() }
+        val answers = store.corrections.allFacets().filter { it.facet in UniverseFacet.CHARACTER_FACETS }.groupBy { it.itemId }
+        val given = if (facet == UniverseFacets.SECONDARY_CHARACTERS)
+            store.suggestions.ofFacets(listOf(UniverseFacets.CHARACTERS)).mapValues { ModelValues.given(it.value[UniverseFacets.CHARACTERS].orEmpty()) }
+        else emptyMap()
+        return { id ->
+            val own = answers[id].orEmpty()
+            fun said(f: String) = own.filter { it.facet == f && it.added }.map { it.key }
+            fun has(f: String) =
+                ((if (f == UniverseFacets.CHARACTERS) given[id] else null).orEmpty() + said(f)).toSet() - own.filter { it.facet == f && !it.added }.map { it.key }.toSet()
+            UniverseFacet.leftOut(facet, ::has, ::said)
+        }
+    }
+
     /** The values of a facet the user linked every item to: item to values. */
     private fun linked(store: SourceStore, facet: String): Map<String, List<String>> =
         store.corrections.allFacets().filter { it.facet == facet && it.added }.groupBy({ it.itemId }, { it.key })
@@ -522,8 +545,10 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             ?: store.suggestions.ofItems(listOf(itemId))[itemId].orEmpty()[facet].orEmpty().values
         val answered = corrections.filter { it.facet == facet }.map { it.key }.toSet()
         val current = site[facet].orEmpty().toSet()
+        // A character of the work's other facet of characters is no candidate here
+        val out = leftOut(store, facet)(itemId)
         // A value the model gives the work is the work's already
-        val candidates = chances.filter { !it.had && it.key !in answered && it.key !in current && !(def.infer && it.chance > ModelValues.LIKELY) }
+        val candidates = chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
             .sortedWith(compareByDescending<Chance> { it.chance }.thenByDescending { it.mentions ?: 0 })
         return ItemFacetSuggestions(def, candidates, store.items.facetNames(facet, candidates.map { it.key }))
     }
@@ -536,7 +561,9 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      */
     fun currentFor(store: SourceStore, itemId: String, answered: String) {
         val facets = facetsOf(store).filter { it.infer }
-        val from = facets.indexOfFirst { it.key == answered }
+        // An answer on either facet of characters leaves a character out of the other: both made current
+        val first = if (answered in UniverseFacet.CHARACTER_FACETS) UniverseFacets.CHARACTERS else answered
+        val from = facets.indexOfFirst { it.key == first }
         if (from < 0 || store.items.find(itemId) == null) return
         ensure(store, itemId, facets.drop(from), store.items.facets(itemId), store.corrections.facetsOf(itemId), now = true)
     }
@@ -585,7 +612,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         private const val CHUNK = 2_000
 
         /** The facets whose values a work is chosen among those it may have: every chance of them is kept. */
-        private val CHOSEN = setOf(UniverseFacets.UNIVERSE, UniverseFacets.CHARACTERS, UniverseFacets.PAIRINGS)
+        private val CHOSEN = setOf(UniverseFacets.UNIVERSE, UniverseFacets.CHARACTERS, UniverseFacets.SECONDARY_CHARACTERS, UniverseFacets.PAIRINGS)
     }
 }
 

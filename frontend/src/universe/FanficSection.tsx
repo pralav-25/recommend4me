@@ -23,10 +23,11 @@ import { CatalogueSearch, charactersQuery, useUniverses } from "./UniverseDialog
 const KIND = "kind";
 const UNIVERSE = "universe";
 const CHARACTERS = "characters";
+const SECONDARY_CHARACTERS = "secondary-characters";
 const PAIRINGS = "pairings";
 
 /** The facets this section answers: the generic list of the work's facets leaves them out. */
-export const FANFIC_FACETS: readonly string[] = [KIND, UNIVERSE, CHARACTERS, PAIRINGS];
+export const FANFIC_FACETS: readonly string[] = [KIND, UNIVERSE, CHARACTERS, SECONDARY_CHARACTERS, PAIRINGS];
 
 const FANFICTION = "fanfiction";
 const REALISM = "realism";
@@ -89,18 +90,18 @@ export function FanficSection({
   const labelOf = (key: string, fallback: string) => facetOf(key)?.label ?? source.facets.find((f) => f.key === key)?.label ?? fallback;
 
   const original = universeless(valuesOf(KIND).filter(has));
+  // The site's facet above the kind; above the universes too, unless it is the same one (ficbook's fandoms)
+  const siteOf = (key: string) => source.facets.find((f) => f.key === key)?.originalFacet;
+  const universeSite = siteOf(UNIVERSE) !== siteOf(KIND);
 
   return (
     <section className="flex flex-col gap-4">
-      <h4 className="text-sm font-semibold">Фанфик</h4>
-      <KindChoice
-        label={labelOf(KIND, "Тип вселенной")}
-        values={valuesOf(KIND)}
-        suggested={suggestedOf(KIND)}
-        corrections={corrections}
-      />
       <div>
-        <OriginalOf source={source} facets={d.allFacets} facet={UNIVERSE} />
+        <OriginalOf source={source} facets={d.allFacets} facet={KIND} />
+        <KindChoice label={labelOf(KIND, "Тип вселенной")} values={valuesOf(KIND)} suggested={suggestedOf(KIND)} corrections={corrections} />
+      </div>
+      <div>
+        {universeSite && <OriginalOf source={source} facets={d.allFacets} facet={UNIVERSE} />}
         {!original && (
           <Universes
             type={type}
@@ -116,8 +117,26 @@ export function FanficSection({
       <Characters
         type={type}
         item={ref}
+        facet={CHARACTERS}
         label={labelOf(CHARACTERS, "Главные персонажи")}
+        what="главные персонажи"
+        others="Других главных нет"
         values={valuesOf(CHARACTERS)}
+        complete={facetOf(CHARACTERS)?.complete === true}
+        elsewhere={valuesOf(SECONDARY_CHARACTERS).filter(has)}
+        universes={valuesOf(UNIVERSE).filter(has)}
+        corrections={corrections}
+      />
+      <Characters
+        type={type}
+        item={ref}
+        facet={SECONDARY_CHARACTERS}
+        label={labelOf(SECONDARY_CHARACTERS, "Второстепенные персонажи")}
+        what="второстепенные персонажи"
+        others="Других второстепенных нет"
+        values={valuesOf(SECONDARY_CHARACTERS)}
+        complete={facetOf(SECONDARY_CHARACTERS)?.complete === true}
+        elsewhere={valuesOf(CHARACTERS).filter(has)}
         universes={valuesOf(UNIVERSE).filter(has)}
         corrections={corrections}
       />
@@ -178,6 +197,7 @@ export function FanficSummary({ source, details: d, onMark }: { source: SourceIn
       {line("Вселенная", valuesOf(UNIVERSE))}
       <OriginalOf source={source} facets={d.allFacets} facet={CHARACTERS} />
       {line("Главные персонажи", valuesOf(CHARACTERS))}
+      {line("Второстепенные персонажи", valuesOf(SECONDARY_CHARACTERS))}
       {line("Пэйринги", valuesOf(PAIRINGS))}
       {open > 0 && (
         <Button variant="link" size="sm" className="h-auto self-start p-0 text-xs" onClick={onMark}>
@@ -291,9 +311,11 @@ function KindChoice({
 
   const none = given.length > 0 ? `Не выбран — ${given.map((k) => k.name.toLowerCase()).join(", ")} без вашего ответа` : "Не выбран";
 
+  // One line: the label, the user's mark and the list
   return (
-    <Block label={label}>
-      <div className="flex items-center gap-1.5">
+    <div className="flex flex-col gap-1">
+      <label className="flex items-center gap-1.5">
+        <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
         {saving ? <Loader2Icon className="size-4 shrink-0 animate-spin text-muted-foreground" /> : chosen && <CheckIcon className="size-4 shrink-0 text-yes" />}
         <select
           value={chosen?.key ?? ""}
@@ -316,9 +338,9 @@ function KindChoice({
             );
           })}
         </select>
-      </div>
+      </label>
       {failed && <div className="text-xs text-destructive">{failed}</div>}
-    </Block>
+    </div>
   );
 }
 
@@ -455,24 +477,89 @@ function OpenUniverses({
 }
 
 /**
- * The work's main characters. The picker offers the characters of every universe the work is
- * linked to, by any of their names, the original characters, and a name of the user's own.
+ * The work's main or secondary characters ([facet]). Once the user says there are no others
+ * ([complete]), the work's own alone are shown: every other is taken from it, nothing more is
+ * offered.
  */
 function Characters({
   type,
   item,
+  facet,
   label,
+  what,
+  others,
   values,
+  complete,
+  elsewhere,
   universes,
   corrections,
 }: {
   type: ContentTypeInfo;
   item: ItemRef;
+  facet: string;
   label: string;
+  /** The characters in the plural, for the hint of [others]: "главные персонажи". */
+  what: string;
+  /** The text of the button saying there are no others: "Других главных нет". */
+  others: string;
   values: FacetValueInfo[];
+  complete: boolean;
+  /** The characters the work has in its other facet of characters: a character is in one of them only. */
+  elsewhere: FacetValueInfo[];
   /** The universes the work has. */
   universes: FacetValueInfo[];
   corrections: Corrections;
+}) {
+  const own = values.filter(has);
+  const allNamed = own.length > 0 && <AllNamed facet={facet} what={what} others={others} complete={complete} corrections={corrections} />;
+  if (complete)
+    return (
+      <Block label={label}>
+        <Chips facet={facet} values={own} corrections={corrections} />
+        <div>{allNamed}</div>
+      </Block>
+    );
+  return (
+    <OpenCharacters
+      type={type}
+      item={item}
+      facet={facet}
+      label={label}
+      values={values}
+      elsewhere={elsewhere}
+      universes={universes}
+      corrections={corrections}
+      allNamed={allNamed}
+    />
+  );
+}
+
+/**
+ * The work's characters of the [facet] while others may be. The picker offers the characters of
+ * every universe the work is linked to, by any of their names — not those of its other facet of
+ * characters — the original characters, and a name of the user's own.
+ */
+function OpenCharacters({
+  type,
+  item,
+  facet,
+  label,
+  values,
+  elsewhere,
+  universes,
+  corrections,
+  allNamed,
+}: {
+  type: ContentTypeInfo;
+  item: ItemRef;
+  facet: string;
+  label: string;
+  values: FacetValueInfo[];
+  elsewhere: FacetValueInfo[];
+  universes: FacetValueInfo[];
+  corrections: Corrections;
+  /** The button saying there are no others. */
+  allNamed: ReactNode;
 }) {
   const dictionary = useUniverses(type.id, universes.length > 0);
   const linked = universes
@@ -481,12 +568,15 @@ function Characters({
   const characters = useQueries({ queries: linked.map((u) => charactersQuery(type.id, u)) });
 
   const taken = (key: string) => values.some((v) => v.key === key && has(v));
+  // A character of the work's other facet of characters is not offered: it is moved by taking it from there
+  const other = new Set(elsewhere.map((v) => v.key));
   // A character of several of the work's universes is offered once, with every universe it is of;
   // the entries the user left out of a universe (its places, its spells) are not offered
   const byKey = new Map<string, Option & { universes: string[] }>();
   linked.forEach((u, i) => {
     for (const c of (characters[i].data ?? []).filter((c) => c.included)) {
       const key = `${u.catalogue}:${c.character}`;
+      if (other.has(key)) continue;
       const known = byKey.get(key);
       if (known) known.universes.push(u.name);
       else
@@ -507,23 +597,26 @@ function Characters({
     })),
     ...ORIGINAL_CHARACTERS.map((c) => ({ key: c.key, name: c.name, names: [c.name], taken: taken(c.key) })),
   ];
-  const candidates = useCandidates(item, CHARACTERS, true);
+  const candidates = useCandidates(item, facet, true);
   const failed = characters.find((q) => q.isError)?.error?.message ?? dictionary.error?.message ?? candidates.error?.message;
 
   return (
     <Block label={label}>
-      <Chips facet={CHARACTERS} values={values} item={item} corrections={corrections} />
-      <Named type={type} item={item} facet={CHARACTERS} candidates={candidates.data} universes={universes} corrections={corrections} />
-      <Picker
-        label="Добавить персонажа"
-        placeholder="Найти персонажа по любому имени или по Q-номеру"
-        options={ranked(options, candidates.data)}
-        loading={dictionary.isLoading || characters.some((q) => q.isLoading) || candidates.isLoading}
-        error={failed}
-        empty={universes.length === 0 ? "Работа не связана ни с одной вселенной: есть только оригинальные персонажи" : undefined}
-        onPick={(key) => corrections.setFacet(CHARACTERS, { key }, true)}
-        onName={(name) => corrections.setFacet(CHARACTERS, { name }, true)}
-      />
+      <Chips facet={facet} values={values} item={item} corrections={corrections} />
+      <Named type={type} item={item} facet={facet} candidates={candidates.data} universes={universes} corrections={corrections} />
+      <div className="flex flex-wrap items-start gap-1">
+        <Picker
+          label="Добавить персонажа"
+          placeholder="Найти персонажа по любому имени или по Q-номеру"
+          options={ranked(options, candidates.data)}
+          loading={dictionary.isLoading || characters.some((q) => q.isLoading) || candidates.isLoading}
+          error={failed}
+          empty={universes.length === 0 ? "Работа не связана ни с одной вселенной: есть только оригинальные персонажи" : undefined}
+          onPick={(key) => corrections.setFacet(facet, { key }, true)}
+          onName={(name) => corrections.setFacet(facet, { name }, true)}
+        />
+        {allNamed}
+      </div>
     </Block>
   );
 }

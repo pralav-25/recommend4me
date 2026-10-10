@@ -180,23 +180,33 @@ The catalogue is asked only when the user asks — a search by the button with t
 a universe added, its characters refreshed from the universes screen or a site's page — and
 what it answered is kept.
 
-Every work of the type has four facets of the application's own beside the source's
+Every work of the type has five facets of the application's own beside the source's
 (`UniverseFacets`), their values kept as the user's corrections and worked out by the model as
 any facet's:
 
 - `kind` — fan fiction, realism (our world as it is), an alternative history or an original
   work, the last three of no universe: the site's when it says (ficbook by the fandom
-  "originals", author.today by the genre "Фанфик"), suggested otherwise;
+  "originals", author.today by the genre "Фанфик" — `SourceSchema.kindFrom`, shown above),
+  suggested otherwise;
 - `universe` — the universes of the dictionary the work is fan fiction of, one or several:
   suggested from the work's fandom, tags and texts to a work not known to be original, to be
   confirmed;
 - `characters` — its main characters: of the characters of its confirmed universes and the
   original characters (ОЖП, ОМП), every name of a character held against the line the site writes
   them in (`SourceSchema.universeLine`, shown above), the tags, the description and the chapters;
-- `pairings` — pairs of the work's characters, one whatever their order.
+- `secondary-characters` — its secondary characters, worked out and learnt as the main ones;
+- `pairings` — pairs of the work's main characters, one whatever their order.
+
+A character is a work's main one or its secondary one, never both (`UniverseFacet.leftOut`): what
+the work has of one facet is not given, offered or shown — even crossed out — in the other. The
+user's word comes first: a character said to be secondary leaves the main ones, and one said to
+be either is taken from the other answer. Of the model's word alone the main characters, worked
+out first, come first. The original characters are many persons and may be in both.
 
 The characters and the pairings are given to the work at once when more likely than not; the
-site's own strings stay its facets as they are, for the model and as what the model reads.
+site's own strings stay its facets as they are, for the model and as what the model reads. The
+universes, the characters of either kind and the pairings can each be said to be all named: the
+work keeps its own and is offered no other.
 Taking a universe out of the dictionary takes its links with it.
 
 ## The site as the interface

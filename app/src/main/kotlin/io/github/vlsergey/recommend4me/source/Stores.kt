@@ -54,6 +54,8 @@ class SourceStore(val source: Source, contentType: ContentType, val folder: Path
             partsLabel = source.schema.partsLabel,
             versioned = source.schema.versioned,
             universeLine = source.schema.universeLine,
+            kindFrom = source.schema.kindFrom,
+            picturesTell = source.schema.picturesTell,
         )
     }
 

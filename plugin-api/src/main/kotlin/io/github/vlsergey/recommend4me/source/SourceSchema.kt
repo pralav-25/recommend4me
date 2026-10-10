@@ -23,6 +23,12 @@ class SourceSchema(
      */
     val universeLine: String? = null,
     /**
+     * The key of the facet ([facets]) the site tells by whether a work is fan fiction or an original
+     * one (ficbook's fandoms, "Ориджиналы" among them; author.today's genres, "Фанфик" among them):
+     * shown above the kind of the work's universe the application keeps.
+     */
+    val kindFrom: String? = null,
+    /**
      * The pictures of a work tell what it is — a game's screenshots — and are shown before its
      * texts; otherwise its cover is a picture beside them (a book's).
      */

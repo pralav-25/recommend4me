@@ -63,6 +63,8 @@ class Ficbook : Source {
         reviewsLabel = "Отзывы",
         partsLabel = "Части",
         universeLine = PAIRINGS_LINE,
+        // A work of the fandom "Ориджиналы" is an original one
+        kindFrom = FANDOM,
     )
 
     override val capturePatterns = listOf(
@@ -96,6 +98,7 @@ class Ficbook : Source {
             // The universes, characters and pairings worked out go in lines of their own under the site's block of them
             FacetDecor(UniverseFacets.UNIVERSE, after = PAIRINGS_BLOCK),
             FacetDecor(UniverseFacets.CHARACTERS, after = PAIRINGS_BLOCK),
+            FacetDecor(UniverseFacets.SECONDARY_CHARACTERS, after = PAIRINGS_BLOCK),
             FacetDecor(UniverseFacets.PAIRINGS, after = PAIRINGS_BLOCK),
         ),
         reviews = ReviewDecor("article.comment-container[id^='com']", idPrefix = "com"),

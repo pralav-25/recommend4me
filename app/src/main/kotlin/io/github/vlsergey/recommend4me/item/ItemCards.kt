@@ -8,6 +8,7 @@ import io.github.vlsergey.recommend4me.api.model.Prediction
 import io.github.vlsergey.recommend4me.api.model.SearchMatch
 import io.github.vlsergey.recommend4me.api.model.TextRange
 import io.github.vlsergey.recommend4me.correction.Corrected
+import io.github.vlsergey.recommend4me.universe.UniverseFacet
 import io.github.vlsergey.recommend4me.correction.FacetCorrection
 import io.github.vlsergey.recommend4me.layer.LayerValues
 import io.github.vlsergey.recommend4me.rating.Rating
@@ -58,11 +59,14 @@ class ItemCards(private val stores: Stores, private val works: Works) {
         val schema = store.schema
         val base = ModelValues.of(schema, site, chances)
         val corrected = Corrected.facets(base, corrections)
+        val said = corrections.filter { it.added }.groupBy({ it.facet }, { it.key })
         return schema.facets.filter { only(it.key) }.mapNotNull { def ->
-            val keys = corrected[def.key].orEmpty()
+            // A character of the work's other facet of characters is not shown here at all
+            val out = UniverseFacet.leftOut(def.key, { corrected[it].orEmpty() }, { said[it].orEmpty() })
+            val keys = corrected[def.key].orEmpty() - out
             val had = base[def.key].orEmpty().toSet()
             // Every value the user rejected is shown crossed out — offered or given, it stays in its place
-            val removed = corrections.filter { it.facet == def.key && !it.added }.map { it.key }
+            val removed = corrections.filter { it.facet == def.key && !it.added && it.key !in out }.map { it.key }
             val added = corrections.filter { it.facet == def.key && it.added }.associate { it.key to it.name }
             val original = def.original?.let { texts[it] }
             // The chances of a facet the model works on now: none of one it no longer does
@@ -76,7 +80,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     store.items.facetNames(from, keys).let { n -> keys.map { LayerValues.keyOf(n[it] ?: it) } }
                 }.orEmpty()
                 ModelValues.offered(
-                    own.filterValues { !it.had }.mapValues { it.value.chance },
+                    own.filterValues { !it.had && it.key !in out }.mapValues { it.value.chance },
                     shown = keys.toSet(), answered = corrections.filter { it.facet == def.key }.map { it.key }.toSet(), fromSite = fromSite,
                 )
             }
