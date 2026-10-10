@@ -302,33 +302,38 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             val rowLoss = DoubleArray(k)
             val rowSlope = DoubleArray(k)
             val rowNamed = DoubleArray(k)
+            // The scores are taken where they lie, in the native memory of the product: not copied out and back
             IntStream.range(0, k).parallel().forEach { r ->
                 val own = group.positive[r]
-                val row = FloatArray(c)
-                gs.take(row, 0, r * c, c)
-                val before = if (own in 0 until c) (row[own] + shift[own]).toDouble() else 0.0
+                val at = r * c
+                val before = if (own in 0 until c) (gs[at + own] + shift[own]).toDouble() else 0.0
                 val sums = DoubleArray(2)
-                Simd.logisticRow(row, shift, c, scale, sums)
+                Simd.logisticRow(gs, at, shift, c, scale, sums)
                 if (own in 0 until c) {
                     val z = before + pair[1] * named
                     val d = (sigmoid(z) - 1) / total
                     sums[0] += softplus(z) - z - softplus(before)
                     sums[1] += d - sigmoid(before) / total
-                    row[own] = d.toFloat()
+                    gs[at + own] = d.toFloat()
                     rowNamed[r] = d * named
                 }
-                gs.put(row, 0, r * c, c)
                 rowLoss[r] = sums[0]
                 rowSlope[r] = sums[1]
             }
             loss += rowLoss.sum()
             sums[1] += rowSlope.sum()
             sums[0] += rowNamed.sum()
-            val row = FloatArray(c)
-            for (r in 0 until k) {
-                gs.take(row, 0, r * c, c)
-                for (j in 0 until c) gBias[group.values[j]] += row[j]
+            // The slope of every value's bias: the sum of its column, in double precision, the columns shared out among the cores
+            val columnSums = DoubleArray(c)
+            IntStream.range(0, (c + COLUMNS - 1) / COLUMNS).parallel().forEach { part ->
+                val from = part * COLUMNS
+                val upTo = minOf(c, from + COLUMNS)
+                for (r in 0 until k) {
+                    val at = r * c
+                    for (j in from until upTo) columnSums[j] += gs[at + j]
+                }
             }
+            for (j in 0 until c) gBias[group.values[j]] += columnSums[j]
             // The gradient of the group's coordinates, scattered back
             Blas.product(gs, c, k, c, gv, rank, gdu)
             Blas.transposedProduct(gs, c, k, c, gu, rank, gdv)
@@ -452,6 +457,9 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
          */
         const val PAIR = 3
         const val MAX_STEPS = 300
+
+        /** The columns of the names' scores one core sums: a few cache lines of every row. */
+        private const val COLUMNS = 64
 
         fun sigmoid(z: Double) = 1.0 / (1.0 + exp(-z))
         fun softplus(z: Double) = if (z > 30) z else ln(1.0 + exp(z))

@@ -3,6 +3,8 @@ package io.github.vlsergey.recommend4me.matrix
 import jdk.incubator.vector.FloatVector
 import jdk.incubator.vector.VectorOperators
 import org.slf4j.LoggerFactory
+import java.lang.foreign.MemorySegment
+import java.lang.foreign.ValueLayout
 import java.nio.ByteOrder
 
 private val log = LoggerFactory.getLogger(Simd::class.java)
@@ -74,7 +76,15 @@ object Simd {
      * precision, the exponent and the logarithm of a lane's worth at once: a large universe makes
      * tens of millions of these a step of a fitting.
      */
-    fun logisticRow(row: FloatArray, shift: FloatArray, n: Int, scale: Float, sums: DoubleArray) {
+    fun logisticRow(row: FloatArray, shift: FloatArray, n: Int, scale: Float, sums: DoubleArray) =
+        logisticRow(MemorySegment.ofArray(row), 0, shift, n, scale, sums)
+
+    /** [logisticRow] of the row of [n] scores at [at] of [m], in place: read and written where they lie, not copied out and back. */
+    fun logisticRow(m: Floats, at: Int, shift: FloatArray, n: Int, scale: Float, sums: DoubleArray) =
+        logisticRow(m.seg, at, shift, n, scale, sums)
+
+    private fun logisticRow(seg: MemorySegment, at: Int, shift: FloatArray, n: Int, scale: Float, sums: DoubleArray) {
+        val bytes = Float.SIZE_BYTES.toLong()
         var j = 0
         var loss = 0.0
         var slope = 0.0
@@ -85,14 +95,15 @@ object Simd {
             var lossAcc = FloatVector.zero(sp)
             var slopeAcc = FloatVector.zero(sp)
             while (j < bound) {
-                val z = FloatVector.fromArray(sp, row, j).add(FloatVector.fromArray(sp, shift, j))
+                val offset = (at + j) * bytes
+                val z = FloatVector.fromMemorySegment(sp, seg, offset, ORDER).add(FloatVector.fromArray(sp, shift, j))
                 // softplus and sigmoid from one exponent
                 val e = z.abs().neg().lanewise(VectorOperators.EXP)
                 val inverse = one.div(one.add(e))
                 val sigmoid = e.mul(inverse).blend(inverse, z.compare(VectorOperators.GE, 0f))
                 lossAcc = lossAcc.add(z.max(0f).add(e.lanewise(VectorOperators.LOG1P)))
                 val d = sigmoid.mul(scale)
-                d.intoArray(row, j)
+                d.intoMemorySegment(seg, offset, ORDER)
                 slopeAcc = slopeAcc.add(d)
                 j += sp.length()
             }
@@ -100,11 +111,11 @@ object Simd {
             slope = slopeAcc.reduceLanes(VectorOperators.ADD).toDouble()
         }
         while (j < n) {
-            val z = row[j] + shift[j]
+            val z = seg.getAtIndex(ValueLayout.JAVA_FLOAT, (at + j).toLong()) + shift[j]
             val e = kotlin.math.exp(-kotlin.math.abs(z))
             loss += kotlin.math.max(z, 0f) + kotlin.math.ln1p(e)
             val d = (if (z >= 0) 1 / (1 + e) else e / (1 + e)) * scale
-            row[j] = d
+            seg.setAtIndex(ValueLayout.JAVA_FLOAT, (at + j).toLong(), d)
             slope += d
             j++
         }
