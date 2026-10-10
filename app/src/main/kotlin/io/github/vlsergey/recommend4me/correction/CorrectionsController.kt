@@ -12,6 +12,7 @@ import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
+import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -19,6 +20,8 @@ import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import io.github.vlsergey.recommend4me.api.model.FacetCorrection as ApiFacetCorrection
+
+private val log = LoggerFactory.getLogger(CorrectionsController::class.java)
 
 /**
  * The user's corrections of an item. Every correction is a change of the item's searchable data —
@@ -39,6 +42,21 @@ class CorrectionsController(
         return details.read(ItemKey(store.id, item))?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
     }
 
+    /** An answer on a facet: [change] written, its chances made current, the work read back — how long each took, logged. */
+    private fun answered(store: SourceStore, item: String, facet: String, change: () -> Unit): ResponseEntity<ItemDetails> {
+        val started = System.currentTimeMillis()
+        change()
+        val written = System.currentTimeMillis()
+        suggestions.currentFor(store, item, facet)
+        val made = System.currentTimeMillis()
+        return corrected(store, item).also {
+            log.info(
+                "{}: an answer on {} of {} in {} ms — written {}, chances made {}, the work read back {}",
+                store.id, facet, item, System.currentTimeMillis() - started, written - started, made - written, System.currentTimeMillis() - made,
+            )
+        }
+    }
+
     private fun itemOf(source: String, item: String): SourceStore? =
         stores.source(source)?.takeIf { it.items.find(item) != null }
 
@@ -52,23 +70,21 @@ class CorrectionsController(
         val key = c.key?.trim()?.takeIf { it.isNotEmpty() }
             ?: name?.let { FacetValues.keyOf(store, c.facet, it) }
             ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Не указано значение")
-        // A name is kept for a value the site does not name: one the user made up
-        val known = store.items.facetNames(c.facet, listOf(key)).isNotEmpty()
-        store.corrections.setFacet(item, c.facet, key, c.added, name.takeIf { !known }, Instant.now())
-        // A character is the work's main one or its secondary one: said to be one, it is the other no more
-        UniverseFacet.otherCharacters(c.facet)?.takeIf { c.added && key !in UniverseFacet.ORIGINAL_CHARACTERS }?.let { other ->
-            if (store.corrections.facetsOf(item).any { it.facet == other && it.key == key && it.added }) store.corrections.unsetFacet(item, other, key)
-        }
         // The next likeliest values of the facet are offered at once
-        suggestions.currentFor(store, item, c.facet)
-        return corrected(store, item)
+        return answered(store, item, c.facet) {
+            // A name is kept for a value the site does not name: one the user made up
+            val known = store.items.facetNames(c.facet, listOf(key)).isNotEmpty()
+            store.corrections.setFacet(item, c.facet, key, c.added, name.takeIf { !known }, Instant.now())
+            // A character is the work's main one or its secondary one: said to be one, it is the other no more
+            UniverseFacet.otherCharacters(c.facet)?.takeIf { c.added && key !in UniverseFacet.ORIGINAL_CHARACTERS }?.let { other ->
+                if (store.corrections.facetsOf(item).any { it.facet == other && it.key == key && it.added }) store.corrections.unsetFacet(item, other, key)
+            }
+        }
     }
 
     override fun uncorrectFacet(source: String, item: String, facet: String, key: String): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
-        store.corrections.unsetFacet(item, facet, key)
-        suggestions.currentFor(store, item, facet)
-        return corrected(store, item)
+        return answered(store, item, facet) { store.corrections.unsetFacet(item, facet, key) }
     }
 
     override fun completeFacet(source: String, item: String, facet: String): ResponseEntity<ItemDetails> = complete(source, item, facet, true)
@@ -80,9 +96,7 @@ class CorrectionsController(
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
         val def = store.schema.facet(facet) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "У источника нет поля «$facet»")
         if (!def.editable) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Поле «${def.label}» — слово сайта, оно не исправляется")
-        store.corrections.setComplete(item, facet, complete, Instant.now())
-        suggestions.currentFor(store, item, facet)
-        return corrected(store, item)
+        return answered(store, item, facet) { store.corrections.setComplete(item, facet, complete, Instant.now()) }
     }
 
     override fun correctField(source: String, item: String, field: String, fieldCorrection: FieldCorrection): ResponseEntity<ItemDetails> {

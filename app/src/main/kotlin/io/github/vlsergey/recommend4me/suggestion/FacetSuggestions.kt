@@ -190,6 +190,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     private fun refreshFacet(store: SourceStore, facet: FacetDef, suggester: FacetSuggester, encoder: TextEncoder, only: String?) {
         val started = System.currentTimeMillis()
         val vocabulary = universeVocabulary(store, facet) ?: examplesVocabulary(store, facet)
+        val vocabularyMillis = System.currentTimeMillis() - started
         val data = load(store, facet, encoder, vocabulary, only)
         val read = System.currentTimeMillis() - started
         // The whole task kept in a file when asked for: its fitting made again and measured apart from the application
@@ -198,6 +199,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         if (data.values.isEmpty()) return nothingToGive(store, facet, data, only, now)
         val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id }
         val kept = stored?.let { suggester.unpack(it.content, data.task) }
+        val unpacked = System.currentTimeMillis() - started
         if (kept == null && only != null) {
             // Not fitted, or fitted on what no longer fits: a page never waits for a fitting of the
             // whole facet — minutes for the characters of every universe. The facet is fitted in the
@@ -229,8 +231,10 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val scores = fitted.on(data.task)
         val before = if (facet.infer) store.suggestions.ofItems(rows.map { data.ids[it] }) else emptyMap()
         val changedIds = ArrayList<String>()
+        var scored = 0L
         rows.chunked(CHUNK).forEach { chunk ->
             val chances = scores.of(chunk.toIntArray())
+            scored = System.currentTimeMillis() - started
             val made = HashMap<String, Long>()
             val out = ArrayList<Chance>()
             chunk.forEachIndexed { k, i ->
@@ -244,6 +248,12 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
         if (changedIds.isNotEmpty()) events.publishEvent(FacetChancesChanged(store.id, changedIds))
         if (rows.size > 1) log.info("{}: chances of {} of {} items made in {} ms", store.id, facet.key, rows.size, System.currentTimeMillis() - started)
+        // What an answer waits for, a stage at a time: the whole is made again for one work
+        else if (only != null) log.info(
+            "{}: chances of {} of {} made in {} ms — the dictionary {}, reading {}, the weights {}, the chances {}, kept {}",
+            store.id, facet.key, only, System.currentTimeMillis() - started,
+            vocabularyMillis, read - vocabularyMillis, unpacked - read, scored - unpacked, System.currentTimeMillis() - started - scored,
+        )
     }
 
     /**
