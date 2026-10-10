@@ -1,11 +1,13 @@
 package io.github.vlsergey.recommend4me.item
 
+import io.github.vlsergey.recommend4me.database.source.tables.references.CAPTURED_PAGE
 import io.github.vlsergey.recommend4me.database.source.tables.references.FACET_VALUE
 import io.github.vlsergey.recommend4me.database.source.tables.references.ITEM
 import io.github.vlsergey.recommend4me.database.source.tables.references.ITEM_FACET
 import io.github.vlsergey.recommend4me.database.source.tables.references.ITEM_NUMBER
 import io.github.vlsergey.recommend4me.database.source.tables.references.ITEM_TEXT
 import io.github.vlsergey.recommend4me.database.source.tables.references.ITEM_VERSION
+import io.github.vlsergey.recommend4me.database.source.tables.references.REMOVED_ITEM
 import io.github.vlsergey.recommend4me.source.FacetValue
 import io.github.vlsergey.recommend4me.source.ItemHead
 import io.github.vlsergey.recommend4me.source.StoredItem
@@ -76,6 +78,22 @@ class ItemRepository(
 
     fun exists(itemId: String): Boolean = db.fetchExists(ITEM, ITEM.ITEM_ID.eq(itemId))
 
+    /**
+     * The item removed from the library, and kept as removed: everything the source database holds
+     * of it — its versions, values, texts, pictures, reviews, parts and every vector of them go with
+     * it — and the pages kept of it alone; a page of a list it was on stays, and is read again
+     * without it ([removed]).
+     */
+    fun remove(itemId: String, now: Instant) = db.transaction { c ->
+        val tx = c.dsl()
+        tx.insertInto(REMOVED_ITEM).set(REMOVED_ITEM.ITEM_ID, itemId).set(REMOVED_ITEM.REMOVED_AT, now).onDuplicateKeyIgnore().execute()
+        tx.deleteFrom(CAPTURED_PAGE).where(CAPTURED_PAGE.ITEM_ID.eq(itemId)).execute()
+        tx.deleteFrom(ITEM).where(ITEM.ITEM_ID.eq(itemId)).execute()
+    }
+
+    /** Whether the user removed the item from the library: nothing of it is written again. */
+    fun removed(itemId: String): Boolean = db.fetchExists(REMOVED_ITEM, REMOVED_ITEM.ITEM_ID.eq(itemId))
+
     fun latestUpdate(): Instant? = db.select(DSL.max(ITEM.UPDATED_AT)).from(ITEM).fetchOne()?.value1()
 
     // --- Facets ---
@@ -111,6 +129,12 @@ class ItemRepository(
         return gone
     }
 
+    /**
+     * The names of the facet's values written where new or changed. One writer at a time: a page's
+     * reading and the chances made after an answer name the same values at once, and H2's MERGE of
+     * two of them is no merge — the second insert breaks the primary key.
+     */
+    @Synchronized
     fun nameFacetValues(facet: String, names: Map<String, String>) {
         if (names.isEmpty()) return
         val known = facetNames(facet, names.keys)

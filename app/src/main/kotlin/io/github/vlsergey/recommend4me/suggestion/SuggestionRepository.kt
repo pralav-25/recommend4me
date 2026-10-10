@@ -101,6 +101,12 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
         db.deleteFrom(FACET_SUGGESTER).where(FACET_SUGGESTER.SOURCE.eq(source), FACET_SUGGESTER.FACET.notIn(facets)).execute()
     }
 
+    /** Every chance of the item removed from the library, and what each facet's were made of. */
+    fun forget(itemId: String) {
+        db.deleteFrom(FACET_SUGGESTION).where(FACET_SUGGESTION.SOURCE.eq(source), FACET_SUGGESTION.ITEM_ID.eq(itemId)).execute()
+        db.deleteFrom(FACET_SUGGESTION_BASIS).where(FACET_SUGGESTION_BASIS.SOURCE.eq(source), FACET_SUGGESTION_BASIS.ITEM_ID.eq(itemId)).execute()
+    }
+
     /** The chances of the items [ids]: item to facet to value to chance. */
     fun ofItems(ids: Collection<String>): Map<String, Map<String, Map<String, Chance>>> {
         val out = HashMap<String, HashMap<String, HashMap<String, Chance>>>()
@@ -152,6 +158,12 @@ class ValueNameRepository(private val db: DSLContext) {
             .where(FACET_VALUE_VECTOR.FACET.eq(facet), FACET_VALUE_VECTOR.ENCODER.eq(encoder))
             .fetchSize(2000).fetchLazy().use { cursor -> cursor.forEach { action(it.value1()!!, it.value2()!!, Vectors.fromHalf(it.value3()!!)) } }
 
+    /**
+     * One writer at a time: the chances of a work made after an answer and those of the page read
+     * meanwhile encode the same new names at once, and H2's MERGE of two of them is no merge — the
+     * second insert breaks the primary key.
+     */
+    @Synchronized
     fun save(facet: String, encoder: String, rows: List<Triple<String, String, FloatArray>>) {
         rows.chunked(1000).forEach { chunk ->
             db.batch(chunk.map { (key, hash, vector) ->

@@ -741,6 +741,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     fun ensureFor(store: SourceStore, itemId: String) {
         val facets = facetsOf(store).filter { it.infer }
         if (facets.isEmpty() || store.items.find(itemId) == null) return
+        // The chances being made after the user's answers are waited for, not made a second time beside them
+        settled(store, itemId)
         ensure(store, itemId, facets, store.items.facets(itemId), store.corrections.facetsOf(itemId))
     }
 
