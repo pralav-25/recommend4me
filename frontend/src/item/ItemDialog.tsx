@@ -27,6 +27,7 @@ import { ItemTexts } from "./ItemTexts";
 import { itemKey } from "./lists";
 import { Cover, GRADE_TEXT, KEY_GRADES, LinkedBadges, PreviousRating, RatingButtons, ScoreBadge, SignalBadges } from "./pieces";
 import { RelatedWorks } from "./RelatedWorks";
+import { RemoveItem } from "./RemoveItem";
 import { useHeldOut } from "./useHeldOut";
 import { useTakeBackGrade } from "./useRateItem";
 import { useRefreshItem } from "./useRefreshItem";
@@ -313,6 +314,11 @@ function Details({
             <Part title="Та же работа">
               <Links type={type} summary={d.summary} corrections={corrections} />
             </Part>
+            <Separator />
+            {/* For a work gone from the site, never to come back */}
+            <div>
+              <RemoveItem summary={d.summary} typeId={type.id} />
+            </div>
           </>
         ) : (
           <Part title="Признаки">

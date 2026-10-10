@@ -65,6 +65,14 @@ class WorkLikenessRepository(private val db: DSLContext) {
         }
     }
 
+    /** Every likeness the item removed from the library is in, by every reader: as the graded work and as the one read against it. */
+    fun forget(key: ItemKey) = writing.withLock {
+        db.deleteFrom(WORK_LIKENESS).where(
+            WORK_LIKENESS.GRADED_SOURCE.eq(key.source).and(WORK_LIKENESS.GRADED_ID.eq(key.id))
+                .or(WORK_LIKENESS.SOURCE.eq(key.source).and(WORK_LIKENESS.ITEM_ID.eq(key.id))),
+        ).execute()
+    }
+
     companion object {
         private const val BATCH = 1000
     }

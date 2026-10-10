@@ -56,7 +56,11 @@ class ItemsController(
     private val textVectors: TextVectors,
     private val recommendations: Recommendations,
     private val events: ApplicationEventPublisher,
+    private val removal: ItemRemoval,
 ) : ItemsApi {
+
+    override fun removeItem(source: String, item: String): ResponseEntity<Unit> =
+        if (removal.remove(ItemKey(source, item))) ResponseEntity.noContent().build() else ResponseEntity.notFound().build()
 
     override fun listItems(
         type: String, view: ApiItemView, sort: ItemSort, sortNumber: String?, search: String?,

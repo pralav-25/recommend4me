@@ -33,5 +33,10 @@ class RatingRepository(private val db: DSLContext) {
 
     fun count(): Int = db.fetchCount(RATING)
 
+    /** Every grade of the item removed from the library, of every version of it. */
+    fun forget(itemId: String) {
+        db.deleteFrom(RATING).where(RATING.ITEM_ID.eq(itemId)).execute()
+    }
+
     private fun map(r: RatingRecord) = Rating(r.itemId!!, r.version!!, r.grade!!, r.ratedAt!!)
 }

@@ -42,4 +42,9 @@ class SignalRepository(private val db: DSLContext) : SiteSignals {
     fun ofItem(itemId: String): Map<String, String> =
         db.select(SITE_SIGNAL.SIGNAL, SITE_SIGNAL.CONTENT).from(SITE_SIGNAL).where(SITE_SIGNAL.ITEM_ID.eq(itemId))
             .fetch().associate { it.value1()!! to it.value2()!! }
+
+    /** Every signal of the item removed from the library. */
+    fun forget(itemId: String) {
+        db.deleteFrom(SITE_SIGNAL).where(SITE_SIGNAL.ITEM_ID.eq(itemId)).execute()
+    }
 }

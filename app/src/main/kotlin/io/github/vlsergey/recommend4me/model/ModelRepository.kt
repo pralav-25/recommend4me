@@ -86,6 +86,13 @@ class ModelRepository(private val db: DSLContext) {
     fun prediction(key: ItemKey): Double? =
         db.select(PREDICTION.SCORE).from(PREDICTION).where(PREDICTION.SOURCE.eq(key.source), PREDICTION.ITEM_ID.eq(key.id)).fetchOne(PREDICTION.SCORE)
 
+    /** The predictions of the item removed from the library: the model's, and the one that had not seen it. */
+    fun forget(key: ItemKey) = db.transaction { c ->
+        val tx = DSL.using(c)
+        tx.deleteFrom(PREDICTION).where(PREDICTION.SOURCE.eq(key.source), PREDICTION.ITEM_ID.eq(key.id)).execute()
+        tx.deleteFrom(HELD_OUT).where(HELD_OUT.SOURCE.eq(key.source), HELD_OUT.ITEM_ID.eq(key.id)).execute()
+    }
+
     companion object {
         private const val CURRENT = 1
         private const val BATCH = 1000

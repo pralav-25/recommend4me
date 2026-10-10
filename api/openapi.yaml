@@ -211,6 +211,23 @@ paths:
                 $ref: '#/components/schemas/ItemDetails'
         '404':
           description: No such item
+    delete:
+      tags: [items]
+      operationId: removeItem
+      summary: Removes the work from the library, with everything of it
+      description: |
+        For a work gone from the site: the work, its texts, pictures (their files too), reviews,
+        parts and every vector of them, the user's answers, links, grades and marks, and what the
+        model made of it. Kept as removed: a page of the site read again does not bring it back.
+        Not undone.
+      parameters:
+        - $ref: '#/components/parameters/Source'
+        - $ref: '#/components/parameters/Item'
+      responses:
+        '204':
+          description: Removed
+        '404':
+          description: No such item
 
   /api/items/{source}/{item}/explanation:
     get:

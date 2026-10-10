@@ -82,6 +82,13 @@ class MarkLikenessRepository(private val db: DSLContext) {
         }
     }
 
+    /** The likeness of the item removed from the library to the marks, of every kind; made again without it at the next training. */
+    fun forget(key: ItemKey) = db.transaction { c ->
+        val tx = DSL.using(c)
+        tx.deleteFrom(MARK_LIKENESS_STRENGTH).where(MARK_LIKENESS_STRENGTH.SOURCE.eq(key.source), MARK_LIKENESS_STRENGTH.ITEM_ID.eq(key.id)).execute()
+        tx.deleteFrom(MARK_LIKENESS_AXES).where(MARK_LIKENESS_AXES.SOURCE.eq(key.source), MARK_LIKENESS_AXES.ITEM_ID.eq(key.id)).execute()
+    }
+
     companion object {
         private const val BATCH = 1000
     }

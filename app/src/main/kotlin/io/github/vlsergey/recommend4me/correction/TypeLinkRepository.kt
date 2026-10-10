@@ -27,4 +27,12 @@ class TypeLinkRepository(private val db: DSLContext) {
     fun links(): List<Pair<ItemKey, ItemKey>> =
         db.select(ITEM_LINK.SOURCE, ITEM_LINK.ITEM_ID, ITEM_LINK.OTHER_SOURCE, ITEM_LINK.OTHER_ITEM_ID).from(ITEM_LINK)
             .fetch { ItemKey(it.value1()!!, it.value2()!!) to ItemKey(it.value3()!!, it.value4()!!) }
+
+    /** The links of the item removed from the library, on either side. */
+    fun forget(key: ItemKey) {
+        db.deleteFrom(ITEM_LINK).where(
+            ITEM_LINK.SOURCE.eq(key.source).and(ITEM_LINK.ITEM_ID.eq(key.id))
+                .or(ITEM_LINK.OTHER_SOURCE.eq(key.source).and(ITEM_LINK.OTHER_ITEM_ID.eq(key.id))),
+        ).execute()
+    }
 }

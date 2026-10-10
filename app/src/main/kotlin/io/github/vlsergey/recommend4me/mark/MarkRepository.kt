@@ -99,4 +99,18 @@ class MarkRepository(private val sourceId: String, private val db: DSLContext) {
                 it.verdict!!.toInt(),
             )
         }
+
+    /**
+     * The marks of the item removed from the library — of its pictures, of its reviews — and every
+     * word on a match it is in: as the marked one, when it is of this source; as the match, of any.
+     */
+    fun forget(key: ItemKey) = db.transaction { c ->
+        val tx = c.dsl()
+        if (key.source == sourceId) {
+            tx.deleteFrom(PICTURE_MARK).where(PICTURE_MARK.ITEM_ID.eq(key.id)).execute()
+            tx.deleteFrom(REVIEW_MARK).where(REVIEW_MARK.ITEM_ID.eq(key.id)).execute()
+            tx.deleteFrom(MATCH_FEEDBACK).where(MATCH_FEEDBACK.MARK_ITEM.eq(key.id)).execute()
+        }
+        tx.deleteFrom(MATCH_FEEDBACK).where(MATCH_FEEDBACK.MATCH_SOURCE.eq(key.source), MATCH_FEEDBACK.MATCH_ITEM.eq(key.id)).execute()
+    }
 }

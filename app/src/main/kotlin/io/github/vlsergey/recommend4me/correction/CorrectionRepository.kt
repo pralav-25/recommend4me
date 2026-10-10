@@ -134,6 +134,15 @@ class CorrectionRepository(private val db: DSLContext) {
     fun links(): List<Pair<String, String>> =
         db.select(ITEM_LINK.ITEM_ID, ITEM_LINK.OTHER_ITEM_ID).from(ITEM_LINK).fetch { it.value1()!! to it.value2()!! }
 
+    /** Every answer of the user on the item removed from the library, and its links to the source's other items. */
+    fun forget(itemId: String) = db.transaction { c ->
+        val tx = c.dsl()
+        tx.deleteFrom(FACET_CORRECTION).where(FACET_CORRECTION.ITEM_ID.eq(itemId)).execute()
+        tx.deleteFrom(FIELD_CORRECTION).where(FIELD_CORRECTION.ITEM_ID.eq(itemId)).execute()
+        tx.deleteFrom(FACET_COMPLETE).where(FACET_COMPLETE.ITEM_ID.eq(itemId)).execute()
+        tx.deleteFrom(ITEM_LINK).where(ITEM_LINK.ITEM_ID.eq(itemId).or(ITEM_LINK.OTHER_ITEM_ID.eq(itemId))).execute()
+    }
+
     companion object {
         private const val BATCH = 1000
     }

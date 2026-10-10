@@ -130,5 +130,16 @@ class ScenarioTest {
         assertEquals("A boy finds a dragon egg", items.getItem("test", "w1").body!!.texts.single().content)
         // The source's filter facet, and the kind and the universe the application gives every book
         assertEquals(listOf("test.tag", "kind", "universe"), items.listFacets("books").body!!.map { it.id })
+
+        // Removed from the library — gone from the site — with its grade, and not brought back by its page read again
+        corrections.correctFacet("test", "w1", FacetCorrection(facet = "tags", added = true, key = "magic"))
+        assertEquals(204, items.removeItem("test", "w1").statusCode.value())
+        assertEquals(404, items.getItem("test", "w1").statusCode.value())
+        assertEquals(0, list(view = ItemView.RATED).total)
+        assertEquals(setOf("w2", "w3"), list().items.map { it.item }.toSet())
+        capture("w1|Dragons|fantasy,dragons|A boy finds a dragon egg")
+        assertEquals(404, items.getItem("test", "w1").statusCode.value())
+        assertEquals(2, list().total)
+        assertEquals(404, items.removeItem("test", "w1").statusCode.value())
     }
 }

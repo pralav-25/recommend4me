@@ -26,11 +26,18 @@ class SourceContexts(private val stores: Stores, private val settings: Settings,
         override val items: ItemStore = Items(store, events)
         override val database: DSLContext get() = store.sourceDsl
         override val settings: SourceSettings = this@SourceContexts.settings.of(store.id)
-        override val signals: SiteSignals get() = store.signals
+        override val signals: SiteSignals = object : SiteSignals by store.signals {
+            override fun set(itemId: String, signal: String, value: String?) {
+                if (!store.items.removed(itemId)) store.signals.set(itemId, signal, value)
+            }
+        }
         override val folder: Path get() = store.folder
 
-        override fun keepPage(url: String, html: String, itemId: String?) =
+        override fun keepPage(url: String, html: String, itemId: String?) {
+            // A page of a work removed from the library is not kept: read again, it would bring nothing back, and it weighs
+            if (itemId != null && store.items.removed(itemId)) return
             store.pages.keep(url, html, itemId, Instant.now(), store.source.parserVersion)
+        }
 
         override fun gradedItems(): Set<String> = store.ratings.gradedItems()
 
@@ -49,12 +56,21 @@ class SourceContexts(private val stores: Stores, private val settings: Settings,
         }
     }
 
+    /**
+     * The items as the source writes them. A work the user removed from the library ([ItemRepository.removed][io.github.vlsergey.recommend4me.item.ItemRepository.removed])
+     * is written no more: a list kept from before and read again, the work's own page opened, would
+     * bring it back — every write of it is let pass as done.
+     */
     private class Items(private val store: SourceStore, private val events: ApplicationEventPublisher) : ItemStore {
-        override fun upsert(item: ItemHead, now: Instant): Boolean = store.items.upsert(item, now)
+        private fun kept(itemId: String) = !store.items.removed(itemId)
+
+        override fun upsert(item: ItemHead, now: Instant): Boolean = kept(item.id) && store.items.upsert(item, now)
         override fun find(itemId: String): StoredItem? = store.items.find(itemId)
         override fun count(): Int = store.items.count()
         override fun latestUpdate(): Instant? = store.items.latestUpdate()
-        override fun setFacet(itemId: String, facet: String, values: List<FacetValue>) = store.items.setFacet(itemId, facet, standardised(itemId, facet, values))
+        override fun setFacet(itemId: String, facet: String, values: List<FacetValue>) {
+            if (kept(itemId)) store.items.setFacet(itemId, facet, standardised(itemId, facet, values))
+        }
 
         override fun nameFacetValues(facet: String, names: Map<String, String>) {
             val standard = store.schema.facet(facet)?.standard
@@ -76,17 +92,25 @@ class SourceContexts(private val stores: Stores, private val settings: Settings,
         }
         override fun facets(itemId: String): Map<String, List<String>> = store.items.facets(itemId)
         override fun forEachFacet(facet: String, action: (itemId: String, keys: List<String>) -> Unit) = store.items.forEachFacet(facet, action)
-        override fun setNumbers(itemId: String, numbers: Map<String, Double?>) = store.items.setNumbers(itemId, numbers)
-        override fun setTexts(itemId: String, texts: Map<String, String?>) = store.items.setTexts(itemId, texts)
+        override fun setNumbers(itemId: String, numbers: Map<String, Double?>) {
+            if (kept(itemId)) store.items.setNumbers(itemId, numbers)
+        }
+        override fun setTexts(itemId: String, texts: Map<String, String?>) {
+            if (kept(itemId)) store.items.setTexts(itemId, texts)
+        }
         override fun texts(itemId: String): Map<String, String> = store.items.texts(itemId)
         override fun setPictures(itemId: String, urls: List<String?>) {
+            if (!kept(itemId)) return
             store.files.delete(store.pictures.sync(itemId, urls))
             events.publishEvent(PicturesListed(store.id))
         }
-        override fun saveReviews(itemId: String, reviews: List<ReviewData>) = store.reviews.save(itemId, reviews)
+        override fun saveReviews(itemId: String, reviews: List<ReviewData>) {
+            if (kept(itemId)) store.reviews.save(itemId, reviews)
+        }
         override fun reviewIds(itemId: String): Set<String> = store.reviews.ids(itemId)
         override fun reviewContents(itemId: String): Map<String, String> = store.reviews.ofItem(itemId).associate { it.reviewId to it.content }
         override fun saveParts(itemId: String, parts: List<PartData>) {
+            if (!kept(itemId)) return
             store.parts.save(itemId, parts)
             if (parts.any { it.content != null }) events.publishEvent(PartsSaved(store.id))
         }
