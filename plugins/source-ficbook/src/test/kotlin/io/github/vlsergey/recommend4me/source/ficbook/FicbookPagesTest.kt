@@ -22,6 +22,14 @@ class FicbookPagesTest {
     }
 
     @Test
+    fun `the site's recommendations are a list of cards, every page of it`() {
+        // The same cards as a fandom's list (article.fanfic-inline), checked on the page itself
+        listOf("https://ficbook.net/recommendation", "https://ficbook.net/recommendation?p=2").forEach { url ->
+            assertTrue(source.capturePatterns.any { it.matches(url) }, "$url is wanted")
+        }
+    }
+
+    @Test
     fun `the cards of a list give the works, the promoted ones left out`() {
         val context = MemorySourceContext()
         assertEquals(listOf(work, "9876543"), capture(context, "https://ficbook.net/fanfiction/no_fandom/originals", "fandom-originals.html"))
