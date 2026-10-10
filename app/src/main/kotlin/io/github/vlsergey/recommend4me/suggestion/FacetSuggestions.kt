@@ -142,12 +142,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     private fun lockOf(store: SourceStore, facet: FacetDef) = locks.computeIfAbsent("${store.id}/${facet.key}") { ReentrantLock() }
 
     /**
-     * The chances of one item of the [facets] made now, for a page that asks for them, by the
-     * weights fitted last (fitted now only when there are none); not waiting long for a refresh of
-     * a facet under way — that one is left to the background.
-     */
-    /**
-     * The item's chances of the [facets] made now, by the weights fitted last. Not under the lock of
+     * The item's chances of the [facets] made now, by the weights fitted last — a facet never fitted
+     * is fitted in the background, the page does not wait for it. Not under the lock of
      * the facet: a refit of the whole facet takes seconds, and the user waits for these. A refit
      * under way may write the item's chances made of what it read before; their fingerprint then
      * tells they are stale, and they are made again.
@@ -198,16 +194,12 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id }
         val kept = stored?.let { suggester.unpack(it.content, data.task) }
         if (kept == null && only != null) {
-            // Worked out before with nothing to learn from, and still none: the item waits for the
-            // background, not the page for a fitting of the whole facet that has nothing to fit.
-            // The first answer of the user is something: fitted now, the candidates follow it
-            val nothing = store.corrections.allFacets().none { it.facet == facet.key && it.added }
-            if (nothing && store.suggestions.fingerprints(facet.key).isNotEmpty()) {
-                nothingToGive(store, facet, data, only, now)
-                return changed(store.id)
-            }
-            // Never fitted: fitted now on the whole facet, every item's mentions counted
-            return refreshFacet(store, facet, suggester, encoder, null)
+            // Not fitted, or fitted on what no longer fits: a page never waits for a fitting of the
+            // whole facet — minutes for the characters of every universe. The facet is fitted in the
+            // background; an item that never had chances is kept with none until then, so a read
+            // does not ask again (the characters are offered without chances meanwhile)
+            if (store.suggestions.fingerprint(only, facet.key) == null) nothingToGive(store, facet, data, only, now)
+            return changed(store.id)
         }
         val current = kept != null && stored.basis == data.basis
         val fitted = when {
