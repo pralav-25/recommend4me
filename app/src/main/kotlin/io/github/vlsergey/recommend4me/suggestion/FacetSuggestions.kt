@@ -343,7 +343,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                 }
                 val universes = type.universes.all()
                 val all = universes.associate { it.value to it.name }
-                // An alternative history and an original work: our world, or a world of its own
+                // Realism, an alternative history and an original work: our world, ours changed, or a world of its own
                 fun original(id: String) = kinds[id].orEmpty().let { it.isNotEmpty() && it.all { k -> k in UniverseFacets.UNIVERSELESS } }
                 // A universe is named by its characters ("Гарри", "Хогвартс") and by its own name
                 val ofCharacter = HashMap<String, MutableSet<String>>()

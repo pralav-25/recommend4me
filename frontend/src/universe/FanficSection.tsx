@@ -30,18 +30,20 @@ const PAIRINGS = "pairings";
 export const FANFIC_FACETS: readonly string[] = [KIND, UNIVERSE, CHARACTERS, PAIRINGS];
 
 const FANFICTION = "fanfiction";
+const REALISM = "realism";
 const ALTERNATIVE_HISTORY = "alternative-history";
 const ORIGINAL = "original";
 
 /** The kinds of a work, as the control names them. */
 const KINDS = [
   { key: FANFICTION, name: "Фанфик" },
+  { key: REALISM, name: "Реализм" },
   { key: ALTERNATIVE_HISTORY, name: "Альтернативная история" },
   { key: ORIGINAL, name: "Оригинал" },
 ];
 
-/** The kinds of a work of no universe of another's: our world, or a world of its own. */
-const UNIVERSELESS: readonly string[] = [ALTERNATIVE_HISTORY, ORIGINAL];
+/** The kinds of a work of no universe of another's: our world, ours changed, or a world of its own. */
+const UNIVERSELESS: readonly string[] = [REALISM, ALTERNATIVE_HISTORY, ORIGINAL];
 
 /** Known to have no universe: every kind the work has, the user's answers counted, is of no universe. */
 const universeless = (kinds: FacetValueInfo[]) => kinds.length > 0 && kinds.every((k) => UNIVERSELESS.includes(k.key));
@@ -93,7 +95,7 @@ export function FanficSection({
     <section className="flex flex-col gap-4">
       <h4 className="text-sm font-semibold">Фанфик</h4>
       <KindChoice
-        label={labelOf(KIND, "Фанфик, альтернативная история или оригинал")}
+        label={labelOf(KIND, "Тип вселенной")}
         values={valuesOf(KIND)}
         suggested={suggestedOf(KIND)}
         corrections={corrections}
@@ -230,7 +232,7 @@ function Chips({
 }
 
 /**
- * Fan fiction, an alternative history or an original work: a button each, the one the user chose
+ * Fan fiction, realism, an alternative history or an original work: a button each, the one the user chose
  * pressed. Each shows the model's chance of it while the user has not answered. Choosing a kind
  * confirms it and says no to the others the work has; pressing the chosen one again takes the
  * answers back.
@@ -266,7 +268,7 @@ function KindChoice({
 
   return (
     <Block label={label}>
-      <div className="grid grid-cols-3 gap-1" role="group" aria-label={label}>
+      <div className="grid grid-cols-2 gap-1 sm:grid-cols-4" role="group" aria-label={label}>
         {KINDS.map((k) => {
           const v = valueOf(k.key);
           const s = suggested.find((x) => x.key === k.key);

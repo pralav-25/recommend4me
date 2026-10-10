@@ -8,7 +8,7 @@ import io.github.vlsergey.recommend4me.source.SourceSchema
  * Their values are kept as the user's corrections of the work's source — the site has none — and
  * worked out by the model, as any facet's:
  *
- * - the kind — fan fiction, an alternative history, an original work — is the site's when it
+ * - the kind — fan fiction, realism, an alternative history, an original work — is the site's when it
  *   says, suggested otherwise;
  * - the universes are worked out of every universe of the dictionary for a work that is not known
  *   to have none, and given to it: the work's characters are chosen within them;

@@ -469,10 +469,13 @@ class SiteTest {
         assertTrue(other(reopened))
         this.universes.removeUniverse("books", "fake", "U1")
 
-        // An original work and an alternative history have no universe of another's
+        // An original work, an alternative history and a realistic one have no universe of another's
         capture("o1|Our own world|space|Ships of the fleet|")
         corrections.correctFacet("site", "o1", FacetCorrection(facet = "kind", added = true, key = "alternative-history"))
+        capture("o2|A school year|school|Lessons and friends|")
+        corrections.correctFacet("site", "o2", FacetCorrection(facet = "kind", added = true, key = "realism"))
         suggestions.refresh(store)
         assertEquals(emptyList(), suggestionsApi.getCandidates("site", "o1", "universe").body!!.map { it.key })
+        assertEquals(emptyList(), suggestionsApi.getCandidates("site", "o2", "universe").body!!.map { it.key })
     }
 }

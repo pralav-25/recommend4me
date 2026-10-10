@@ -184,7 +184,8 @@ Every work of the type has four facets of the application's own beside the sourc
 (`UniverseFacets`), their values kept as the user's corrections and worked out by the model as
 any facet's:
 
-- `kind` — fan fiction or an original work: the site's when it says (ficbook by the fandom
+- `kind` — fan fiction, realism (our world as it is), an alternative history or an original
+  work, the last three of no universe: the site's when it says (ficbook by the fandom
   "originals", author.today by the genre "Фанфик"), suggested otherwise;
 - `universe` — the universes of the dictionary the work is fan fiction of, one or several:
   suggested from the work's fandom, tags and texts to a work not known to be original, to be
