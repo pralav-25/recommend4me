@@ -18,7 +18,7 @@ class BilinearBench {
         assumeTrue(file != null, "BENCH_TASK names a kept task")
         val task = SuggestionTaskFile.read(Path.of(file!!))
         val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)
-        println("BENCH ${task.itemCount} items × ${task.valueCount} values, ${problem.active.sumOf { it.size.toLong() }} pairs that weigh anything, ${problem.hintPairs} pairs of names")
+        println("BENCH ${task.itemCount} items × ${task.valueCount} values, ${problem.active.sumOf { it.size.toLong() }} pairs that weigh anything, ${problem.hintPairs} pairs of names in ${problem.hintGroups.size} groups")
         // On the card when there is one, as the application fits
         val onnx = Onnx(defaultModelsDir(), gpu = true)
         var started = System.nanoTime()

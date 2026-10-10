@@ -66,8 +66,13 @@ class BilinearSuggester internal constructor(
         var onCard = false
         for (rank in ranks) {
             // The task put on the card once for every fold and penalty of the rank, when there is a
-            // card: closed with the fitting, and the card's memory given back
-            val card = onnx?.let { StepOnCard.open(it, problem, rank) }
+            // card: closed with the fitting, and the card's memory given back. Kept only where its
+            // step is the faster: a node of the graph is a launch on the card, and names in hundreds
+            // of small groups — the pairings' 301 — are thousands of launches, slower than the
+            // processor's whole step
+            val card = onnx?.let { StepOnCard.open(it, problem, rank) }?.let { opened ->
+                if (faster(problem, rank, opened)) opened else { opened.close(); null }
+            }
             onCard = onCard || card != null
             card.use { tried += fitRank(problem, rank, lambdas, last, card) }
         }
@@ -94,6 +99,26 @@ class BilinearSuggester internal constructor(
 
     /** A penalty tried: what its folds held out, the folds' weights, how many losses each took and how long. */
     private class Tried(val rank: Int, val lambda: Double, val held: Bilinear.Held, val unseen: Bilinear.Held, val fitted: Fitted, val losses: List<Int>, val millis: Long)
+
+    /**
+     * Whether a step on the [card] is faster than on the processor, measured: one loss and gradient
+     * on each, from the same weights, after one before it that opens what the first opens — the
+     * card's session its handles, the processor's model its buffers.
+     */
+    private fun faster(problem: Problem, rank: Int, card: StepOnCard): Boolean {
+        val trains: (Int) -> Boolean = { problem.foldOf[it] != 0 }
+        val millis = listOf(card, null).map { on ->
+            val model = Bilinear(problem, rank, on)
+            val theta = model.start(1)
+            val grad = FloatArray(model.size)
+            model.lossAndGradient(theta, grad, STRONGEST.toFloat(), trains)
+            val started = System.nanoTime()
+            model.lossAndGradient(theta, grad, STRONGEST.toFloat(), trains)
+            (System.nanoTime() - started) / 1e6
+        }
+        log.info("a step on the card {} ms, on the processor {} ms", "%.1f".format(millis[0]), "%.1f".format(millis[1]))
+        return millis[0] < millis[1]
+    }
 
     /** Every penalty of [lambdas] at [rank], the folds fitted side by side — on the [card] when there is one. */
     private fun fitRank(problem: Problem, rank: Int, lambdas: List<Double>, last: Fitted?, card: StepOnCard?): List<Tried> =
