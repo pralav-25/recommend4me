@@ -47,6 +47,12 @@ data class FacetChancesChanged(val source: String, val ids: List<String>)
 /** The values of a facet an item lacks and more likely has than not, as the interface shows them. */
 class ItemFacetSuggestions(val facet: FacetDef, val suggested: List<Chance>, val names: Map<String, String>)
 
+/** A value a work may be given: the model's chance of it when it has one, how often the work's texts name it when counted. */
+class FacetCandidate(val key: String, val chance: Double?, val mentions: Int?)
+
+/** The values the user may yet give a work of one facet, the likeliest first, with their names. */
+class ItemFacetCandidates(val facet: FacetDef, val candidates: List<FacetCandidate>, val names: Map<String, String>)
+
 /**
  * WHAT THE MODEL SAYS OF THE VALUES OF FACETS, by the suggester plugin, for every facet a source
  * marks [suggest][FacetDef.suggest] or [infer][FacetDef.infer]: the chance of every value a work
@@ -551,10 +557,12 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
 
     /**
      * Every value of the [facet] the item may be given and neither has nor was answered on, with its
-     * chance and how often the item's texts name it: the likeliest first, then the most named. Null
-     * for an item or a facet the model does not work on.
+     * chance and how often the item's texts name it: the likeliest first, then the most named. A
+     * facet of characters the model has no chances of yet — none answered on to learn from — offers
+     * every character of the work's universes all the same, without a chance, the most named first.
+     * Null for an item or a facet the model does not work on.
      */
-    fun candidates(store: SourceStore, itemId: String, facet: String): ItemFacetSuggestions? {
+    fun candidates(store: SourceStore, itemId: String, facet: String): ItemFacetCandidates? {
         val facets = facetsOf(store)
         val def = facets.find { it.key == facet } ?: return null
         if (store.items.find(itemId) == null) return null
@@ -571,9 +579,18 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         // A character of the work's other facet of characters is no candidate here
         val out = leftOut(store, facet)(itemId)
         // A value the model gives the work is the work's already
-        val candidates = chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
-            .sortedWith(compareByDescending<Chance> { it.chance }.thenByDescending { it.mentions ?: 0 })
-        return ItemFacetSuggestions(def, candidates, store.items.facetNames(facet, candidates.map { it.key }))
+        val scored = chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
+            .map { FacetCandidate(it.key, it.chance, it.mentions) }
+        val unscored = if (facet !in UniverseFacet.CHARACTER_FACETS || chances.any { !it.had } || facet in store.corrections.completeOf(itemId)) emptyList() else {
+            val vocabulary = universeVocabulary(store, def)
+            val named = vocabulary?.mentions(store)?.invoke(itemId)
+            vocabulary?.allowed?.invoke(itemId).orEmpty()
+                .filter { it !in answered && it !in current && it !in out && chances.none { c -> c.key == it } }
+                .map { FacetCandidate(it, null, named?.let { n -> n[it] ?: 0 }) }
+        }
+        val candidates = (scored + unscored)
+            .sortedWith(compareByDescending<FacetCandidate> { it.chance ?: -1.0 }.thenByDescending { it.mentions ?: 0 })
+        return ItemFacetCandidates(def, candidates, store.items.facetNames(facet, candidates.map { it.key }))
     }
 
     /**

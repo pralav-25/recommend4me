@@ -33,7 +33,7 @@ class SuggestionsController(private val stores: Stores, private val suggestions:
         // A universe and a character are entries of a catalogue: their pages there, as the dictionary keeps them
         val type = stores.typeOf(source)
         val pages = if (type.type.universes && facet in PAGED) UniverseFacet.pages(type.universes) else emptyMap()
-        return ResponseEntity.ok(found.suggested.map { Candidate(it.key, found.names[it.key] ?: it.key, it.chance, it.mentions, pages[it.key]) })
+        return ResponseEntity.ok(found.candidates.map { Candidate(it.key, found.names[it.key] ?: it.key, it.chance, it.mentions, pages[it.key]) })
     }
 
     override fun getMentions(source: String, item: String, facet: String, value: String): ResponseEntity<List<MentionQuote>> {

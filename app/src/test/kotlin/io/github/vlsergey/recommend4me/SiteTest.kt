@@ -452,6 +452,9 @@ class SiteTest {
         // A character is a work's main one or its secondary one: never shown, given or offered in both
         fun keysOf(facet: String) = items.getItem("site", "n1").body!!.allFacets.find { it.facet == facet }?.propertyValues.orEmpty().map { it.key }
         fun candidatesOf(facet: String) = suggestionsApi.getCandidates("site", "n1", facet).body!!.map { it.key }
+        // No work has a secondary character yet: nothing to learn from, every character of the universe offered all the same
+        val untaught = suggestionsApi.getCandidates("site", "n1", "secondary-characters").body!!
+        assertTrue(untaught.isNotEmpty() && untaught.all { it.chance == null }, "secondary $untaught")
         corrections.correctFacet("site", "n1", FacetCorrection(facet = "characters", added = true, key = "fake:C1"))
         assertTrue("fake:C1" !in keysOf("secondary-characters") && "fake:C1" !in candidatesOf("secondary-characters"), "secondary ${keysOf("secondary-characters")}")
         assertTrue("fake:C2" in keysOf("secondary-characters") + candidatesOf("secondary-characters") || "fake:C2" in keysOf("characters"))
