@@ -5,6 +5,8 @@ import io.github.vlsergey.recommend4me.database.source.tables.references.TEXT_VE
 import io.github.vlsergey.recommend4me.vector.Vectors
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * The vectors of the texts of one source's items, kept with the hash of the text and the encoder
@@ -13,6 +15,13 @@ import org.jooq.impl.DSL
  * text, so a text is encoded once.
  */
 class TextVectorRepository(private val db: DSLContext) {
+
+    /**
+     * Held while a vector is written: for milliseconds, not for an encoding. The texts of an item
+     * refreshed after a page and the source's whole refresh may write the same text together, and
+     * H2's MERGE of the second one meets the first one's row, which its own check did not see.
+     */
+    private val writing = ReentrantLock()
 
     /** The hash of every stored vector of [encoder]: (item, text key) to hash. */
     fun hashes(encoder: String, itemId: String? = null): Map<Pair<String, String>, String> =
@@ -29,12 +38,12 @@ class TextVectorRepository(private val db: DSLContext) {
 
     fun save(itemId: String, textKey: String, encoder: String, hash: String, vector: FloatArray) {
         val packed = Vectors.half(vector)
-        db.insertInto(TEXT_VECTOR)
+        val merge = db.insertInto(TEXT_VECTOR)
             .set(TEXT_VECTOR.ITEM_ID, itemId).set(TEXT_VECTOR.TEXT_KEY, textKey)
             .set(TEXT_VECTOR.ENCODER, encoder).set(TEXT_VECTOR.TEXT_HASH, hash).set(TEXT_VECTOR.VEC, packed)
             .onDuplicateKeyUpdate()
             .set(TEXT_VECTOR.ENCODER, encoder).set(TEXT_VECTOR.TEXT_HASH, hash).set(TEXT_VECTOR.VEC, packed)
-            .execute()
+        writing.withLock { merge.execute() }
     }
 
     fun delete(itemId: String, textKey: String) {
@@ -80,11 +89,13 @@ class TextVectorRepository(private val db: DSLContext) {
     /** Stores vectors of short texts; one of another encoder under the same key is replaced. */
     fun savePhrases(rows: List<Pair<Long, FloatArray>>, encoder: String) {
         rows.chunked(BATCH).forEach { chunk ->
-            db.batch(chunk.map { (key, v) ->
+            val merges = db.batch(chunk.map { (key, v) ->
                 val packed = Vectors.half(v)
                 db.insertInto(PHRASE_VECTOR).set(PHRASE_VECTOR.TEXT_KEY, key).set(PHRASE_VECTOR.ENCODER, encoder).set(PHRASE_VECTOR.VEC, packed)
                     .onDuplicateKeyUpdate().set(PHRASE_VECTOR.ENCODER, encoder).set(PHRASE_VECTOR.VEC, packed)
-            }).execute()
+            })
+            // The same phrase met by two encodings at once races as a text's vector does
+            writing.withLock { merges.execute() }
         }
     }
 
