@@ -85,6 +85,17 @@ paths:
             type: array
             items:
               type: string
+        - name: range
+          in: query
+          description: |
+            Only the works whose number lies within a range, as "<number id>=<from>..<to>"
+            (ContentTypeInfo.filterNumbers), both ends included; an end left out is open - "ficbook.parts=1..1",
+            "ficbook.parts=10..". A work of a source that has the number and no value of it is not
+            shown; the works of a source without the number are not limited by it.
+          schema:
+            type: array
+            items:
+              type: string
         - name: offset
           in: query
           schema:
@@ -1334,7 +1345,7 @@ components:
 
     ContentTypeInfo:
       type: object
-      required: [id, title, grades, verb, sources, numbers, universes]
+      required: [id, title, grades, verb, sources, numbers, filterNumbers, universes]
       properties:
         id:
           type: string
@@ -1357,6 +1368,11 @@ components:
         numbers:
           type: array
           description: The numbers the list can be sorted by
+          items:
+            $ref: '#/components/schemas/NumberInfo'
+        filterNumbers:
+          type: array
+          description: The numbers the list can be limited to a range of (listItems, range)
           items:
             $ref: '#/components/schemas/NumberInfo'
 

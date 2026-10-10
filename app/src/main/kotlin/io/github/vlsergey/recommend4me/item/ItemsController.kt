@@ -60,13 +60,16 @@ class ItemsController(
 
     override fun listItems(
         type: String, view: ApiItemView, sort: ItemSort, sortNumber: String?, search: String?,
-        hidden: List<String>?, hiddenWithout: List<String>?, source: List<String>?, offset: Int, limit: Int,
-    ): ResponseEntity<ItemPage> = ResponseEntity.ok(
-        list.page(
-            type, ItemView.valueOf(view.name), ItemOrder.valueOf(sort.name), sortNumber, search,
-            hidden.orEmpty().toSet(), hiddenWithout.orEmpty().toSet(), source?.toSet()?.takeIf { it.isNotEmpty() }, offset, limit,
-        ),
-    )
+        hidden: List<String>?, hiddenWithout: List<String>?, source: List<String>?, range: List<String>?, offset: Int, limit: Int,
+    ): ResponseEntity<ItemPage> {
+        val ranges = range.orEmpty().map { NumberRange.parse(it) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Диапазон «$it» не понят: нужно «число=от..до»") }
+        return ResponseEntity.ok(
+            list.page(
+                type, ItemView.valueOf(view.name), ItemOrder.valueOf(sort.name), sortNumber, search,
+                hidden.orEmpty().toSet(), hiddenWithout.orEmpty().toSet(), source?.toSet()?.takeIf { it.isNotEmpty() }, ranges, offset, limit,
+            ),
+        )
+    }
 
     override fun listFacets(type: String): ResponseEntity<List<FacetFilter>> = ResponseEntity.ok(list.facets(type))
 

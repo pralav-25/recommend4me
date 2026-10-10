@@ -25,6 +25,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { typeIcon, useTypes } from "@/contenttype/types";
 import { FacetFilters, NOTHING_HIDDEN, validSelection, type FacetSelection } from "@/facet/FacetFilters";
+import { NumberFilters, validRanges, type NumberRanges } from "@/number/NumberFilters";
 import { ItemBoard, type Layout } from "@/item/ItemBoard";
 import { HashItemDialog } from "@/item/ItemRefDialog";
 import { ITEMS } from "@/item/lists";
@@ -96,6 +97,8 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
   const [storedFacets, setFacets] = usePref<FacetSelection>(`hidden:${type.id}`, NOTHING_HIDDEN);
   const facets = useMemo(() => validSelection(storedFacets), [storedFacets]);
   const [hiddenSources, setHiddenSources] = usePref<string[]>(`hiddenSources:${type.id}`, []);
+  const [storedRanges, setRanges] = usePref<NumberRanges>(`ranges:${type.id}`, {});
+  const ranges = useMemo(() => validRanges(type, storedRanges), [type, storedRanges]);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [total, setTotal] = useState<number | undefined>();
@@ -308,6 +311,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
           <ErrorBoundary compact resetKey={type.id} title="Фильтры не показываются">
             <SourceFilter type={type} hidden={hiddenSources} onChange={setHiddenSources} />
             <FacetFilters type={type.id} value={facets} onChange={setFacets} />
+            <NumberFilters type={type} value={storedRanges} onChange={setRanges} />
           </ErrorBoundary>
 
           {fresh && (
@@ -351,7 +355,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
         <main className="pb-10">
           {/* Drawn anew when what it lists changes: another type, view, sorting, search or filter */}
           <ErrorBoundary resetKey={JSON.stringify([type.id, view, sort, search, facets, sources, layout])} title="Список работ не отрисовался">
-            <ItemBoard type={type} view={view} sort={sort} search={search} facets={facets} sources={sources} layout={layout} onTotal={onTotal} />
+            <ItemBoard type={type} view={view} sort={sort} search={search} facets={facets} sources={sources} ranges={ranges} layout={layout} onTotal={onTotal} />
           </ErrorBoundary>
         </main>
       </div>

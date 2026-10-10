@@ -172,6 +172,8 @@ class NumberDef(
     val shared: String? = null,
     /** What the number tells of the work, for the card to put it where it decides; null — one among the rest. */
     val role: NumberRole? = null,
+    /** The list can be limited to the works whose number lies within a range: from so many, up to so many. */
+    val filterable: Boolean = false,
 )
 
 /**

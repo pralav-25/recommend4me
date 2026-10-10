@@ -4,6 +4,7 @@ import { InboxIcon, Loader2Icon } from "lucide-react";
 import { api, refKey, unwrap, type ContentTypeInfo, type Grade, type ItemSummary, type ItemView } from "@/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { isFiltered, type FacetSelection } from "@/facet/FacetFilters";
+import { rangeParams, type NumberRanges } from "@/number/NumberFilters";
 import { ItemCard } from "./ItemCard";
 import { ItemDialog } from "./ItemDialog";
 import { ItemRow } from "./ItemRow";
@@ -24,11 +25,13 @@ type Props = {
   facets: FacetSelection;
   /** The sources shown; all when empty. */
   sources: string[];
+  /** The ranges of numbers the list is limited to. */
+  ranges: NumberRanges;
   layout: Layout;
   onTotal: (total: number | undefined) => void;
 };
 
-export function ItemBoard({ type, view, sort, search, facets, sources, layout, onTotal }: Props) {
+export function ItemBoard({ type, view, sort, search, facets, sources, ranges, layout, onTotal }: Props) {
   const [selected, setSelected] = useState(0);
   const [opened, setOpened] = useState<number | null>(null);
   const cards = useRef(new Map<string, HTMLElement>());
@@ -37,7 +40,7 @@ export function ItemBoard({ type, view, sort, search, facets, sources, layout, o
   const rate = useRateItem();
 
   const list = useInfiniteQuery({
-    queryKey: [ITEMS, type.id, view, sort, search, facets, sources],
+    queryKey: [ITEMS, type.id, view, sort, search, facets, sources, ranges],
     initialPageParam: 0,
     queryFn: async ({ pageParam }) =>
       unwrap(
@@ -52,6 +55,7 @@ export function ItemBoard({ type, view, sort, search, facets, sources, layout, o
               hidden: facets.hidden.length ? facets.hidden : undefined,
               hiddenWithout: facets.hiddenWithout.length ? facets.hiddenWithout : undefined,
               source: sources.length ? sources : undefined,
+              range: Object.keys(ranges).length ? rangeParams(ranges) : undefined,
               offset: pageParam,
               limit: PAGE_SIZE,
             },
@@ -170,7 +174,7 @@ export function ItemBoard({ type, view, sort, search, facets, sources, layout, o
   }
   if (list.isError) return <div className="py-20 text-center text-destructive">Ошибка загрузки: {list.error.message}</div>;
   if (items.length === 0) {
-    const allRated = view === "UNRATED" && !search && !isFiltered(facets) && sources.length === 0;
+    const allRated = view === "UNRATED" && !search && !isFiltered(facets) && sources.length === 0 && Object.keys(ranges).length === 0;
     return (
       <div className="flex flex-col items-center gap-3 py-24 text-muted-foreground">
         <InboxIcon className="size-12 opacity-50" />

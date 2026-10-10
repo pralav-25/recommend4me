@@ -20,6 +20,23 @@ import kotlin.math.abs
 enum class ItemView { UNRATED, RATED, ALL }
 enum class ItemOrder { SCORE, UPDATED, NUMBER, SURPRISE }
 
+/** The works whose number [numberId] lies within [from]..[to], both ends included; a null end is open. */
+class NumberRange(val numberId: String, val from: Double?, val to: Double?) {
+    operator fun contains(value: Double) = (from == null || value >= from) && (to == null || value <= to)
+
+    companion object {
+        /** "<number id>=<from>..<to>", an end left out open; null when it is not one. */
+        fun parse(text: String): NumberRange? {
+            val (id, range) = text.split('=', limit = 2).takeIf { it.size == 2 && it[0].isNotBlank() } ?: return null
+            val (from, to) = range.split("..", limit = 2).takeIf { it.size == 2 } ?: return null
+            // An end left out is open; one that is no number makes the whole no range
+            val low = from.takeIf { it.isNotBlank() }?.let { it.trim().toDoubleOrNull() ?: return null }
+            val high = to.takeIf { it.isNotBlank() }?.let { it.trim().toDoubleOrNull() ?: return null }
+            return NumberRange(id, low, high)
+        }
+    }
+}
+
 /**
  * The list of the works of a content type. H2 joins no two files, so the list is put together here
  * for each request from what each file says, read in one batch per file and only the columns the
@@ -51,6 +68,7 @@ class ItemList(
         hidden: Set<String>,
         hiddenWithout: Set<String>,
         sources: Set<String>?,
+        ranges: List<NumberRange>,
         offset: Int,
         limit: Int,
     ): ItemPage {
@@ -68,7 +86,7 @@ class ItemList(
             val versions = keys.associate { it.id to it.version }
             val grades = cards.graded(s.ratings.all(), versions).mapNotNull { (id, g) -> g.grade?.let { id to it } }.toMap()
             val predictions = type.models.predictions(s.id)
-            val numbers = if (order == ItemOrder.NUMBER && sortNumber != null) numberOf(s, sortNumber) else emptyMap()
+            val numbers = if (order == ItemOrder.NUMBER && sortNumber != null) numberOf(s, sortNumber).orEmpty() else emptyMap()
             // How far the model that had not seen a graded work puts it from where the user's grade
             // stands: beyond the lowest grade's place for a work of it is no surprise, nor beyond the highest's
             val surprises = if (order == ItemOrder.SURPRISE && places != null) {
@@ -84,10 +102,14 @@ class ItemList(
                 }.toMap()
             } else emptyMap()
             val passes = facetFilter(s, hiddenValues, hiddenWithout)
+            // The ranges of the numbers the source has, with their values: a source without one is not limited by it
+            val limits = ranges.mapNotNull { r -> numberOf(s, r.numberId)?.let { r to it } }
             keys.forEach { k ->
                 val key = ItemKey(s.id, k.id)
                 if (relevance != null && key !in relevance) return@forEach
                 if (passes != null && !passes(k.id)) return@forEach
+                // A work without the number is not known to be within the range: not shown
+                if (limits.any { (r, values) -> values[k.id]?.let { it !in r } ?: true }) return@forEach
                 rows += Row(key, k.updatedAt, k.id in grades, predictions[k.id], numbers[k.id] ?: surprises[k.id])
             }
         }
@@ -113,9 +135,9 @@ class ItemList(
         return ItemPage(total = sorted.size, items = cards.cards(type, pageKeys, matches, clusters))
     }
 
-    /** The values of the number [numberId] (shared, or "<source>.<key>") of the source's items, as the user corrected them. */
-    private fun numberOf(s: SourceStore, numberId: String): Map<String, Double> {
-        val def = s.schema.numbers.firstOrNull { FeatureNames.numberId(s.source, it) == numberId } ?: return emptyMap()
+    /** The values of the number [numberId] (shared, or "<source>.<key>") of the source's items, as the user corrected them; null when the source has no such number. */
+    private fun numberOf(s: SourceStore, numberId: String): Map<String, Double>? {
+        val def = s.schema.numbers.firstOrNull { FeatureNames.numberId(s.source, it) == numberId } ?: return null
         val site = s.items.number(def.key)
         val overrides = s.corrections.allFields().mapNotNull { (id, fields) ->
             fields[Corrected.numberField(def.key)]?.toDoubleOrNull()?.let { id to it }

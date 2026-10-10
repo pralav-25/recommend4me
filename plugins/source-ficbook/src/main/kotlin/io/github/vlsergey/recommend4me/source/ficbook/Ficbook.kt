@@ -50,7 +50,7 @@ class Ficbook : Source {
         numbers = listOf(
             NumberDef(WORDS, "Слов", NumberScale.LOG, sortable = true, role = NumberRole.SIZE),
             NumberDef(PAGES, "Страниц", NumberScale.LOG),
-            NumberDef(PARTS, "Частей", NumberScale.LOG),
+            NumberDef(PARTS, "Частей", NumberScale.LOG, filterable = true),
             NumberDef(LIKES, "Нравится", NumberScale.LOG, sortable = true, role = NumberRole.APPROVAL),
             NumberDef(COMMENTS, "Отзывы", NumberScale.LOG),
         ),

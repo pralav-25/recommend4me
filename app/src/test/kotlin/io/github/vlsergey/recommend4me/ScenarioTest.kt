@@ -61,7 +61,7 @@ class ScenarioTest {
         override val homepage = "https://test.example"
         override val schema = SourceSchema(
             facets = listOf(FacetDef("tag", "Тег", filter = true, searchWeight = 0.9f, onCard = true)),
-            numbers = listOf(NumberDef("likes", "Лайки", sortable = true)),
+            numbers = listOf(NumberDef("likes", "Лайки", sortable = true, filterable = true)),
             texts = listOf(TextDef("annotation", "Аннотация", block = "text:annotation")),
         )
         override val modes = setOf(SourceMode.BROWSER)
@@ -92,8 +92,9 @@ class ScenarioTest {
 
     private fun capture(body: String) = captures.capturePage(CaptureRequest("https://test.example/work/${body.substringBefore('|')}", body)).body!!
 
-    private fun list(view: ItemView = ItemView.ALL, sort: ItemSort = ItemSort.SCORE, sortNumber: String? = null, hidden: List<String>? = null) =
-        items.listItems("books", view, sort, sortNumber, null, hidden, null, null, 0, 60).body!!
+    private fun list(
+        view: ItemView = ItemView.ALL, sort: ItemSort = ItemSort.SCORE, sortNumber: String? = null, hidden: List<String>? = null, range: List<String>? = null,
+    ) = items.listItems("books", view, sort, sortNumber, null, hidden, null, null, range, 0, 60).body!!
 
     @Test
     fun `a captured page becomes an item that can be graded, corrected, filtered and sorted`() {
@@ -118,6 +119,14 @@ class ScenarioTest {
         assertEquals(listOf("w2"), notFantasy.items.map { it.item })
 
         assertEquals("w3", list(sort = ItemSort.NUMBER, sortNumber = "test.likes").items.first().item)
+        // Limited to a range of a number, both ends included, an end left out open
+        assertEquals(listOf("test.likes"), types.listTypes().body!!.single().filterNumbers.map { it.id })
+        assertEquals(setOf("w2", "w3"), list(range = listOf("test.likes=2..3")).items.map { it.item }.toSet())
+        assertEquals(setOf("w1", "w2"), list(range = listOf("test.likes=..2")).items.map { it.item }.toSet())
+        assertEquals(listOf("w3"), list(range = listOf("test.likes=3..")).items.map { it.item })
+        // A number no source has limits nothing; a range not understood is refused
+        assertEquals(3, list(range = listOf("other.parts=1..1")).total)
+        assertThrows<ResponseStatusException> { list(range = listOf("test.likes=a..2")) }
         assertEquals("A boy finds a dragon egg", items.getItem("test", "w1").body!!.texts.single().content)
         // The source's filter facet, and the kind and the universe the application gives every book
         assertEquals(listOf("test.tag", "kind", "universe"), items.listFacets("books").body!!.map { it.id })

@@ -59,6 +59,8 @@ class TypesController(private val stores: Stores) : TypesApi {
             },
             numbers = t.sources.flatMap { store -> store.schema.numbers.filter { it.sortable }.map { NumberInfo(FeatureNames.numberId(store.source, it), it.key, it.label) } }
                 .distinctBy { it.id },
+            filterNumbers = t.sources.flatMap { store -> store.schema.numbers.filter { it.filterable }.map { NumberInfo(FeatureNames.numberId(store.source, it), it.key, it.label) } }
+                .distinctBy { it.id },
         )
     })
 }
