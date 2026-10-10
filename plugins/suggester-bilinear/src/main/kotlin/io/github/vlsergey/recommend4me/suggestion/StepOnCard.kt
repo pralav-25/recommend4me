@@ -6,6 +6,7 @@ import io.github.vlsergey.recommend4me.onnx.Onnx
 import io.github.vlsergey.recommend4me.onnx.OnnxGraph
 import org.slf4j.LoggerFactory
 import java.nio.FloatBuffer
+import java.util.concurrent.CancellationException
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -59,6 +60,7 @@ internal class StepOnCard private constructor(
     )
 
     fun forward(theta: FloatArray, size: Int, named: Float, scale: Float): Forward = lock.withLock {
+        open()
         val bAt = dx * rank
         val eAt = bAt + dz * rank
         val biasAt = eAt + m * rank
@@ -103,6 +105,7 @@ internal class StepOnCard private constructor(
 
     /** Xᵀ dU and Zᵀ dV: the items' and the values' slopes carried to the weights of their features. */
     fun backward(du: FloatArray, dv: FloatArray): Pair<FloatArray, FloatArray> = lock.withLock {
+        open()
         val env = onnx.env
         val inputs = mapOf(
             "dU" to OnnxTensor.createTensor(env, FloatBuffer.wrap(du), longArrayOf(n.toLong(), rank.toLong())),
@@ -121,10 +124,25 @@ internal class StepOnCard private constructor(
         }
     }
 
-    override fun close() {
+    /**
+     * Closed under the lock of the runs: after the run under way, never during it. The folds go on
+     * side by side, and when one gives up (a newer change, an error) the fitting closes the step
+     * while the others may still be in a run — their sessions and tensors freed under them were the
+     * runtime reading freed memory, the whole process killed. A run asked for after is given up.
+     */
+    override fun close() = lock.withLock {
+        if (closed) return@withLock
+        closed = true
         forward.close()
         backward.close()
         data.forEach(OnnxTensor::close)
+    }
+
+    private var closed = false
+
+    /** A run of a step closed: given up, as the fitting it was of. */
+    private fun open() {
+        if (closed) throw CancellationException("the step on the card is closed")
     }
 
     companion object {
