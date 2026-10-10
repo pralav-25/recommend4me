@@ -27,7 +27,7 @@ class SimdTest {
             loss += max(z, 0.0) + ln1p(e)
             ((if (z >= 0) 1 / (1 + e) else e / (1 + e)) * scale).also { slope += it }
         }
-        val sums = DoubleArray(2)
+        val sums = FloatArray(2)
         Simd.logisticRow(row, shift, n, scale, sums)
         assertTrue(abs(sums[0] - loss) < 1e-4 * loss, "loss ${sums[0]} vs $loss")
         assertTrue(abs(sums[1] - slope) < 1e-4 * slope, "slope ${sums[1]} vs $slope")
@@ -53,26 +53,11 @@ class SimdTest {
                 (w[j] * ((if (z >= 0) 1 / (1 + e) else e / (1 + e)) - y[j]) * scale).also { slope += it }
             }
             val slopes = FloatArray(n)
-            val sums = DoubleArray(2)
+            val sums = FloatArray(2)
             Simd.weightedLogisticRow(row, shift, w, y, n, scale, slopes, sums)
             assertTrue(abs(sums[0] - loss) < 1e-4 * abs(loss) + 1e-5, "n=$n loss ${sums[0]} vs $loss")
             assertTrue(abs(sums[1] - slope) < 1e-4 * abs(slope) + 1e-5, "n=$n slope ${sums[1]} vs $slope")
             for (j in 0 until n) assertTrue(abs(slopes[j] - expected[j]) < 1e-6, "n=$n slope $j: ${slopes[j]} vs ${expected[j]}")
-        }
-    }
-
-    @Test
-    fun `the columns of rows are summed as the plain loop sums them`() {
-        val random = Random(5)
-        val rows = 37
-        val stride = 83
-        val m = Floats.of(FloatArray(3 + rows * stride) { random.nextFloat() - 0.5f })
-        // Not a whole number of lanes, and not from the first column
-        val sums = DoubleArray(stride) { 1.0 }
-        Simd.addColumns(m, 3, stride, rows, 5, 70, sums)
-        for (j in 0 until stride) {
-            val expected = 1.0 + if (j in 5 until 70) (0 until rows).sumOf { m[3 + it * stride + j].toDouble() } else 0.0
-            assertTrue(abs(sums[j] - expected) < 1e-9, "column $j: ${sums[j]} vs $expected")
         }
     }
 
@@ -85,5 +70,12 @@ class SimdTest {
         val y = b.copyOf()
         Simd.axpy(0.3, a, y)
         for (k in a.indices) assertTrue(abs(y[k] - (b[k] + 0.3 * a[k])) < 1e-15)
+        // And in single precision
+        val af = FloatArray(a.size) { a[it].toFloat() }
+        val bf = FloatArray(b.size) { b[it].toFloat() }
+        assertTrue(abs(Simd.dot(af, bf) - af.indices.sumOf { (af[it] * bf[it]).toDouble() }) < 1e-4)
+        val yf = bf.copyOf()
+        Simd.axpy(0.3f, af, yf)
+        for (k in af.indices) assertTrue(abs(yf[k] - (bf[k] + 0.3f * af[k])) < 1e-6)
     }
 }

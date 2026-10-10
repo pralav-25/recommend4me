@@ -44,17 +44,18 @@ class BilinearTest {
         val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)
         val model = Bilinear(problem, 3)
         val random = Random(9)
-        val theta = DoubleArray(model.size) { random.nextGaussian() * 0.3 }
-        val grad = DoubleArray(model.size)
+        val theta = FloatArray(model.size) { (random.nextGaussian() * 0.3).toFloat() }
+        val grad = FloatArray(model.size)
         val trains: (Int) -> Boolean = { problem.foldOf[it] != 0 }
-        model.lossAndGradient(theta, grad, 0.01, trains)
-        val scratch = DoubleArray(model.size)
+        model.lossAndGradient(theta, grad, 0.01f, trains)
+        val scratch = FloatArray(model.size)
         var worst = 0.0
         for (k in theta.indices step max(1, theta.size / 200)) {
-            val eps = 1e-3
+            // In single precision a central difference needs a step far above the float's resolution of the loss
+            val eps = 1e-2f
             val plus = theta.copyOf().also { it[k] += eps }
             val minus = theta.copyOf().also { it[k] -= eps }
-            val numeric = (model.lossAndGradient(plus, scratch, 0.01, trains) - model.lossAndGradient(minus, scratch, 0.01, trains)) / (2 * eps)
+            val numeric = (model.lossAndGradient(plus, scratch, 0.01f, trains) - model.lossAndGradient(minus, scratch, 0.01f, trains)).toDouble() / (2 * eps)
             worst = max(worst, abs(numeric - grad[k]) / max(1e-3, abs(numeric) + abs(grad[k])))
         }
         assertTrue(worst < 0.02, "the worst relative error $worst")

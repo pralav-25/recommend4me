@@ -50,7 +50,7 @@ class BilinearSuggester : FacetSuggester {
                 val unseen = Bilinear.Held()
                 // Every penalty from a fresh start: carried from a stronger one, the weights would start
                 // at nought, where the two sides' products have no gradient and stay
-                val step = lambda
+                val step = lambda.toFloat()
                 val thetas = IntStream.range(0, FOLDS).parallel()
                     .mapToObj { k -> models[k].fit(models[k].start(k.toLong() + 1), step, k) }.toList()
                 thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held, unseen) }
@@ -124,7 +124,7 @@ class BilinearSuggester : FacetSuggester {
                         s.take(row, 0, r * m, m)
                         task.examples[i].forEach { row[it] += w.pair[0] }
                         task.mentions[i]?.forEach { (v, count) -> if (v in 0 until m) row[v] += w.pair[1] * kotlin.math.ln1p(count.toDouble()).toFloat() }
-                        for (j in 0 until m) row[j] = Bilinear.sigmoid((row[j] + bias[j] + w.pair[2]).toDouble()).toFloat()
+                        for (j in 0 until m) row[j] = Bilinear.sigmoid(row[j] + bias[j] + w.pair[2])
                         out[k] = row
                     }
                 }
@@ -147,7 +147,8 @@ class BilinearSuggester : FacetSuggester {
     }
 
     companion object {
-        private const val FORMAT = 4
+        /** The version of what [pack] writes; 5: fitted in single precision, every facet fitted again. */
+        private const val FORMAT = 5
 
         /** The folds an item is held out in: four fifths of the items teach the model judging the fifth. */
         const val FOLDS = 5

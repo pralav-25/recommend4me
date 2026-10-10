@@ -10,9 +10,9 @@ import java.util.Random
 import java.util.stream.IntStream
 import kotlin.math.abs
 import kotlin.math.exp
-import kotlin.math.max
 import kotlin.math.ln
 import kotlin.math.ln1p
+import kotlin.math.max
 import kotlin.math.sqrt
 
 /**
@@ -133,6 +133,10 @@ internal class Problem(val task: SuggestionTask, val design: Design, val folds: 
  *
  * Learnt by the weighted logistic loss over every pair ([Problem]) with an L2 penalty [lambda] on
  * every weight, minimised by L-BFGS from a small random start.
+ *
+ * EVERYTHING IN SINGLE PRECISION — the weights, the gradient, every sum: what the model gives is a
+ * chance to show, not a number to compute further with, and floats go twice as many at once
+ * through the wide registers and OpenBLAS.
  */
 internal class Bilinear(private val p: Problem, val rank: Int) {
     private val n = p.n
@@ -172,6 +176,9 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
     private val gs = Floats(largest * widest)
     private val gdu = Floats(largest * rank)
     private val gdv = Floats(widest * rank)
+    /** A column of ones, and the sums of a group's columns it makes. */
+    private val ones = Floats.of(FloatArray(largest) { 1f })
+    private val columns = Floats(widest)
 
     /**
      * The start: A and B nought, so a weight grows only where the data lead it — along a direction
@@ -179,9 +186,9 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
      * judged by a random weight; the own coordinates of the values the training has pairs of small
      * and random, for the gradient not to be nought everywhere as at the very origin.
      */
-    fun start(seed: Long): DoubleArray {
+    fun start(seed: Long): FloatArray {
         val random = Random(seed)
-        val out = DoubleArray(size)
+        val out = FloatArray(size)
         val used = BooleanArray(m)
         val w = FloatArray(m)
         for (i in 0 until n) {
@@ -191,12 +198,12 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         p.hints.forEach { hint -> used[hint.value] = true; hint.against.forEach { used[it] = true } }
         val eAt = dx * rank + dz * rank
         val se = 0.1 / sqrt(rank.toDouble())
-        for (v in 0 until m) if (used[v]) for (q in 0 until rank) out[eAt + v * rank + q] = random.nextGaussian() * se
+        for (v in 0 until m) if (used[v]) for (q in 0 until rank) out[eAt + v * rank + q] = (random.nextGaussian() * se).toFloat()
         return out
     }
 
     /** The weights minimising the loss over the items not of [heldOut] (-1: every item), from [from]. */
-    fun fit(from: DoubleArray, lambda: Double, heldOut: Int, maxSteps: Int = MAX_STEPS): DoubleArray =
+    fun fit(from: FloatArray, lambda: Float, heldOut: Int, maxSteps: Int = MAX_STEPS): FloatArray =
         Lbfgs.minimize(from, maxSteps) { theta, grad -> lossAndGradient(theta, grad, lambda) { p.foldOf[it] != heldOut } }
 
     /** The weighted losses of held-out pairs, summed: Σw, Σw·l, Σw·l², Σw². */
@@ -223,7 +230,7 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
      * the values no item of the other folds has ([Problem.unseenOutside]) to [unseen] besides — how
      * the model judges a value it learnt nothing of but its name and groups.
      */
-    fun heldOutLoss(theta: DoubleArray, fold: Int, into: Held, unseen: Held? = null) {
+    fun heldOutLoss(theta: FloatArray, fold: Int, into: Held, unseen: Held? = null) {
         val fresh = if (unseen == null) null else p.unseenOutside(fold)
         scores(theta)
         val pair = theta.copyOfRange(size - PAIR, size)
@@ -240,7 +247,7 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             for (k in 0 until m) {
                 if (w[k] == 0f) continue
                 val z = row[k] + theta[bias + k] + pair[2]
-                val l = softplus(z) - y[k] * z
+                val l = (softplus(z) - y[k] * z).toDouble()
                 into.add(w[k].toDouble(), l)
                 if (fresh != null && fresh[k]) unseen!!.add(w[k].toDouble(), l)
             }
@@ -248,14 +255,14 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
     }
 
     /** S = (X A)(Z B + E)ᵀ into [s]; U and V kept for the gradient. */
-    private fun scores(theta: DoubleArray) {
-        for (k in 0 until dx * rank) aF[k] = theta[k].toFloat()
+    private fun scores(theta: FloatArray) {
+        aF.put(theta, 0, 0, dx * rank)
         val bAt = dx * rank
-        for (k in 0 until dz * rank) bF[k] = theta[bAt + k].toFloat()
+        bF.put(theta, bAt, 0, dz * rank)
         Blas.product(p.x.held, dx, n, dx, aF, rank, u)
         Blas.product(p.z.held, dz, m, dz, bF, rank, v)
         val eAt = bAt + dz * rank
-        for (k in 0 until m * rank) v[k] = v[k] + theta[eAt + k].toFloat()
+        for (k in 0 until m * rank) v[k] = v[k] + theta[eAt + k]
         for (j in 0 until m) for (q in 0 until rank) vt[q * m + j] = v[j * rank + q]
         Blas.product(u, rank, n, rank, vt, m, s)
         if (h > 0) hintCoordinates()
@@ -280,12 +287,12 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
      * The loss of every name read as a text that names its value and none of its rivals, weight 1 a
      * pair; its gradient into [duh], [dvHint] and the biases. Answers the loss summed, not averaged.
      */
-    private fun hintLoss(theta: DoubleArray, pair: DoubleArray, total: Double, gBias: DoubleArray, sums: DoubleArray): Double {
+    private fun hintLoss(theta: FloatArray, pair: FloatArray, total: Float, gBias: FloatArray, sums: FloatArray): Float {
         duh.clear()
         dvHint.fill(0f)
         val bias = size - PAIR - m
-        val named = ln(2.0)
-        var loss = 0.0
+        val named = ln(2.0).toFloat()
+        var loss = 0f
         p.hintGroups.forEach { group ->
             val k = group.rows.size
             val c = group.values.size
@@ -297,24 +304,24 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             // has thousands of names against thousands of characters. Every value of the row is
             // taken against the label nought at once, in the wide registers; the name's own value
             // is then set right: its label is one, and the text names it
-            val shift = FloatArray(c) { j -> (theta[bias + group.values[j]] + pair[2]).toFloat() }
-            val scale = (1 / total).toFloat()
-            val rowLoss = DoubleArray(k)
-            val rowSlope = DoubleArray(k)
-            val rowNamed = DoubleArray(k)
+            val shift = FloatArray(c) { j -> theta[bias + group.values[j]] + pair[2] }
+            val scale = 1 / total
+            val rowLoss = FloatArray(k)
+            val rowSlope = FloatArray(k)
+            val rowNamed = FloatArray(k)
             // The scores are taken where they lie, in the native memory of the product: not copied out and back
             IntStream.range(0, k).parallel().forEach { r ->
                 val own = group.positive[r]
                 val at = r * c
-                val before = if (own in 0 until c) (gs[at + own] + shift[own]).toDouble() else 0.0
-                val sums = DoubleArray(2)
+                val before = if (own in 0 until c) gs[at + own] + shift[own] else 0f
+                val sums = FloatArray(2)
                 Simd.logisticRow(gs, at, shift, c, scale, sums)
                 if (own in 0 until c) {
                     val z = before + pair[1] * named
                     val d = (sigmoid(z) - 1) / total
                     sums[0] += softplus(z) - z - softplus(before)
                     sums[1] += d - sigmoid(before) / total
-                    gs[at + own] = d.toFloat()
+                    gs[at + own] = d
                     rowNamed[r] = d * named
                 }
                 rowLoss[r] = sums[0]
@@ -323,12 +330,9 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             loss += rowLoss.sum()
             sums[1] += rowSlope.sum()
             sums[0] += rowNamed.sum()
-            // The slope of every value's bias: the sum of its column, in double precision, the columns shared out among the cores
-            val columnSums = DoubleArray(c)
-            IntStream.range(0, (c + COLUMNS - 1) / COLUMNS).parallel().forEach { part ->
-                Simd.addColumns(gs, 0, c, k, part * COLUMNS, minOf(c, (part + 1) * COLUMNS), columnSums)
-            }
-            for (j in 0 until c) gBias[group.values[j]] += columnSums[j]
+            // The slope of every value's bias: the sum of its column, by one product with a column of ones
+            Blas.transposedProduct(gs, c, k, c, ones, 1, columns)
+            for (j in 0 until c) gBias[group.values[j]] += columns[j]
             // The gradient of the group's coordinates, scattered back
             Blas.product(gs, c, k, c, gv, rank, gdu)
             Blas.transposedProduct(gs, c, k, c, gu, rank, gdv)
@@ -353,34 +357,34 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
     }
 
     /** The pair's own features of the item added to its row of scores — the common bias is added with every value's own. */
-    private fun addPair(i: Int, row: FloatArray, pair: DoubleArray) {
-        p.examples[i].forEach { row[it] += pair[0].toFloat() }
+    private fun addPair(i: Int, row: FloatArray, pair: FloatArray) {
+        p.examples[i].forEach { row[it] += pair[0] }
         val (named, counts) = p.mentions[i]
-        named.forEachIndexed { k, v -> row[v] += (pair[1] * counts[k]).toFloat() }
+        named.forEachIndexed { k, v -> row[v] += pair[1] * counts[k] }
     }
 
-    internal fun lossAndGradient(theta: DoubleArray, grad: DoubleArray, lambda: Double, trains: (Int) -> Boolean): Double {
+    internal fun lossAndGradient(theta: FloatArray, grad: FloatArray, lambda: Float, trains: (Int) -> Boolean): Float {
         scores(theta)
         val pair = theta.copyOfRange(size - PAIR, size)
         val bias = size - PAIR - m
         // The total weight first: the loss is a mean, so the penalty means the same at any size of the task
-        var total = 0.0
+        var total = 0f
         val w = FloatArray(m)
-        for (i in 0 until n) if (trains(i)) { p.weight.take(w, 0, i * m, m); for (k in 0 until m) total += w[k] }
+        for (i in 0 until n) if (trains(i)) { p.weight.take(w, 0, i * m, m); total += w.sum() }
         p.hints.forEach { total += 1 + it.against.size }
-        if (total == 0.0) total = 1.0
-        var loss = 0.0
+        if (total == 0f) total = 1f
+        var loss = 0f
         val row = FloatArray(m)
         val y = FloatArray(m)
         val gr = FloatArray(m)
-        val gBias = DoubleArray(m)
-        var gExample = 0.0
-        var gMention = 0.0
-        var gCommon = 0.0
+        val gBias = FloatArray(m)
+        var gExample = 0f
+        var gMention = 0f
+        var gCommon = 0f
         // Every value's own bias with the common one, and the scale of a slope: the loss of a row taken in the wide registers
-        val biases = FloatArray(m) { (theta[bias + it] + pair[2]).toFloat() }
-        val scale = (1 / total).toFloat()
-        val rowSums = DoubleArray(2)
+        val biases = FloatArray(m) { theta[bias + it] + pair[2] }
+        val scale = 1 / total
+        val rowSums = FloatArray(2)
         for (i in 0 until n) {
             gr.fill(0f)
             if (trains(i)) {
@@ -388,7 +392,7 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
                 p.weight.take(w, 0, i * m, m)
                 p.label.take(y, 0, i * m, m)
                 addPair(i, row, pair)
-                rowSums.fill(0.0)
+                rowSums.fill(0f)
                 Simd.weightedLogisticRow(row, biases, w, y, m, scale, gr, rowSums)
                 loss += rowSums[0]
                 gCommon += rowSums[1]
@@ -401,7 +405,7 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         }
         // The names as texts that name their values
         if (h > 0) {
-            val sums = DoubleArray(2)
+            val sums = FloatArray(2)
             loss += hintLoss(theta, pair, total, gBias, sums)
             gMention += sums[0]
             gCommon += sums[1]
@@ -416,27 +420,26 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         Blas.transposedProduct(p.z.held, dz, m, dz, dv, rank, db)
         val bAt = dx * rank
         val eAt = bAt + dz * rank
-        for (k in 0 until dx * rank) grad[k] = da[k].toDouble()
-        for (k in 0 until dz * rank) grad[bAt + k] = db[k].toDouble()
-        for (k in 0 until m * rank) grad[eAt + k] = dv[k].toDouble()
-        for (k in 0 until m) grad[bias + k] = gBias[k]
+        da.take(grad, 0, 0, dx * rank)
+        db.take(grad, bAt, 0, dz * rank)
+        dv.take(grad, eAt, 0, m * rank)
+        gBias.copyInto(grad, bias)
         grad[size - PAIR] = gExample
         grad[size - PAIR + 1] = gMention
         grad[size - PAIR + 2] = gCommon
         // The penalty on every weight: the pair's own too — a few answers on the site's examples
         // all of one kind would make the example's weight endless; but the common bias, the base
         // rate of every value, which the values' own biases are counted from
-        var penalty = 0.0
-        for (k in 0 until size - 1) {
-            penalty += theta[k] * theta[k]
-            grad[k] += 2 * lambda * theta[k]
-        }
+        val common = theta[size - 1]
+        Simd.axpy(2 * lambda, theta, grad)
+        grad[size - 1] -= 2 * lambda * common
+        val penalty = Simd.dot(theta, theta) - common * common
         return loss + lambda * penalty
     }
 
     /** The weights [theta] as kept. */
-    fun weights(theta: DoubleArray): Weights {
-        fun part(from: Int, count: Int) = FloatArray(count) { theta[from + it].toFloat() }
+    fun weights(theta: FloatArray): Weights {
+        fun part(from: Int, count: Int) = theta.copyOfRange(from, from + count)
         val bAt = dx * rank
         val eAt = bAt + dz * rank
         val biasAt = eAt + m * rank
@@ -451,10 +454,9 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         const val PAIR = 3
         const val MAX_STEPS = 300
 
-        /** The columns of the names' scores one core sums: a few cache lines of every row. */
-        private const val COLUMNS = 64
+        fun sigmoid(z: Float) = 1f / (1f + exp(-z))
 
-        fun sigmoid(z: Double) = 1.0 / (1.0 + exp(-z))
-        fun softplus(z: Double) = if (z > 30) z else ln(1.0 + exp(z))
+        /** ln(1 + eᶻ) as it holds for any z: the exponent of a large z would overflow a float. */
+        fun softplus(z: Float) = max(z, 0f) + ln1p(exp(-abs(z)))
     }
 }

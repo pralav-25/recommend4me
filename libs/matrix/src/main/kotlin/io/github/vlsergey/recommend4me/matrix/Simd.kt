@@ -77,13 +77,13 @@ object Simd {
      * precision, the exponent and the logarithm of a lane's worth at once: a large universe makes
      * tens of millions of these a step of a fitting.
      */
-    fun logisticRow(row: FloatArray, shift: FloatArray, n: Int, scale: Float, sums: DoubleArray) {
+    fun logisticRow(row: FloatArray, shift: FloatArray, n: Int, scale: Float, sums: FloatArray) {
         val seg = MemorySegment.ofArray(row)
         logistic(seg, 0, shift, null, null, n, scale, seg, 0, sums)
     }
 
     /** [logisticRow] of the row of [n] scores at [at] of [m], in place: read and written where they lie, not copied out and back. */
-    fun logisticRow(m: Floats, at: Int, shift: FloatArray, n: Int, scale: Float, sums: DoubleArray) =
+    fun logisticRow(m: Floats, at: Int, shift: FloatArray, n: Int, scale: Float, sums: FloatArray) =
         logistic(m.seg, at, shift, null, null, n, scale, m.seg, at, sums)
 
     /**
@@ -92,16 +92,16 @@ object Simd {
      * `w[j]·(σ(z) − y[j])·scale` is written into `slopes[j]` and summed into `sums[1]`. A pair of
      * weight nought adds nothing and has the slope nought.
      */
-    fun weightedLogisticRow(row: FloatArray, shift: FloatArray, w: FloatArray, y: FloatArray, n: Int, scale: Float, slopes: FloatArray, sums: DoubleArray) =
+    fun weightedLogisticRow(row: FloatArray, shift: FloatArray, w: FloatArray, y: FloatArray, n: Int, scale: Float, slopes: FloatArray, sums: FloatArray) =
         logistic(MemorySegment.ofArray(row), 0, shift, w, y, n, scale, MemorySegment.ofArray(slopes), 0, sums)
 
     private fun logistic(
         seg: MemorySegment, at: Int, shift: FloatArray, w: FloatArray?, y: FloatArray?, n: Int, scale: Float,
-        out: MemorySegment, outAt: Int, sums: DoubleArray,
+        out: MemorySegment, outAt: Int, sums: FloatArray,
     ) {
         val bytes = Float.SIZE_BYTES.toLong()
-        var loss = 0.0
-        var slope = 0.0
+        var loss = 0f
+        var slope = 0f
         if (on) {
             val sp = FloatVector.SPECIES_PREFERRED
             val width = sp.length()
@@ -140,8 +140,8 @@ object Simd {
                     slopeAcc = slopeAcc.add(d, mask)
                 }
             }
-            loss = lossAcc.reduceLanes(VectorOperators.ADD).toDouble()
-            slope = slopeAcc.reduceLanes(VectorOperators.ADD).toDouble()
+            loss = lossAcc.reduceLanes(VectorOperators.ADD)
+            slope = slopeAcc.reduceLanes(VectorOperators.ADD)
         } else for (j in 0 until n) {
             val z = seg.getAtIndex(ValueLayout.JAVA_FLOAT, (at + j).toLong()) + shift[j]
             val e = kotlin.math.exp(-kotlin.math.abs(z))
@@ -180,37 +180,49 @@ object Simd {
         take(l, sigmoid.mul(scale))
     }
 
-    /**
-     * Adds the columns [from] until [upTo] of [rows] rows of [m] (the first at [at], each [stride]
-     * floats after the one before) into [sums], in double precision: a lane's worth of a row at a
-     * time, widened to doubles in the registers.
-     */
-    fun addColumns(m: Floats, at: Int, stride: Int, rows: Int, from: Int, upTo: Int, sums: DoubleArray) {
-        val bytes = Float.SIZE_BYTES.toLong()
-        var j = from
+    /** `Σ a[k] · b[k]` in single precision, four sums at once in the wide registers. */
+    fun dot(a: FloatArray, b: FloatArray): Float {
+        var k = 0
+        var s = 0f
         if (on) {
-            // A lane's worth of floats is two of doubles of the same width
-            val fsp = FloatVector.SPECIES_PREFERRED
-            val dsp = DoubleVector.SPECIES_PREFERRED
-            val half = dsp.length()
-            while (j + fsp.length() <= upTo) {
-                var low = DoubleVector.zero(dsp)
-                var high = DoubleVector.zero(dsp)
-                for (r in 0 until rows) {
-                    val v = FloatVector.fromMemorySegment(fsp, m.seg, (at + r.toLong() * stride + j) * bytes, ORDER)
-                    low = low.add(v.convertShape(VectorOperators.F2D, dsp, 0) as DoubleVector)
-                    high = high.add(v.convertShape(VectorOperators.F2D, dsp, 1) as DoubleVector)
-                }
-                low.add(DoubleVector.fromArray(dsp, sums, j)).intoArray(sums, j)
-                high.add(DoubleVector.fromArray(dsp, sums, j + half)).intoArray(sums, j + half)
-                j += fsp.length()
+            val sp = FloatVector.SPECIES_PREFERRED
+            val width = sp.length()
+            val fourBound = a.size - a.size % (SUMS * width)
+            var acc0 = FloatVector.zero(sp)
+            var acc1 = FloatVector.zero(sp)
+            var acc2 = FloatVector.zero(sp)
+            var acc3 = FloatVector.zero(sp)
+            while (k < fourBound) {
+                acc0 = FloatVector.fromArray(sp, a, k).fma(FloatVector.fromArray(sp, b, k), acc0)
+                acc1 = FloatVector.fromArray(sp, a, k + width).fma(FloatVector.fromArray(sp, b, k + width), acc1)
+                acc2 = FloatVector.fromArray(sp, a, k + 2 * width).fma(FloatVector.fromArray(sp, b, k + 2 * width), acc2)
+                acc3 = FloatVector.fromArray(sp, a, k + 3 * width).fma(FloatVector.fromArray(sp, b, k + 3 * width), acc3)
+                k += SUMS * width
+            }
+            s = acc0.add(acc1).add(acc2.add(acc3)).reduceLanes(VectorOperators.ADD)
+        }
+        while (k < a.size) {
+            s += a[k] * b[k]
+            k++
+        }
+        return s
+    }
+
+    /** `y[k] += c · x[k]` in single precision, a lane's worth at once. */
+    fun axpy(c: Float, x: FloatArray, y: FloatArray) {
+        var k = 0
+        if (on) {
+            val sp = FloatVector.SPECIES_PREFERRED
+            val bound = sp.loopBound(x.size)
+            val cv = FloatVector.broadcast(sp, c)
+            while (k < bound) {
+                FloatVector.fromArray(sp, x, k).fma(cv, FloatVector.fromArray(sp, y, k)).intoArray(y, k)
+                k += sp.length()
             }
         }
-        while (j < upTo) {
-            var s = 0.0
-            for (r in 0 until rows) s += m[at + r * stride + j]
-            sums[j] += s
-            j++
+        while (k < x.size) {
+            y[k] += c * x[k]
+            k++
         }
     }
 

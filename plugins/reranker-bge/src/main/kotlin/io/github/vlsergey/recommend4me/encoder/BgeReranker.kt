@@ -41,11 +41,13 @@ class BgeReranker(private val onnx: Onnx) : TextReranker {
 
     override fun prepare(texts: List<String>): PreparedTexts {
         val out = arrayOfNulls<LongArray>(texts.size)
-        // A share of the texts on every core, each share cut in one call
-        val shares = (texts.size + SHARE - 1) / SHARE
-        IntStream.range(0, shares).parallel().forEach { k ->
-            val from = k * SHARE
-            val to = minOf(texts.size, from + SHARE)
+        // An equal share of the texts for every core, each share cut in one call
+        val cores = Runtime.getRuntime().availableProcessors()
+        val share = (texts.size + cores - 1) / cores
+        IntStream.range(0, cores).parallel().forEach { k ->
+            val from = k * share
+            val to = minOf(texts.size, from + share)
+            if (from >= to) return@forEach
             tokenizer.batchEncode(texts.subList(from, to), false, false).forEachIndexed { i, e ->
                 out[from + i] = e.ids.let { if (it.size > SIDE) it.copyOf(SIDE) else it }
             }
@@ -102,8 +104,5 @@ class BgeReranker(private val onnx: Onnx) : TextReranker {
         private const val SIDE = 254
         private const val BATCH = 8
         private const val GPU_BATCH = 64
-
-        /** The texts one core cuts in one call. */
-        private const val SHARE = 256
     }
 }
