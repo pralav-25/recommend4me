@@ -73,9 +73,15 @@ internal class Problem(val task: SuggestionTask, val design: Design, val folds: 
     /** Names that are judged against the same values — a universe's characters' names — scored together. */
     class HintGroup(val rows: IntArray, val values: IntArray, val positive: IntArray)
 
-    val hintGroups: List<HintGroup> = hints.indices.groupBy { k -> (hints[k].against + hints[k].value).distinct().sorted() }.map { (values, rows) ->
-        val at = values.withIndex().associate { (i, v) -> v to i }
-        HintGroup(rows.toIntArray(), values.toIntArray(), IntArray(rows.size) { at.getValue(hints[rows[it]].value) })
+    val hintGroups: List<HintGroup> = hints.indices.groupBy { k -> Among(hints[k].among) }.map { (among, rows) ->
+        HintGroup(rows.toIntArray(), among.values, IntArray(rows.size) { among.values.binarySearch(hints[rows[it]].value) })
+    }
+
+    /** The values names are judged among, as a key: equal by what they hold — the arrays a task shares are compared at once. */
+    private class Among(val values: IntArray) {
+        private val hash = values.contentHashCode()
+        override fun hashCode() = hash
+        override fun equals(other: Any?) = other is Among && (other.values === values || other.values.contentEquals(values))
     }
 
     /** How many pairs of a name and a value the names are judged on. */
@@ -219,7 +225,7 @@ internal class Bilinear(private val p: Problem, val rank: Int, private val step:
         val out = FloatArray(size)
         val used = BooleanArray(m)
         p.active.forEach { at -> at.forEach { used[it] = true } }
-        p.hints.forEach { hint -> used[hint.value] = true; hint.against.forEach { used[it] = true } }
+        p.hints.forEach { hint -> hint.among.forEach { used[it] = true } }
         val eAt = dx * rank + dz * rank
         val se = 0.1 / sqrt(rank.toDouble())
         for (v in 0 until m) if (used[v]) for (q in 0 until rank) out[eAt + v * rank + q] = (random.nextGaussian() * se).toFloat()
@@ -422,7 +428,7 @@ internal class Bilinear(private val p: Problem, val rank: Int, private val step:
         // The total weight first: the loss is a mean, so the penalty means the same at any size of the task
         var total = 0f
         for (i in 0 until n) if (trains(i)) total += p.rowWeight[i]
-        p.hints.forEach { total += 1 + it.against.size }
+        p.hints.forEach { total += it.among.size }
         if (total == 0f) total = 1f
         val scale = 1 / total
         val named = ln(2.0).toFloat()

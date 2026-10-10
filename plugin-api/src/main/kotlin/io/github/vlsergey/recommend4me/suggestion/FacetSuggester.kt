@@ -18,12 +18,16 @@ class InputBlock(val name: String, val vectors: Matrix, val present: BooleanArra
 /**
  * A text that names a value, learnt from as a work would be: one of the names of a character, of a
  * universe (its own, its characters'), of a pairing — "Гермиона", "Hermione Granger" — read as a
- * text of a work, the work's every text, which names the [value] and none of the values [against]
- * (the other characters of its universe). The works the model learns from are few; the names of
- * the values tell it how a text that names one looks. [vector]: the name encoded as a text of a
- * work is, of the length of the task's text inputs.
+ * text of a work, the work's every text, which names the [value] and none of the other values
+ * [among] (the other characters of its universe). The works the model learns from are few; the
+ * names of the values tell it how a text that names one looks. [vector]: the name encoded as a text
+ * of a work is, of the length of the task's text inputs.
+ *
+ * [among]: the values the name is judged among, its own with them, in ascending order — one array
+ * for every name judged among the same values: the names of a universe's thousands of characters
+ * share one, not thousands of copies of it.
  */
-class NameHint(val vector: FloatArray, val value: Int, val against: IntArray)
+class NameHint(val vector: FloatArray, val value: Int, val among: IntArray)
 
 /**
  * A way the values of a facet fall into groups alike in what goes with them — the pairings of two
@@ -112,7 +116,11 @@ class SuggestionTask(
         require(groupings.all { g -> g.of.size == valueCount && g.of.all { groups -> groups.all { it in g.groups.indices } } }) { "A grouping not of the $valueCount values" }
         require(lackWeight > 0 && lackWeight <= 1) { "A lacking value weighs $lackWeight" }
         require(examples.size == itemCount) { "$itemCount items, ${examples.size} lists of examples" }
-        require(hints.all { h -> h.value in 0 until valueCount && h.against.all { it in 0 until valueCount } }) { "A hint of a value not of the task" }    }
+        require(hints.all { h -> h.value in 0 until valueCount && h.among.all { it in 0 until valueCount } }) { "A hint of a value not of the task" }
+        require(hints.all { h -> h.among.binarySearch(h.value) >= 0 && (1 until h.among.size).all { h.among[it - 1] < h.among[it] } }) {
+            "A hint judged among values not in order, or not with its own"
+        }
+    }
 }
 
 /**

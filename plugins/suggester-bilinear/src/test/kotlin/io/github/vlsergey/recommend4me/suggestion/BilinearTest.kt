@@ -37,7 +37,7 @@ class BilinearTest {
             mentions = List(n) { i -> if (i % 3 == 0) mapOf(i % m to 2) else null },
             lackWeight = 0.5,
             examples = List(n) { i -> if (i % 2 == 0) intArrayOf(i % m) else IntArray(0) },
-            hints = List(6) { k -> NameHint(FloatArray(d) { random.nextGaussian().toFloat() }, k % m, (0 until m).filter { it != k % m }.toIntArray()) },
+            hints = IntArray(m) { it }.let { all -> List(6) { k -> NameHint(FloatArray(d) { random.nextGaussian().toFloat() }, k % m, all) } },
         )
     }
 

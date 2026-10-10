@@ -121,14 +121,18 @@ class ItemRepository(
         }
     }
 
-    /** The names of the values [keys] of a facet; a key without a name has none here. */
+    /**
+     * The names of the values [keys] of a facet; a key without a name has none here. One pass over
+     * the facet's names, the keys looked up here: H2 takes a list of keys bound to the query not
+     * for the primary key but for a condition of every row of the facet, every key of it compared
+     * with every row — of the thousands of characters most of the time of reading what a model learns.
+     */
     fun facetNames(facet: String, keys: Collection<String>): Map<String, String> {
+        if (keys.isEmpty()) return emptyMap()
+        val wanted = keys as? Set<String> ?: keys.toHashSet()
         val out = HashMap<String, String>()
-        keys.distinct().chunked(BATCH).forEach { chunk ->
-            db.select(FACET_VALUE.VALUE_KEY, FACET_VALUE.NAME).from(FACET_VALUE)
-                .where(FACET_VALUE.FACET.eq(facet), FACET_VALUE.VALUE_KEY.`in`(chunk))
-                .fetch { out[it.value1()!!] = it.value2()!! }
-        }
+        db.select(FACET_VALUE.VALUE_KEY, FACET_VALUE.NAME).from(FACET_VALUE).where(FACET_VALUE.FACET.eq(facet))
+            .fetchSize(5000).fetchLazy().use { cursor -> cursor.forEach { if (it.value1()!! in wanted) out[it.value1()!!] = it.value2()!! } }
         return out
     }
 

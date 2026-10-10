@@ -14,7 +14,7 @@ import java.util.zip.GZIPOutputStream
  * of the model tried on it — as often as needed, without waiting for the data to change.
  */
 object SuggestionTaskFile {
-    private const val FORMAT = 1
+    private const val FORMAT = 2
 
     fun write(task: SuggestionTask, file: Path) {
         Files.createDirectories(file.parent)
@@ -54,13 +54,14 @@ object SuggestionTaskFile {
                 out.writeInt(h.vector.size)
                 h.vector.forEach(out::writeFloat)
                 out.writeInt(h.value)
-                ints(out, h.against)
+                ints(out, h.among)
             }
         }
     }
 
     fun read(file: Path): SuggestionTask = DataInputStream(GZIPInputStream(Files.newInputStream(file)).buffered()).use { input ->
-        check(input.readInt() == FORMAT) { "$file: not a task of format $FORMAT" }
+        val format = input.readInt()
+        check(format == FORMAT || format == FORMAT - 1) { "$file: not a task of format $FORMAT" }
         val itemIds = strings(input)
         val inputs = List(input.readInt()) {
             val name = input.readUTF()
@@ -80,7 +81,10 @@ object SuggestionTaskFile {
         val lackWeight = input.readDouble()
         val hints = List(input.readInt()) {
             val vector = FloatArray(input.readInt()) { input.readFloat() }
-            NameHint(vector, input.readInt(), ints(input))
+            val value = input.readInt()
+            // The format before it kept the rivals alone, an array of every name
+            val among = ints(input).let { if (format == FORMAT) it else (it + value).distinct().sorted().toIntArray() }
+            NameHint(vector, value, among)
         }
         SuggestionTask(itemIds, inputs, values, valueKeys, assigned, confirmed, rejected, context, contextKeys, mentions, allowed, groupings, lackWeight, examples, hints)
     }

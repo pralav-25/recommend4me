@@ -33,6 +33,7 @@ import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 import java.nio.file.Path
 import java.time.Instant
+import java.util.IdentityHashMap
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -162,7 +163,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         // Counted in the texts of the item [only] alone: no other item's chances are made
         mentions = vocabulary?.mentions(store)?.let { of -> if (only == null) of else { id -> if (id == only) of(id) else null } },
         allowed = vocabulary?.allowed, groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
-        hintNames = vocabulary?.hintNames.orEmpty(), hintAgainst = vocabulary?.hintAgainst ?: { emptyList() },
+        hintNames = vocabulary?.hintNames.orEmpty(), hintAmong = vocabulary?.hintAmong ?: { emptyList() },
     )
 
     /**
@@ -310,8 +311,12 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val lackWeight: Double = 1.0,
         /** Every name each value goes by, each a text that names it ([NameHint]); none for a facet whose values are not named in texts. */
         val hintNames: Map<String, List<String>> = emptyMap(),
-        /** The values a text naming a value does not name: its rivals — the other characters of its universe. */
-        val hintAgainst: (String) -> Collection<String> = { emptyList() },
+        /**
+         * The values a text naming a value is judged among: the value and its rivals — the characters
+         * of its universes. One collection for every value judged among the same: it is turned into
+         * the task's indices once ([NameHint.among]).
+         */
+        val hintAmong: (String) -> Collection<String> = { emptyList() },
     ) {
         /** How often each item's own texts name each value, by [naming]; null when the values are not counted. */
         fun mentions(store: SourceStore): ((String) -> Map<String, Int>?)? =
@@ -391,7 +396,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                     allowed = { id -> if (original(id)) emptySet() else all.keys },
                     naming = { id -> naming.takeUnless { original(id) } },
                     hintNames = hintNames.mapValues { it.value.distinct() },
-                    hintAgainst = { u -> all.keys - u },
+                    hintAmong = { all.keys },
                 )
             }
             // The main characters and the secondary ones alike, each without what the other has
@@ -416,13 +421,16 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                 val out = leftOut(store, facet.key)
                 fun of(id: String) = universes[id].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet() - out(id)
                 val sexes = UniverseFacet.sexes(type.universes)
-                // A name of a character names it and none of the other characters of its universes
+                // A name of a character names it and none of the other characters of its universes:
+                // judged among them all, one set for every character of the same universes
                 val universesOf = HashMap<String, MutableSet<String>>()
                 ofUniverse.forEach { (u, members) -> members.forEach { universesOf.getOrPut(it) { HashSet() } += u } }
+                val among = HashMap<Set<String>, Set<String>>()
+                universesOf.values.forEach { us -> among.getOrPut(us) { us.flatMap { ofUniverse[it].orEmpty() }.toSet() } }
                 Vocabulary(
                     values,
                     hintNames = names,
-                    hintAgainst = { c -> universesOf[c].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet() - c },
+                    hintAmong = { c -> universesOf[c]?.let(among::getValue).orEmpty() },
                     allowed = { id -> of(id) + UniverseFacet.ORIGINAL_CHARACTERS.keys },
                     // The characters of a work's universes, counted in its texts: a work of none is not counted
                     naming = { id -> of(id).takeIf { it.isNotEmpty() }?.let { own -> Naming(Mentions(own.associateWith { names[it].orEmpty() })) } },
@@ -466,7 +474,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                 Vocabulary(
                     values,
                     hintNames = named.mapValues { listOf(it.value) },
-                    hintAgainst = { p -> UniverseFacet.members(p)?.toList().orEmpty().flatMap { ofMember[it].orEmpty() }.toSet() - p },
+                    // Its own among them: a pairing is one of each of its characters'
+                    hintAmong = { p -> UniverseFacet.members(p)?.toList().orEmpty().flatMap { ofMember[it].orEmpty() }.toSet() },
                     allowed = { id -> pairs[id].orEmpty() },
                     naming = { id ->
                         // The original characters have no names to count
@@ -708,7 +717,7 @@ internal class FacetData(
             examples: ((String) -> List<String>)? = null,
             lackWeight: Double = 1.0,
             hintNames: Map<String, List<String>> = emptyMap(),
-            hintAgainst: (String) -> Collection<String> = { emptyList() },
+            hintAmong: (String) -> Collection<String> = { emptyList() },
         ): FacetData {
             val schema = store.schema
             val ids = store.items.keys().map { it.id }
@@ -775,8 +784,18 @@ internal class FacetData(
                 lackWeight = lackWeight,
                 examples = ids.map { id -> examples?.invoke(id)?.let(::indices) ?: IntArray(0) },
                 // What is learnt from, not what is judged: none when the item [only] is judged by the weights fitted last
-                hints = if (only != null) emptyList() else hints(store, facet.key, hintNames, encoder).mapNotNull { (key, vector) ->
-                    index[key]?.let { v -> NameHint(vector, v, indices(hintAgainst(key))) }
+                hints = if (only != null) emptyList() else {
+                    // Every collection of values the names are judged among made indices once, one array
+                    // shared by all its names: of a universe's characters thousands of names, each of
+                    // thousands of rivals
+                    val made = IdentityHashMap<Collection<String>, IntArray>()
+                    hints(store, facet.key, hintNames, encoder).mapNotNull { (key, vector) ->
+                        index[key]?.let { v ->
+                            val of = hintAmong(key)
+                            val among = made.getOrPut(of) { indices(of).also { it.sort() } }
+                            NameHint(vector, v, if (among.binarySearch(v) >= 0) among else (among + v).also { it.sort() })
+                        }
+                    }
                 },
             )
             val hashes = HashMap<String, MutableList<String>>()
