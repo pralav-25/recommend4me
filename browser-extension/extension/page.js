@@ -595,49 +595,138 @@
     return `упоминается ${n} ${word}`;
   }
 
-  /** A hint of the field: its name to put in, and what goes after it — the browser shows the label in place of the value. */
-  function hint(name, note) {
-    const option = el("option");
-    option.value = name;
-    option.label = note ? `${name} — ${note}` : name;
-    return option;
-  }
+  /** A name as it is matched: any case, "ё" as "е". */
+  const folded = (text) => (text || "").toLowerCase().replace(/ё/g, "е");
 
   /**
-   * A field to add a value by its name, with hints: the facet's values as they are typed, how many
-   * works have each; of a facet that says which values the work may have, every candidate with
-   * the model's chance and how often the work's texts name it, the likeliest first — added by its
-   * key.
+   * A field to add a value by its name, with a list of hints of its own under it: of a facet that
+   * says which values the work may have, every candidate with the model's chance and how often the
+   * work's texts name it, the likeliest first, narrowed to those whose name has every word typed,
+   * anywhere in it; of any other facet, the facet's values as they are typed, how many works have
+   * each. A hint chosen is added by its key, a name typed and sent by its name.
+   *
+   * NOT A <datalist>: a universe's candidates are thousands, and Safari on an iPad draws them all
+   * at once, slowly, by the value alone — without the chance and the mentions — matching the start
+   * of a name only. The list here draws what is scrolled to, a few screens at a time.
    */
   function addField(item, facet, label) {
     const form = el("form", "r4m-add");
-    const list = el("datalist");
-    list.id = `r4m-values-${facet}`;
     const input = el("input");
     input.type = "text";
     input.placeholder = `+ ${lower(label)}`;
-    input.setAttribute("list", list.id);
+    input.autocomplete = "off";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    const box = el("r4m-options");
+    box.setAttribute("role", "listbox");
+    box.hidden = true;
     const s = item.summary;
-    /** The key of a candidate by its name: two of one name are told apart by the hint, the first taken. */
-    const keys = new Map();
-    if (CHOSEN.includes(facet)) {
+    const chosen = CHOSEN.includes(facet);
+
+    /** Every hint known: { name, key?, note }; and those the typing leaves, drawn up to [drawn], the one gone to by the keys [active]. */
+    let hints = [];
+    let shown = [];
+    let drawn = 0;
+    let active = -1;
+
+    function add(name, key) {
+      if (!name) return;
+      act(() => correct(item, facet, key ? { key } : { name }, true), answeredShown(facet, { key: key || name, name, offered: true }, true), about(facet, key || name));
+    }
+
+    function close() {
+      box.hidden = true;
+      active = -1;
+      input.setAttribute("aria-expanded", "false");
+      document.removeEventListener("pointerdown", outside, true);
+    }
+
+    /** A press anywhere but the field and its list closes the list; not the field's blur — on an iPad it comes before the tap on a row does. */
+    function outside(e) {
+      if (!form.contains(e.target)) close();
+    }
+
+    /** A row of a hint: its name, and under it what tells it apart; pressed, it is added. */
+    function row(h, i) {
+      const r = el("r4m-option", i === active ? "r4m-active" : null);
+      r.setAttribute("role", "option");
+      r.appendChild(el("r4m-option-name", null, h.name));
+      if (h.note) r.appendChild(el("r4m-option-note", null, h.note));
+      // A mouse's press keeps the focus in the field; a finger's is the start of a scroll as often as of a tap
+      r.addEventListener("pointerdown", (e) => {
+        if (e.pointerType === "mouse") e.preventDefault();
+      });
+      // A tap, not a scroll: the click comes only of a touch that did not move
+      r.addEventListener("click", () => {
+        close();
+        input.value = "";
+        add(h.name, h.key);
+      });
+      return r;
+    }
+
+    /**
+     * The rows drawn on until a screen of the list beyond what is seen: a flick does not reach the
+     * end before more are drawn. A list not yet as high as it may be grows a row at a time.
+     */
+    function drawMore() {
+      while (drawn < shown.length && box.scrollHeight <= box.scrollTop + 2 * box.clientHeight) {
+        box.appendChild(row(shown[drawn], drawn));
+        drawn++;
+      }
+    }
+
+    function show() {
+      box.textContent = "";
+      box.scrollTop = 0;
+      drawn = 0;
+      active = -1;
+      if (!shown.length || document.activeElement !== input) return close();
+      box.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      document.addEventListener("pointerdown", outside, true);
+      drawMore();
+    }
+
+    /** The hints whose name has every word typed, in their order. */
+    function narrow() {
+      const words = folded(input.value).split(/\s+/).filter(Boolean);
+      shown = chosen ? hints.filter((h) => words.every((w) => folded(h.name).includes(w))) : hints;
+      show();
+    }
+
+    function go(step) {
+      if (box.hidden || !shown.length) return;
+      active = Math.max(0, Math.min(shown.length - 1, active + step));
+      while (drawn <= active) {
+        box.appendChild(row(shown[drawn], drawn));
+        drawn++;
+      }
+      [...box.children].forEach((r, i) => r.classList.toggle("r4m-active", i === active));
+      box.children[active].scrollIntoView({ block: "nearest" });
+    }
+
+    box.addEventListener("scroll", drawMore);
+    if (chosen) {
       let asked = false;
       input.addEventListener("focus", async () => {
-        if (asked) return;
+        if (asked) return narrow();
         asked = true;
         try {
           const candidates = await api("GET", `/api/items/${enc(s.source)}/${enc(s.item)}/candidates?facet=${enc(facet)}`);
-          list.textContent = "";
-          candidates.forEach((c) => {
-            if (!keys.has(c.name)) keys.set(c.name, c.key);
-            const note = [c.chance !== undefined && c.chance !== null ? percent(c.chance) : "", mentionsText(c.mentions)].filter(Boolean).join(" · ");
-            list.appendChild(hint(c.name, note));
-          });
+          hints = candidates.map((c) => ({
+            name: c.name,
+            key: c.key,
+            note: [c.chance !== undefined && c.chance !== null ? percent(c.chance) : "", mentionsText(c.mentions)].filter(Boolean).join(" · "),
+          }));
+          narrow();
         } catch (e) {
           // No hints: the value is added by its name all the same
           asked = false;
         }
       });
+      input.addEventListener("input", narrow);
     } else {
       let timer = null;
       input.addEventListener("input", () => {
@@ -645,26 +734,41 @@
         timer = setTimeout(async () => {
           try {
             const values = await api("GET", `/api/sources/${enc(s.source)}/facets/${enc(facet)}/values?query=${enc(input.value)}&limit=20`);
-            list.textContent = "";
-            values.forEach((v) => list.appendChild(hint(v.name, `работ: ${v.items}`)));
+            hints = values.map((v) => ({ name: v.name, note: `работ: ${v.items}` }));
+            narrow();
           } catch (e) {
             // No hints: the value is added by its name all the same
           }
         }, 250);
       });
     }
-    // The site's own keys must not see the typing
-    ["keydown", "keyup", "keypress"].forEach((t) => input.addEventListener(t, (e) => e.stopPropagation()));
-    form.addEventListener("submit", (e) => {
-      e.preventDefault();
-      const name = input.value.trim();
-      const key = keys.get(name);
-      if (name) {
-        act(() => correct(item, facet, key ? { key } : { name }, true), answeredShown(facet, { key: key || name, name, offered: true }, true), about(facet, key || name));
+    input.addEventListener("keydown", (e) => {
+      // The site's own keys must not see the typing
+      e.stopPropagation();
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        if (box.hidden) narrow();
+        else go(1);
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        go(-1);
+      } else if (e.key === "Escape" || e.key === "Tab") {
+        close();
       }
     });
+    ["keyup", "keypress"].forEach((t) => input.addEventListener(t, (e) => e.stopPropagation()));
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      // The hint gone to by the keys; else a hint of just the name typed; else the name as it is
+      const typed = input.value.trim();
+      const h = active >= 0 ? shown[active] : hints.find((x) => folded(x.name) === folded(typed));
+      close();
+      input.value = "";
+      if (h) add(h.name, h.key);
+      else add(typed, null);
+    });
     form.appendChild(input);
-    form.appendChild(list);
+    form.appendChild(box);
     return form;
   }
 

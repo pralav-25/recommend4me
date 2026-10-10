@@ -327,7 +327,57 @@ r4m-tools:hover [data-r4m], .r4m-doubted + r4m-tools [data-r4m] {
 
 form.r4m-add {
   display: inline-block;
+  position: relative;
   margin: 2px 0;
+}
+
+/* The field's hints: a list of its own under it, scrolled within itself, above the site's page */
+r4m-options {
+  display: block;
+  position: absolute;
+  left: 0;
+  top: 100%;
+  z-index: 2147483000;
+  min-width: 100%;
+  width: max-content;
+  max-width: min(420px, 90vw);
+  max-height: 40vh;
+  margin-top: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid #c9ced6;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  text-align: left;
+  font: 13px system-ui, sans-serif;
+}
+
+r4m-options[hidden] {
+  display: none;
+}
+
+r4m-option {
+  display: block;
+  padding: 6px 10px;
+  color: #1f2328;
+  cursor: pointer;
+}
+
+r4m-option:hover,
+r4m-option.r4m-active {
+  background: #eef3fb;
+}
+
+r4m-option-name {
+  display: block;
+}
+
+r4m-option-note {
+  display: block;
+  font-size: 11px;
+  color: #6b7280;
 }
 
 form.r4m-add input {
@@ -340,6 +390,21 @@ form.r4m-add input {
   background: #ffffff;
   color: #1f2328;
   font: 12px system-ui, sans-serif;
+}
+
+/* A finger: Safari zooms the page into a field of a smaller font than 16px, and a row is a finger's height */
+@media (pointer: coarse) {
+  form.r4m-add input {
+    width: 220px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: 16px;
+    font-size: 16px;
+  }
+
+  r4m-option {
+    padding: 10px 12px;
+  }
 }
 
 /* --- Marks of reviews and pictures --- */
