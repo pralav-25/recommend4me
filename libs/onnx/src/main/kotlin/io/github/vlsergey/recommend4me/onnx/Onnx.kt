@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.onnx
 
 import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.providers.OrtCUDAProviderOptions
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtException
 import ai.onnxruntime.OrtLoggingLevel
@@ -66,23 +67,52 @@ class Onnx(
         return session
     }
 
-    private fun openOnGpu(name: String, p: Path): OrtSession? = try {
-        open(p, 0, cuda = true).also { onGpu += name }
+    /**
+     * The session of a graph made in memory ([OnnxGraph]) rather than read from the models folder:
+     * a computation of the application's own put on the card. Opened on the first call and kept,
+     * by its [name], as a file's is; on the card when the launch asks for it and CUDA takes it.
+     */
+    @Synchronized
+    fun session(name: String, graph: () -> ByteArray): OrtSession {
+        sessions[name]?.let { return it }
+        val bytes = graph()
+        // Its products in single precision, not TF32: a loss an optimizer goes by must not shake in
+        // the fourth digit, or the optimizer never sees it settle
+        val session = (if (gpu && cudaReady()) openOnGpu(name) { open(bytes, 0, cuda = true, tf32 = false) } else null) ?: open(bytes, 0, cuda = false)
+        sessions[name] = session
+        log.info("{} is up on {}", name, if (name in onGpu) "CUDA" else "the CPU")
+        return session
+    }
+
+    /** Whether the graph [name], opened already, runs on the card. */
+    @Synchronized
+    fun opened(name: String): Boolean? = if (name in sessions) name in onGpu else null
+
+    private fun openOnGpu(name: String, p: Path): OrtSession? = openOnGpu(name) { open(p, 0, cuda = true) }
+
+    private fun openOnGpu(name: String, opening: () -> OrtSession): OrtSession? = try {
+        opening().also { onGpu += name }
     } catch (e: OrtException) {
         log.warn("{} cannot run on CUDA, it runs on the CPU: {}", name, e.message)
         cudaUsable = false
         null
     }
 
-    private fun open(p: Path, threads: Int, cuda: Boolean): OrtSession {
+    private fun open(p: Path, threads: Int, cuda: Boolean): OrtSession = env.createSession(p.toString(), options(threads, cuda))
+
+    private fun open(bytes: ByteArray, threads: Int, cuda: Boolean, tf32: Boolean = true): OrtSession = env.createSession(bytes, options(threads, cuda, tf32))
+
+    /** [tf32]: the card's matrix products may round to ten bits of mantissa — as a neural net's do, at twice the speed. */
+    private fun options(threads: Int, cuda: Boolean, tf32: Boolean = true): OrtSession.SessionOptions {
         val options = OrtSession.SessionOptions()
         options.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
         if (cuda) {
-            options.addCUDA(0)
+            if (tf32) options.addCUDA(0)
+            else options.addCUDA(OrtCUDAProviderOptions(0).apply { add("use_tf32", "0") })
             // Not the warning of every session that the shape operations stay on the CPU: the runtime puts them there itself
             options.setSessionLogLevel(OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR)
         } else if (threads > 0) options.setIntraOpNumThreads(threads)
-        return env.createSession(p.toString(), options)
+        return options
     }
 
     /**

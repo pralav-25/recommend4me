@@ -168,7 +168,7 @@ internal class Problem(val task: SuggestionTask, val design: Design, val folds: 
  * chance to show, not a number to compute further with, and floats go twice as many at once
  * through the wide registers and OpenBLAS.
  */
-internal class Bilinear(private val p: Problem, val rank: Int) {
+internal class Bilinear(private val p: Problem, val rank: Int, private val card: NamesOnCard? = null) {
     private val n = p.n
     private val m = p.m
     private val dx = p.design.itemWidth
@@ -180,15 +180,12 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
     private val u = Floats(n * rank)
     private val v = Floats(m * rank)
     private val vt = Floats(rank * m)
+    /** Every pair's score: made only to judge the held-out items, the fitting scores the pairs that weigh anything. */
     private val s = Floats(n * m)
-    private val g = Floats(n * m)
     private val du = Floats(n * rank)
     private val dv = Floats(m * rank)
     private val da = Floats(dx * rank)
     private val db = Floats(dz * rank)
-    /** A column of ones of the items, and the sums of the columns of their slopes it makes. */
-    private val itemOnes = Floats.of(FloatArray(n) { 1f })
-    private val itemColumns = Floats(m)
 
     // The names as texts of a work ([Problem.hints]): every text block of theirs holds the name, so
     // their coordinates are the name times the text blocks' weights summed, plus the constant's and
@@ -212,6 +209,8 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
     /** A column of ones, and the sums of a group's columns it makes. */
     private val ones = Floats.of(FloatArray(largest) { 1f })
     private val columns = Floats(widest)
+    /** Whether the names' loss is made on the card ([NamesOnCard]). */
+    private val onCard = h > 0 && card?.ready() == true
 
     /**
      * The start: A and B nought, so a weight grows only where the data lead it — along a direction
@@ -259,9 +258,13 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         return out
     }
 
+    /** How many losses the fittings of this model took: told in the log, the measure of a fitting's work. */
+    var losses = 0
+        private set
+
     /** The weights minimising the loss over the items not of [heldOut] (-1: every item), from [from]. */
     fun fit(from: FloatArray, lambda: Float, heldOut: Int, maxSteps: Int = MAX_STEPS): FloatArray =
-        Lbfgs.minimize(from, maxSteps) { theta, grad -> lossAndGradient(theta, grad, lambda) { p.foldOf[it] != heldOut } }
+        Lbfgs.minimize(from, maxSteps) { theta, grad -> losses++; lossAndGradient(theta, grad, lambda) { p.foldOf[it] != heldOut } }
 
     /** The weighted losses of held-out pairs, summed: Σw, Σw·l, Σw·l², Σw². */
     class Held(var weight: Double = 0.0, var loss: Double = 0.0, var squares: Double = 0.0, var weights: Double = 0.0) {
@@ -311,8 +314,15 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         }
     }
 
-    /** S = (X A)(Z B + E)ᵀ into [s]; U and V kept for the gradient. */
+    /** S = (X A)(Z B + E)ᵀ into [s], every pair's: for judging the held-out items. */
     private fun scores(theta: FloatArray) {
+        coordinates(theta)
+        for (j in 0 until m) for (q in 0 until rank) vt[q * m + j] = v[j * rank + q]
+        Blas.product(u, rank, n, rank, vt, m, s)
+    }
+
+    /** U = X A and V = Z B + E, and the names' coordinates: what a pair's score is the product of. */
+    private fun coordinates(theta: FloatArray) {
         aF.put(theta, 0, 0, dx * rank)
         val bAt = dx * rank
         bF.put(theta, bAt, 0, dz * rank)
@@ -320,8 +330,6 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         Blas.product(p.z.held, dz, m, dz, bF, rank, v)
         val eAt = bAt + dz * rank
         for (k in 0 until m * rank) v[k] = v[k] + theta[eAt + k]
-        for (j in 0 until m) for (q in 0 until rank) vt[q * m + j] = v[j * rank + q]
-        Blas.product(u, rank, n, rank, vt, m, s)
         if (h > 0) hintCoordinates()
     }
 
@@ -353,9 +361,22 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         p.hintGroups.forEach { group ->
             val k = group.rows.size
             val c = group.values.size
-            // The group's names' and values' coordinates, gathered; their scores by one product
+            // The group's names' and values' coordinates, gathered
             group.rows.forEachIndexed { r, row -> for (q in 0 until rank) gu[r * rank + q] = uh[row * rank + q] }
             group.values.forEachIndexed { j, value -> for (q in 0 until rank) { gv[j * rank + q] = v[value * rank + q]; gvt[q * c + j] = v[value * rank + q] } }
+            // On the card, when there is one: the scores, the losses, the slopes and their products in one run
+            if (onCard) {
+                val shift = FloatArray(c) { j -> theta[bias + group.values[j]] + pair[2] }
+                val out = card!!.run(gu, k, gv, c, rank, shift, group.positive, pair[1] * named, 1 / total, columns, gdu, gdv)
+                loss += out.loss
+                sums[1] += out.slope
+                sums[0] += out.own * named
+                for (j in 0 until c) gBias[group.values[j]] += columns[j]
+                group.rows.forEachIndexed { r, row -> for (q in 0 until rank) duh[row * rank + q] = duh[row * rank + q] + gdu[r * rank + q] }
+                group.values.forEachIndexed { j, value -> for (q in 0 until rank) dvHint[value * rank + q] += gdv[j * rank + q] }
+                return@forEach
+            }
+            // Their scores by one product
             Blas.product(gu, rank, k, rank, gvt, c, gs)
             // Every pair's loss and slope, a row of names at a time on every core: a large universe
             // has thousands of names against thousands of characters. Every value of the row is
@@ -421,7 +442,7 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
     }
 
     internal fun lossAndGradient(theta: FloatArray, grad: FloatArray, lambda: Float, trains: (Int) -> Boolean): Float {
-        scores(theta)
+        coordinates(theta)
         val pair = theta.copyOfRange(size - PAIR, size)
         val bias = size - PAIR - m
         // The total weight first: the loss is a mean, so the penalty means the same at any size of the task
@@ -434,7 +455,12 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         val scale = 1 / total
         // Every item on a core of its own, and only its pairs that weigh anything: the slope of the
         // rest is nought. What a row adds to the shared sums is kept by the row and added after
-        g.clear()
+        // Only the pairs that weigh anything are scored and carried back — fifteen thousand of the
+        // millions of a work and a character: the rest have the slope nought
+        val uH = FloatArray(n * rank).also { u.take(it, 0, 0, n * rank) }
+        val vH = FloatArray(m * rank).also { v.take(it, 0, 0, m * rank) }
+        val duH = FloatArray(n * rank)
+        val rowSlopes = arrayOfNulls<FloatArray>(n)
         val rowLoss = FloatArray(n)
         val rowCommon = FloatArray(n)
         val rowExample = FloatArray(n)
@@ -442,8 +468,11 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         IntStream.range(0, n).parallel().forEach { i ->
             val at = p.active[i]
             if (!trains(i) || at.isEmpty()) return@forEach
-            val z = FloatArray(at.size)
-            s.gather(z, i * m, at)
+            val z = FloatArray(at.size) { j ->
+                var dot = 0f
+                for (q in 0 until rank) dot += uH[i * rank + q] * vH[at[j] * rank + q]
+                dot
+            }
             p.activeExamples[i].forEach { z[it] += pair[0] }
             val named = p.activeNamed[i]
             val counts = p.activeCounts[i]
@@ -452,7 +481,9 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             val slopes = FloatArray(at.size)
             val sums = FloatArray(2)
             Simd.weightedLogisticRow(z, shift, p.activeWeight[i], p.activeLabel[i], at.size, scale, slopes, sums)
-            g.scatter(slopes, i * m, at)
+            rowSlopes[i] = slopes
+            // dU of the item: its pairs' slopes times their values' coordinates
+            for (j in at.indices) for (q in 0 until rank) duH[i * rank + q] += slopes[j] * vH[at[j] * rank + q]
             rowLoss[i] = sums[0]
             rowCommon[i] = sums[1]
             var example = 0f
@@ -466,10 +497,20 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         var gCommon = rowCommon.sum()
         val gExample = rowExample.sum()
         var gMention = rowMention.sum()
-        // The slope of every value's bias: the sum of its column of the items' slopes, by one product with a column of ones
-        Blas.transposedProduct(g, m, n, m, itemOnes, 1, itemColumns)
+        // dV of every value and the slope of its bias: its pairs' slopes, times their items' coordinates and alone
         val gBias = FloatArray(m)
-        itemColumns.take(gBias, 0, 0, m)
+        val dvH = FloatArray(m * rank)
+        for (i in 0 until n) {
+            val slopes = rowSlopes[i] ?: continue
+            val at = p.active[i]
+            for (j in at.indices) {
+                val value = at[j]
+                gBias[value] += slopes[j]
+                for (q in 0 until rank) dvH[value * rank + q] += slopes[j] * uH[i * rank + q]
+            }
+        }
+        du.put(duH, 0, 0, n * rank)
+        dv.put(dvH, 0, 0, m * rank)
         // The names as texts that name their values
         if (h > 0) {
             val sums = FloatArray(2)
@@ -478,9 +519,7 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             gCommon += sums[1]
         }
         loss /= total
-        // dU = G V, dV = Gᵀ U, dA = Xᵀ dU, dB = Zᵀ dV, dE = dV — the names' parts added
-        Blas.product(g, m, n, m, v, rank, du)
-        Blas.transposedProduct(g, m, n, m, u, rank, dv)
+        // dA = Xᵀ dU, dB = Zᵀ dV, dE = dV — the names' parts added
         if (h > 0) for (k in 0 until m * rank) if (dvHint[k] != 0f) dv[k] = dv[k] + dvHint[k]
         Blas.transposedProduct(p.x.held, dx, n, dx, du, rank, da)
         if (h > 0) hintGradient()

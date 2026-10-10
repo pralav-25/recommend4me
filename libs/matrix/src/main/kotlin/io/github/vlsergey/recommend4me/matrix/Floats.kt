@@ -5,6 +5,7 @@ import java.lang.foreign.Arena
 import java.lang.foreign.MemorySegment
 import java.lang.foreign.ValueLayout
 import java.nio.ByteOrder
+import java.nio.FloatBuffer
 
 /**
  * Floats in ONE COPY read from both sides: our own Vector API loops read the segment,
@@ -45,6 +46,10 @@ class Floats(val count: Int) {
     fun copy(from: Floats, fromAt: Int, at: Int, n: Int) = MemorySegment.copy(
         from.seg, fromAt.toLong() * Float.SIZE_BYTES, seg, at.toLong() * Float.SIZE_BYTES, n.toLong() * Float.SIZE_BYTES,
     )
+
+    /** The [n] numbers from [at] on as a buffer over the same memory: handed to a native library without a copy. */
+    fun buffer(at: Int, n: Int): FloatBuffer =
+        seg.asSlice(at.toLong() * Float.SIZE_BYTES, n.toLong() * Float.SIZE_BYTES).asByteBuffer().order(ByteOrder.nativeOrder()).asFloatBuffer()
 
     /** The numbers at [at] + every one of [indices], into [into] in their order: a sparse row read. */
     fun gather(into: FloatArray, at: Int, indices: IntArray) {

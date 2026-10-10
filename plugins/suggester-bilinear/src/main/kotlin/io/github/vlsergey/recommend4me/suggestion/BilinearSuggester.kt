@@ -35,7 +35,12 @@ private val log = LoggerFactory.getLogger(BilinearSuggester::class.java)
  * where a search from scratch takes minutes. From scratch only the first time, or when the last
  * state does not read the task.
  */
-class BilinearSuggester : FacetSuggester {
+class BilinearSuggester internal constructor(
+    /** The names' loss on the card, when there is one: on the processor without. */
+    private val card: NamesOnCard?,
+) : FacetSuggester {
+    constructor() : this(null)
+
     override val id = "bilinear-1"
 
     override fun fit(task: SuggestionTask, previous: FittedSuggester?): FittedSuggester? {
@@ -43,7 +48,7 @@ class BilinearSuggester : FacetSuggester {
         val started = System.currentTimeMillis()
         val design = Design.of(task)
         val problem = Problem(task, design, FOLDS)
-        class Tried(val rank: Int, val lambda: Double, val held: Bilinear.Held, val unseen: Bilinear.Held, val fitted: Fitted)
+        class Tried(val rank: Int, val lambda: Double, val held: Bilinear.Held, val unseen: Bilinear.Held, val fitted: Fitted, val losses: List<Int>, val millis: Long)
         val tried = ArrayList<Tried>()
         // Every penalty from the strongest down by tenfold steps, to the weakest: the held-out loss is
         // not a valley — the characters' was flat from 10 to 0.1, worse at 0.01 and least at 1e-4 —
@@ -60,7 +65,7 @@ class BilinearSuggester : FacetSuggester {
         }
         for (rank in ranks) {
             // A model of every fold, fitted side by side: the folds share nothing but the problem
-            val models = Array(FOLDS) { Bilinear(problem, rank) }
+            val models = Array(FOLDS) { Bilinear(problem, rank, card) }
             for (lambda in lambdas) {
                 val held = Bilinear.Held()
                 val unseen = Bilinear.Held()
@@ -74,10 +79,15 @@ class BilinearSuggester : FacetSuggester {
                     own?.let { models[k].carried(it[k], last.design) }?.takeIf { theta -> theta.any { it != 0f } } ?: models[k].start(k.toLong() + 1)
                 }
                 val step = lambda.toFloat()
+                val before = models.map { it.losses }
+                val begun = System.currentTimeMillis()
                 val thetas = IntStream.range(0, FOLDS).parallel()
                     .mapToObj { k -> models[k].fit(starts[k], step, k) }.toList()
                 thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held, unseen) }
-                tried += Tried(rank, lambda, held, unseen, Fitted(design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }))
+                tried += Tried(
+                    rank, lambda, held, unseen, Fitted(design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }),
+                    models.indices.map { models[it].losses - before[it] }, System.currentTimeMillis() - begun,
+                )
             }
         }
         // The one-standard-error rule (Breiman et al.): of the penalties that hold out no worse than
@@ -90,7 +100,7 @@ class BilinearSuggester : FacetSuggester {
                 "of the values no item of the other folds has: {}",
             task.itemCount, task.valueCount, design.itemWidth, design.valueWidth, problem.hints.size, problem.hintPairs,
             if (last == null) "from scratch" else "from the last state",
-            tried.joinToString("; ") { "r=${it.rank} λ=${it.lambda}: %.4f ± %.4f".format(it.held.mean, it.held.error) },
+            tried.joinToString("; ") { "r=${it.rank} λ=${it.lambda}: %.4f ± %.4f (losses %s in %d ms)".format(it.held.mean, it.held.error, it.losses, it.millis) },
             chosen.rank, chosen.lambda, System.currentTimeMillis() - started,
             tried.joinToString("; ") { "λ=${it.lambda}: " + if (it.unseen.weight > 0) "%.4f ± %.4f".format(it.unseen.mean, it.unseen.error) else "none" },
         )

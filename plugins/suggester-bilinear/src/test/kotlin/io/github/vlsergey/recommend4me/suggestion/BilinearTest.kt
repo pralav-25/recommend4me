@@ -1,6 +1,9 @@
 package io.github.vlsergey.recommend4me.suggestion
 
 import io.github.vlsergey.recommend4me.matrix.Matrix
+import io.github.vlsergey.recommend4me.onnx.Onnx
+import io.github.vlsergey.recommend4me.onnx.defaultModelsDir
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.util.Random
 import kotlin.math.abs
 import kotlin.math.max
@@ -36,6 +39,28 @@ class BilinearTest {
             examples = List(n) { i -> if (i % 2 == 0) intArrayOf(i % m) else IntArray(0) },
             hints = List(6) { k -> NameHint(FloatArray(d) { random.nextGaussian().toFloat() }, k % m, (0 until m).filter { it != k % m }.toIntArray()) },
         )
+    }
+
+    @Test
+    fun `the names' loss on the card is the processor's`() {
+        val card = NamesOnCard(Onnx(defaultModelsDir(), gpu = true))
+        assumeTrue(card.ready(), "no card to run on")
+        val task = task()
+        val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)
+        val onProcessor = Bilinear(problem, 3)
+        val onCard = Bilinear(problem, 3, card)
+        val random = Random(11)
+        val theta = FloatArray(onProcessor.size) { (random.nextGaussian() * 0.3).toFloat() }
+        val trains: (Int) -> Boolean = { problem.foldOf[it] != 0 }
+        val g1 = FloatArray(onProcessor.size)
+        val g2 = FloatArray(onProcessor.size)
+        val l1 = onProcessor.lossAndGradient(theta, g1, 0.01f, trains)
+        val l2 = onCard.lossAndGradient(theta, g2, 0.01f, trains)
+        assertTrue(abs(l1 - l2) < 1e-4 * abs(l1), "loss $l1 on the processor, $l2 on the card")
+        // The card's matrix products round to TF32, ten bits of mantissa: a part in a thousand, where
+        // a wrong graph would be wrong by the whole
+        val worst = g1.indices.maxOf { abs(g1[it] - g2[it]) / max(1e-4f, abs(g1[it])) }
+        assertTrue(worst < 1e-2, "the worst relative difference of the gradient $worst")
     }
 
     @Test
