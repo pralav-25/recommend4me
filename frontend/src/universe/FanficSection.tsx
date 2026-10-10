@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input";
 import { FacetAnswers } from "@/correction/FacetAnswers";
 import { FacetValue, MoreCandidates } from "@/correction/FacetCorrections";
 import type { Corrections } from "@/correction/useCorrections";
-import { ChanceMark } from "@/facet/FacetValueMarks";
 import { useStableOrder } from "@/facet/valueOrder";
 import { OriginalOf } from "@/item/WorkFacts";
 import { percent, plural } from "@/i18n";
@@ -128,6 +127,7 @@ export function FanficSection({
         universes={valuesOf(UNIVERSE).filter(has)}
         label={labelOf(PAIRINGS, "Пэйринги")}
         values={valuesOf(PAIRINGS)}
+        complete={facetOf(PAIRINGS)?.complete === true}
         characters={valuesOf(CHARACTERS).filter(has)}
         corrections={corrections}
       />
@@ -232,10 +232,11 @@ function Chips({
 }
 
 /**
- * Fan fiction, realism, an alternative history or an original work: a button each, the one the user chose
- * pressed. Each shows the model's chance of it while the user has not answered. Choosing a kind
- * confirms it and says no to the others the work has; pressing the chosen one again takes the
- * answers back.
+ * Fan fiction, realism, an alternative history or an original work: one list to choose from — a
+ * row of buttons no longer fits the side of the dialog. Each kind shows the model's chance of it
+ * while the user has not answered; while nothing is chosen the list names what the site or the
+ * model gave. Choosing a kind confirms it and says no to the others the work has; choosing none
+ * takes the answers back.
  */
 function KindChoice({
   label,
@@ -248,48 +249,75 @@ function KindChoice({
   suggested: SuggestedValue[];
   corrections: Corrections;
 }) {
+  const [saving, setSaving] = useState(false);
+  const [failed, setFailed] = useState<string | null>(null);
   const valueOf = (key: string) => values.find((v) => v.key === key);
+  const chosen = KINDS.find((k) => answeredYes(valueOf(k.key)));
+  // What the site or the model gave, while the user has not chosen
+  const given = KINDS.filter((k) => {
+    const v = valueOf(k.key);
+    return v !== undefined && has(v);
+  });
+
+  /** The model's chance of the kind: of the work's value, or of the suggestion. */
+  const chanceOf = (key: string) => valueOf(key)?.chance ?? suggested.find((x) => x.key === key)?.chance ?? null;
+
+  /** Takes every answer on the kinds back: the site's and the model's word stands again. */
+  const takeBack = async () => {
+    for (const k of KINDS) if (valueOf(k.key)?.corrected) await corrections.resetFacet(KIND, k.key);
+  };
 
   const choose = async (key: string) => {
-    const others = KINDS.filter((k) => k.key !== key).map((k) => k.key);
-    if (answeredYes(valueOf(key))) {
-      await corrections.resetFacet(KIND, key);
-      for (const other of others) if (valueOf(other)?.corrected === "REMOVED") await corrections.resetFacet(KIND, other);
-      return;
-    }
     await corrections.setFacet(KIND, { key }, true);
     // A kind only the user gave is taken back; one the site or the model gave is answered no
-    for (const other of others) {
+    for (const other of KINDS.filter((k) => k.key !== key).map((k) => k.key)) {
       const theirs = valueOf(other);
       if (theirs?.corrected === "ADDED") await corrections.resetFacet(KIND, other);
       else if (theirs && has(theirs)) await corrections.setFacet(KIND, { key: other }, false);
     }
   };
 
+  const change = async (key: string) => {
+    setSaving(true);
+    setFailed(null);
+    try {
+      await (key === "" ? takeBack() : choose(key));
+    } catch (e) {
+      setFailed(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const none = given.length > 0 ? `Не выбран — ${given.map((k) => k.name.toLowerCase()).join(", ")} без вашего ответа` : "Не выбран";
+
   return (
     <Block label={label}>
-      <div className="grid grid-cols-2 gap-1 sm:grid-cols-4" role="group" aria-label={label}>
-        {KINDS.map((k) => {
-          const v = valueOf(k.key);
-          const s = suggested.find((x) => x.key === k.key);
-          const pressed = answeredYes(v);
-          return (
-            <AsyncButton
-              key={k.key}
-              variant={pressed ? "default" : "outline"}
-              aria-pressed={pressed}
-              onClick={() => choose(k.key)}
-              title={pressed ? "Ваш ответ. Нажмите, чтобы снять его" : `Да, это ${k.name.toLowerCase()}`}
-              icon={pressed ? <CheckIcon /> : undefined}
-              className="h-auto min-h-8 flex-wrap whitespace-normal"
-            >
-              <span className={cn(v?.corrected === "REMOVED" && "line-through")}>{k.name}</span>
-              {v && <ChanceMark value={v} />}
-              {!v && s && s.chance != null && <span className="text-[10px] text-muted-foreground tabular-nums">{percent(s.chance)}</span>}
-            </AsyncButton>
-          );
-        })}
+      <div className="flex items-center gap-1.5">
+        {saving ? <Loader2Icon className="size-4 shrink-0 animate-spin text-muted-foreground" /> : chosen && <CheckIcon className="size-4 shrink-0 text-yes" />}
+        <select
+          value={chosen?.key ?? ""}
+          onChange={(e) => change(e.target.value)}
+          disabled={saving}
+          aria-label={label}
+          title={chosen ? "Ваш ответ. Выберите «не выбран», чтобы снять его" : "Выберите, чтобы ответить"}
+          className={SELECT}
+        >
+          <option value="">{chosen ? "Не выбран (снять ответ)" : none}</option>
+          {KINDS.map((k) => {
+            const v = valueOf(k.key);
+            const chance = v?.corrected ? null : chanceOf(k.key);
+            return (
+              <option key={k.key} value={k.key}>
+                {k.name}
+                {chance != null ? ` · ${percent(chance)}` : ""}
+                {v?.corrected === "REMOVED" ? " · вы ответили «нет»" : ""}
+              </option>
+            );
+          })}
+        </select>
       </div>
+      {failed && <div className="text-xs text-destructive">{failed}</div>}
     </Block>
   );
 }
@@ -316,22 +344,7 @@ function Universes({
   corrections: Corrections;
 }) {
   const own = values.filter(has);
-  const allNamed = own.length > 0 && (
-    <AsyncButton
-      size="sm"
-      variant={complete ? "secondary" : "ghost"}
-      aria-pressed={complete}
-      onClick={() => corrections.setComplete(UNIVERSE, !complete)}
-      icon={complete ? <CheckIcon /> : undefined}
-      title={
-        complete
-          ? "Названы все вселенные работы: остальные не предлагаются и для модели отклонены. Нажмите, чтобы снять"
-          : "Все вселенные работы уже названы: остальные не предлагать и считать отклонёнными"
-      }
-    >
-      Других вселенных нет
-    </AsyncButton>
-  );
+  const allNamed = own.length > 0 && <AllNamed facet={UNIVERSE} what="вселенные" others="Других вселенных нет" complete={complete} corrections={corrections} />;
   if (complete)
     return (
       <Block label={label}>
@@ -340,6 +353,43 @@ function Universes({
       </Block>
     );
   return <OpenUniverses type={type} label={label} values={values} suggested={suggested} corrections={corrections} allNamed={allNamed} />;
+}
+
+/**
+ * "Других … нет": the user's word that the work's values of the facet are all named — the others
+ * are taken from it, not offered and rejected for the model; pressed again, taken back.
+ */
+function AllNamed({
+  facet,
+  what,
+  others,
+  complete,
+  corrections,
+}: {
+  facet: string;
+  /** The values in the plural: "вселенные", "пэйринги". */
+  what: string;
+  /** The button's text: "Других вселенных нет". */
+  others: string;
+  complete: boolean;
+  corrections: Corrections;
+}) {
+  return (
+    <AsyncButton
+      size="sm"
+      variant={complete ? "secondary" : "ghost"}
+      aria-pressed={complete}
+      onClick={() => corrections.setComplete(facet, !complete)}
+      icon={complete ? <CheckIcon /> : undefined}
+      title={
+        complete
+          ? `Названы все ${what} работы: остальные не предлагаются и для модели отклонены. Нажмите, чтобы снять`
+          : `Все ${what} работы уже названы: остальные не предлагать и считать отклонёнными`
+      }
+    >
+      {others}
+    </AsyncButton>
+  );
 }
 
 /** The work's universes while others may be: every value, the suggested ones, the picker and the search in the catalogue. */
@@ -478,13 +528,18 @@ function Characters({
   );
 }
 
-/** The work's pairings; a new one is two of the work's characters. */
+/**
+ * The work's pairings; a new one is two of the work's characters. Once the user says there are no
+ * others ([complete]), the work's own alone are shown: every other is taken from it, nothing more
+ * is offered.
+ */
 function Pairings({
   type,
   item,
   universes,
   label,
   values,
+  complete,
   characters,
   corrections,
 }: {
@@ -494,9 +549,45 @@ function Pairings({
   universes: FacetValueInfo[];
   label: string;
   values: FacetValueInfo[];
+  complete: boolean;
   /** The characters the work has. */
   characters: FacetValueInfo[];
   corrections: Corrections;
+}) {
+  const own = values.filter(has);
+  const allNamed = own.length > 0 && <AllNamed facet={PAIRINGS} what="пэйринги" others="Других пэйрингов нет" complete={complete} corrections={corrections} />;
+  if (complete)
+    return (
+      <Block label={label}>
+        <Chips facet={PAIRINGS} values={own} corrections={corrections} />
+        <div>{allNamed}</div>
+      </Block>
+    );
+  return (
+    <OpenPairings type={type} item={item} universes={universes} label={label} values={values} characters={characters} corrections={corrections} allNamed={allNamed} />
+  );
+}
+
+/** The work's pairings while others may be: every value, the candidates the texts name, the picker and a pair of one's own. */
+function OpenPairings({
+  type,
+  item,
+  universes,
+  label,
+  values,
+  characters,
+  corrections,
+  allNamed,
+}: {
+  type: ContentTypeInfo;
+  item: ItemRef;
+  universes: FacetValueInfo[];
+  label: string;
+  values: FacetValueInfo[];
+  characters: FacetValueInfo[];
+  corrections: Corrections;
+  /** The button saying there are no others. */
+  allNamed: ReactNode;
 }) {
   const [adding, setAdding] = useState(false);
   const [a, setA] = useState("");
@@ -546,9 +637,12 @@ function Pairings({
         />
       )}
       {!adding ? (
-        <Button variant="ghost" size="sm" className="self-start" onClick={() => setAdding(true)}>
-          <PlusIcon /> Составить пэйринг
-        </Button>
+        <div className="flex flex-wrap items-start gap-1">
+          <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
+            <PlusIcon /> Составить пэйринг
+          </Button>
+          {allNamed}
+        </div>
       ) : (
         <div className="flex flex-col gap-2 rounded-lg border border-dashed p-2" onKeyDown={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between text-xs text-muted-foreground">

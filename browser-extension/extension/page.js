@@ -506,36 +506,44 @@
     line.appendChild(b);
   }
 
+  /** The facets the user may say are all named, with how the button and its hints name them. */
+  const ALL_NAMED = {
+    [UNIVERSE]: { others: "других вселенных нет", what: "вселенные" },
+    pairings: { others: "других пэйрингов нет", what: "пэйринги" },
+  };
+
   /**
-   * "Других вселенных нет": the user's word that the work's universes are all named — the others
-   * are not offered and count as rejected for the model; pressed again, taken back. Shown once the
-   * work has a universe, as in the application.
+   * "Других вселенных нет", "других пэйрингов нет": the user's word that the work's values of the
+   * facet are all named — the others are not offered and count as rejected for the model; pressed
+   * again, taken back. Shown once the work has a value of it, as in the application.
    */
   function completeButton(item, facet) {
-    if (facet.facet !== UNIVERSE || facet.editable === false) return null;
+    const names = ALL_NAMED[facet.facet];
+    if (!names || facet.editable === false) return null;
     const own = (facet.values || []).filter((v) => v.corrected !== "REMOVED" && !v.offered);
     if (!own.length) return null;
     const s = item.summary;
     const complete = facet.complete === true;
+    const about = `complete|${facet.facet}`;
     return button(
-      complete ? "✓ других вселенных нет" : "других вселенных нет",
+      complete ? `✓ ${names.others}` : names.others,
       complete
-        ? "Названы все вселенные работы: остальные не предлагаются и для модели отклонены. Нажмите, чтобы снять"
-        : "Все вселенные работы уже названы: остальные не предлагать и считать отклонёнными",
-      () => api(complete ? "DELETE" : "PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/corrections/complete?facet=${enc(UNIVERSE)}`),
-      `r4m-button r4m-complete${complete ? " r4m-current" : ""}${saving.has("complete") ? " r4m-saving" : ""}`,
+        ? `Названы все ${names.what} работы: остальные не предлагаются и для модели отклонены. Нажмите, чтобы снять`
+        : `Все ${names.what} работы уже названы: остальные не предлагать и считать отклонёнными`,
+      () => api(complete ? "DELETE" : "PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/corrections/complete?facet=${enc(facet.facet)}`),
+      `r4m-button r4m-complete${complete ? " r4m-current" : ""}${saving.has(about) ? " r4m-saving" : ""}`,
       (shown) => {
-        const f = (shown.facets || []).find((x) => x.facet === UNIVERSE);
+        const f = (shown.facets || []).find((x) => x.facet === facet.facet);
         if (!f) return;
         f.complete = !complete;
         // Said complete: nothing more is offered
         if (!complete) {
           f.values = (f.values || []).filter((v) => !v.offered);
-          const s2 = (shown.suggestions || []).find((x) => x.facet === UNIVERSE);
+          const s2 = (shown.suggestions || []).find((x) => x.facet === facet.facet);
           if (s2) s2.suggested = [];
         }
       },
-      "complete",
+      about,
     );
   }
 
