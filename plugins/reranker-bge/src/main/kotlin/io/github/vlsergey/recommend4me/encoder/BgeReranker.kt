@@ -5,6 +5,7 @@ import ai.onnxruntime.OnnxTensor
 import io.github.vlsergey.recommend4me.onnx.Onnx
 import java.nio.LongBuffer
 import java.nio.file.Files
+import java.util.stream.IntStream
 
 /**
  * A MULTILINGUAL CROSS-ENCODER: BAAI/bge-reranker-v2-m3 (XLM-RoBERTa large, Apache-2.0) as an ONNX
@@ -12,9 +13,10 @@ import java.nio.file.Files
  * and the graph answers one number, the logit of the second answering the first.
  *
  * Each text is cut to [SIDE] tokens: a description of a work says what it is in its first lines,
- * and attention costs the square of the length. Pairs are SORTED BY LENGTH before batching, as the
- * text encoder's windows are: a batch is padded to its longest pair. On the card the batches are
- * larger ([GPU_BATCH]).
+ * and attention costs the square of the length. The texts are cut once ([prepare]), on every
+ * core, however many pairs each is in: cut on the card's turn, they kept it waiting. Pairs are
+ * SORTED BY LENGTH before batching, as the text encoder's windows are: a batch is padded to its
+ * longest pair. On the card the batches are larger ([GPU_BATCH]).
  */
 class BgeReranker(private val onnx: Onnx) : TextReranker {
 
@@ -32,28 +34,49 @@ class BgeReranker(private val onnx: Onnx) : TextReranker {
 
     override fun ready(): Boolean = onnx.has(MODEL) && onnx.has(TOKENIZER)
 
-    private fun pieces(text: String): LongArray = tokenizer.encode(text, false, false).ids.let { if (it.size > SIDE) it.copyOf(SIDE) else it }
+    /** The pieces of every text, cut to [SIDE]. */
+    private class Pieces(val of: Array<LongArray>) : PreparedTexts {
+        override val size get() = of.size
+    }
 
-    override fun score(pairs: List<Pair<String, String>>): FloatArray {
-        // Every text is cut into pieces once, however many pairs it is in
-        val cut = HashMap<String, LongArray>()
-        val sequences = pairs.map { (first, second) ->
-            val a = cut.getOrPut(first) { pieces(first) }
-            val b = cut.getOrPut(second) { pieces(second) }
-            longArrayOf(bos) + a + longArrayOf(eos, eos) + b + longArrayOf(eos)
+    override fun prepare(texts: List<String>): PreparedTexts {
+        val out = arrayOfNulls<LongArray>(texts.size)
+        // A share of the texts on every core, each share cut in one call
+        val shares = (texts.size + SHARE - 1) / SHARE
+        IntStream.range(0, shares).parallel().forEach { k ->
+            val from = k * SHARE
+            val to = minOf(texts.size, from + SHARE)
+            tokenizer.batchEncode(texts.subList(from, to), false, false).forEachIndexed { i, e ->
+                out[from + i] = e.ids.let { if (it.size > SIDE) it.copyOf(SIDE) else it }
+            }
         }
-        val out = FloatArray(pairs.size)
-        val order = sequences.indices.sortedBy { sequences[it].size }
+        return Pieces(Array(texts.size) { out[it]!! })
+    }
+
+    override fun score(texts: PreparedTexts, first: IntArray, second: IntArray): FloatArray {
+        val pieces = (texts as Pieces).of
+        fun length(k: Int) = pieces[first[k]].size + pieces[second[k]].size + 4
+        val out = FloatArray(first.size)
+        val order = first.indices.sortedBy(::length)
         val wantsTypes = TOKEN_TYPES in onnx.inputNames(MODEL)
         for (batch in order.chunked(if (onnx.onGpu(MODEL)) GPU_BATCH else BATCH)) {
-            val len = batch.maxOf { sequences[it].size }
+            val len = batch.maxOf(::length)
             val ids = LongArray(batch.size * len) { PAD }
             val mask = LongArray(batch.size * len)
-            batch.forEachIndexed { r, s ->
-                sequences[s].forEachIndexed { j, id ->
-                    ids[r * len + j] = id
-                    mask[r * len + j] = 1
+            batch.forEachIndexed { r, k ->
+                // <s> first </s></s> second </s>
+                var at = r * len
+                fun put(id: Long) {
+                    ids[at] = id
+                    mask[at] = 1
+                    at++
                 }
+                put(bos)
+                pieces[first[k]].forEach(::put)
+                put(eos)
+                put(eos)
+                pieces[second[k]].forEach(::put)
+                put(eos)
             }
             val shape = longArrayOf(batch.size.toLong(), len.toLong())
             val inputs = mutableMapOf(
@@ -62,7 +85,7 @@ class BgeReranker(private val onnx: Onnx) : TextReranker {
             )
             if (wantsTypes) inputs[TOKEN_TYPES] = OnnxTensor.createTensor(onnx.env, LongBuffer.wrap(LongArray(ids.size)), shape)
             val logits = onnx.run(MODEL, inputs)
-            batch.forEachIndexed { r, s -> out[s] = logits[r][0] }
+            batch.forEachIndexed { r, k -> out[k] = logits[r][0] }
         }
         return out
     }
@@ -79,5 +102,8 @@ class BgeReranker(private val onnx: Onnx) : TextReranker {
         private const val SIDE = 254
         private const val BATCH = 8
         private const val GPU_BATCH = 64
+
+        /** The texts one core cuts in one call. */
+        private const val SHARE = 256
     }
 }

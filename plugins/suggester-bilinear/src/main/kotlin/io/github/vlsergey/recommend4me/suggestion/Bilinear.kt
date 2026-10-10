@@ -3,6 +3,7 @@ package io.github.vlsergey.recommend4me.suggestion
 import io.github.vlsergey.recommend4me.matrix.Blas
 import io.github.vlsergey.recommend4me.matrix.Floats
 import io.github.vlsergey.recommend4me.matrix.Matrix
+import io.github.vlsergey.recommend4me.matrix.Simd
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.util.Random
@@ -293,7 +294,11 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             group.values.forEachIndexed { j, value -> for (q in 0 until rank) { gv[j * rank + q] = v[value * rank + q]; gvt[q * c + j] = v[value * rank + q] } }
             Blas.product(gu, rank, k, rank, gvt, c, gs)
             // Every pair's loss and slope, a row of names at a time on every core: a large universe
-            // has thousands of names against thousands of characters
+            // has thousands of names against thousands of characters. Every value of the row is
+            // taken against the label nought at once, in the wide registers; the name's own value
+            // is then set right: its label is one, and the text names it
+            val shift = FloatArray(c) { j -> (theta[bias + group.values[j]] + pair[2]).toFloat() }
+            val scale = (1 / total).toFloat()
             val rowLoss = DoubleArray(k)
             val rowSlope = DoubleArray(k)
             val rowNamed = DoubleArray(k)
@@ -301,23 +306,20 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
                 val own = group.positive[r]
                 val row = FloatArray(c)
                 gs.take(row, 0, r * c, c)
-                var l = 0.0
-                var slope = 0.0
-                for (j in 0 until c) {
-                    val label = if (j == own) 1.0 else 0.0
-                    var z = row[j] + theta[bias + group.values[j]] + pair[2]
-                    if (j == own) z += pair[1] * named
-                    // softplus and sigmoid from one exponent
-                    val e = exp(-abs(z))
-                    l += max(z, 0.0) + ln1p(e) - label * z
-                    val d = ((if (z >= 0) 1 / (1 + e) else e / (1 + e)) - label) / total
-                    row[j] = d.toFloat()
-                    slope += d
-                    if (j == own) rowNamed[r] = d * named
+                val before = if (own in 0 until c) (row[own] + shift[own]).toDouble() else 0.0
+                val sums = DoubleArray(2)
+                Simd.logisticRow(row, shift, c, scale, sums)
+                if (own in 0 until c) {
+                    val z = before + pair[1] * named
+                    val d = (sigmoid(z) - 1) / total
+                    sums[0] += softplus(z) - z - softplus(before)
+                    sums[1] += d - sigmoid(before) / total
+                    row[own] = d.toFloat()
+                    rowNamed[r] = d * named
                 }
                 gs.put(row, 0, r * c, c)
-                rowLoss[r] = l
-                rowSlope[r] = slope
+                rowLoss[r] = sums[0]
+                rowSlope[r] = sums[1]
             }
             loss += rowLoss.sum()
             sums[1] += rowSlope.sum()

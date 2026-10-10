@@ -66,6 +66,51 @@ object Simd {
         }
         return s
     }
+
+    /**
+     * The logistic loss of a row of scores, every one against the label nought: for each `z =
+     * row[j] + shift[j]` under [n], `softplus(z)` is summed into `sums[0]`, and `σ(z)·scale` — the
+     * slope of the loss, scaled — is written over `row[j]` and summed into `sums[1]`. In single
+     * precision, the exponent and the logarithm of a lane's worth at once: a large universe makes
+     * tens of millions of these a step of a fitting.
+     */
+    fun logisticRow(row: FloatArray, shift: FloatArray, n: Int, scale: Float, sums: DoubleArray) {
+        var j = 0
+        var loss = 0.0
+        var slope = 0.0
+        if (on) {
+            val sp = FloatVector.SPECIES_PREFERRED
+            val bound = sp.loopBound(n)
+            val one = FloatVector.broadcast(sp, 1f)
+            var lossAcc = FloatVector.zero(sp)
+            var slopeAcc = FloatVector.zero(sp)
+            while (j < bound) {
+                val z = FloatVector.fromArray(sp, row, j).add(FloatVector.fromArray(sp, shift, j))
+                // softplus and sigmoid from one exponent
+                val e = z.abs().neg().lanewise(VectorOperators.EXP)
+                val inverse = one.div(one.add(e))
+                val sigmoid = e.mul(inverse).blend(inverse, z.compare(VectorOperators.GE, 0f))
+                lossAcc = lossAcc.add(z.max(0f).add(e.lanewise(VectorOperators.LOG1P)))
+                val d = sigmoid.mul(scale)
+                d.intoArray(row, j)
+                slopeAcc = slopeAcc.add(d)
+                j += sp.length()
+            }
+            loss = lossAcc.reduceLanes(VectorOperators.ADD).toDouble()
+            slope = slopeAcc.reduceLanes(VectorOperators.ADD).toDouble()
+        }
+        while (j < n) {
+            val z = row[j] + shift[j]
+            val e = kotlin.math.exp(-kotlin.math.abs(z))
+            loss += kotlin.math.max(z, 0f) + kotlin.math.ln1p(e)
+            val d = (if (z >= 0) 1 / (1 + e) else e / (1 + e)) * scale
+            row[j] = d
+            slope += d
+            j++
+        }
+        sums[0] += loss
+        sums[1] += slope
+    }
 }
 
 /**

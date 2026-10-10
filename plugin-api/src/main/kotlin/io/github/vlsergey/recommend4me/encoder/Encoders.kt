@@ -40,8 +40,26 @@ interface TextReranker {
     /** Whether its files are in place; a reranker that is not ready is skipped. */
     fun ready(): Boolean
 
+    /**
+     * The texts cut into the reranker's pieces, on every core: the costly part done on the CPU, once
+     * for every pair a text is in — a pass reads every work against every graded one.
+     */
+    fun prepare(texts: List<String>): PreparedTexts
+
+    /** The score of every pair of the [texts] prepared, the first of pair k at [first]`[k]`, the second at [second]`[k]`. */
+    fun score(texts: PreparedTexts, first: IntArray, second: IntArray): FloatArray
+
     /** The score of every pair (first, second) of texts. */
-    fun score(pairs: List<Pair<String, String>>): FloatArray
+    fun score(pairs: List<Pair<String, String>>): FloatArray {
+        val distinct = pairs.flatMap { it.toList() }.distinct()
+        val at = distinct.withIndex().associate { (i, t) -> t to i }
+        return score(prepare(distinct), IntArray(pairs.size) { at.getValue(pairs[it].first) }, IntArray(pairs.size) { at.getValue(pairs[it].second) })
+    }
+}
+
+/** Texts made ready for a reranker by [TextReranker.prepare]: what it reads of them, by their order. */
+interface PreparedTexts {
+    val size: Int
 }
 
 /** A picture made ready for an encoder: decoded, resized, cut — the costly part, done off the encoder's thread. */

@@ -1,7 +1,6 @@
 package io.github.vlsergey.recommend4me.likeness
 
 import io.github.vlsergey.recommend4me.correction.Corrected
-import io.github.vlsergey.recommend4me.encoder.TextReranker
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.plugin.Plugins
@@ -18,6 +17,7 @@ import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
@@ -40,6 +40,9 @@ data class WorkLikenessChanged(val type: String)
 class WorkLikenessReading(private val stores: Stores, private val plugins: Plugins, private val events: ApplicationEventPublisher) {
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "work-likeness").apply { isDaemon = true } }
     private val pending = ConcurrentHashMap<String, ScheduledFuture<*>>()
+
+    /** Writes the chunks read, while the card reads the next one. */
+    private val writer = Executors.newSingleThreadExecutor { r -> Thread(r, "work-likeness-writer").apply { isDaemon = true } }
 
     /** The smallest catalogue first: its pairs are read in minutes, a large one's may take hours. */
     @EventListener(ApplicationReadyEvent::class)
@@ -84,22 +87,27 @@ class WorkLikenessReading(private val stores: Stores, private val plugins: Plugi
         if (wanted.isEmpty()) return 0
         val started = System.currentTimeMillis()
         log.info("{}: {} pairs of {} graded works and {} works to read by {}", type.id, wanted.size, graded.size, texts.size, reranker.id)
+        // Every text of the pass cut into the reranker's pieces once, on every core: not again for
+        // every graded work it is read against, with the card waiting
+        val keys = wanted.flatMap { listOf(it.graded, it.item) }.distinct()
+        val at = keys.withIndex().associate { (i, key) -> key to i }
+        val prepared = reranker.prepare(keys.map { texts.getValue(it) })
+        log.info("{}: {} texts cut by {} in {} ms", type.id, keys.size, reranker.id, System.currentTimeMillis() - started)
         var read = 0
-        // The pairs of one graded work together: its text is cut into pieces once a chunk
+        // A chunk is written while the card reads the next one; one chunk waits to be written at most
+        var writing: Future<*>? = null
         wanted.sortedWith(compareBy({ it.graded.toString() }, { it.item.toString() })).chunked(CHUNK).forEachIndexed { k, chunk ->
-            read += readChunk(type, reranker, texts, chunk)
+            val scores = reranker.score(prepared, IntArray(chunk.size) { at.getValue(chunk[it].graded) }, IntArray(chunk.size) { at.getValue(chunk[it].item) })
+            writing?.get()
+            writing = writer.submit { type.workLikeness.save(reranker.id, chunk.mapIndexed { i, p -> PairScore(p.graded, p.item, p.textsHash, scores[i]) }) }
+            read += chunk.size
             log.info("{}: {} of {} pairs read by {} in {} s", type.id, read, wanted.size, reranker.id, (System.currentTimeMillis() - started) / 1000)
             // A pass of hours: the model reads what there is now and then, not only at its end
             if ((k + 1) % TELL_EVERY == 0) events.publishEvent(WorkLikenessChanged(type.id))
         }
+        writing?.get()
         events.publishEvent(WorkLikenessChanged(type.id))
         return read
-    }
-
-    private fun readChunk(type: TypeStore, reranker: TextReranker, texts: Map<ItemKey, String>, chunk: List<PairScore>): Int {
-        val scores = reranker.score(chunk.map { texts.getValue(it.graded) to texts.getValue(it.item) })
-        type.workLikeness.save(reranker.id, chunk.mapIndexed { k, p -> PairScore(p.graded, p.item, p.textsHash, scores[k]) })
-        return chunk.size
     }
 
     /** The title and the description of every work that has a description, as the user corrected them. */
@@ -125,6 +133,7 @@ class WorkLikenessReading(private val stores: Stores, private val plugins: Plugi
     @PreDestroy
     fun shutdown() {
         scheduler.shutdownNow()
+        writer.shutdown()
     }
 
     companion object {
