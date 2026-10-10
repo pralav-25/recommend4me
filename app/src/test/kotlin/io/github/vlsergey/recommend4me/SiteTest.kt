@@ -47,6 +47,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
+import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.io.File
 import java.time.Instant
@@ -297,8 +298,13 @@ class SiteTest {
         val explained = items.getItem("site", "x1").body!!.explanation
         assertTrue(explained.any { it.label == Books.TAG.label && it.features.isNotEmpty() }, "parts ${explained.map { it.label }}")
         assertTrue(explained.zipWithNext().all { (a, b) -> abs(a.contribution) >= abs(b.contribution) }, "strongest first")
-        val onPage = pages.getPage("https://site.example/work/x1").body!!.item!!.explanation
+        val onPage = items.getExplanation("site", "x1").body!!
         assertTrue(onPage.isNotEmpty() && onPage.all { it.features.isEmpty() }, "on a page $onPage")
+        // What a model that had not seen a graded work says is read apart; an ungraded work has none
+        val heldOut = items.getHeldOut("site", "s3")
+        assertEquals(HttpStatus.OK, heldOut.statusCode)
+        assertTrue(heldOut.body!!.explanation.isNotEmpty())
+        assertEquals(HttpStatus.NO_CONTENT, items.getHeldOut("site", "x1").statusCode)
 
         // The scorers are compared in the background, each one's result there once it is measured;
         // a comparison under way is answered as it stands, not started again

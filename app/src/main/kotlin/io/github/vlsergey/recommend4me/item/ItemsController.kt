@@ -4,6 +4,7 @@ import io.github.vlsergey.recommend4me.api.ItemsApi
 import io.github.vlsergey.recommend4me.api.model.FacetFilter
 import io.github.vlsergey.recommend4me.api.model.ContributionGroup as ApiContributionGroup
 import io.github.vlsergey.recommend4me.api.model.FacetValueUse
+import io.github.vlsergey.recommend4me.api.model.HeldOut as ApiHeldOut
 import io.github.vlsergey.recommend4me.api.model.LinkedItem
 import io.github.vlsergey.recommend4me.correction.Corrected
 import io.github.vlsergey.recommend4me.correction.FacetValues
@@ -112,6 +113,13 @@ class ItemsController(
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         if (store.items.find(item) == null) return ResponseEntity.notFound().build()
         return ResponseEntity.ok(recommendations.explanation(ItemKey(source, item)).map { it.toApi(withFeatures = false) })
+    }
+
+    override fun getHeldOut(source: String, item: String): ResponseEntity<ApiHeldOut> {
+        val store = stores.source(source) ?: return ResponseEntity.notFound().build()
+        if (store.items.find(item) == null) return ResponseEntity.notFound().build()
+        val h = recommendations.heldOut(ItemKey(source, item)) ?: return ResponseEntity.noContent().build()
+        return ResponseEntity.ok(ApiHeldOut(h.score, h.explanation.map { it.toApi() }, h.gradePlace))
     }
 
     override fun refreshItem(source: String, item: String): ResponseEntity<ItemDetails> {

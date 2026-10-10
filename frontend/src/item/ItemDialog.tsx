@@ -27,6 +27,7 @@ import { ItemTexts } from "./ItemTexts";
 import { itemKey } from "./lists";
 import { Cover, GRADE_TEXT, KEY_GRADES, LinkedBadges, PreviousRating, RatingButtons, ScoreBadge, SignalBadges } from "./pieces";
 import { RelatedWorks } from "./RelatedWorks";
+import { useHeldOut } from "./useHeldOut";
 import { useTakeBackGrade } from "./useRateItem";
 import { useRefreshItem } from "./useRefreshItem";
 import { Byline, ContentFacts, FactLine } from "./WorkFacts";
@@ -283,6 +284,9 @@ function Details({
   const ref = { source: d.summary.source, item: d.summary.item };
   const nothing = d.texts.length === 0 && d.pictures.length === 0 && d.reviews.length === 0 && d.parts.length === 0;
   const except = type.universes ? FANFIC_FACETS : undefined;
+  // A graded work is told by a model that had not seen it: fitted for the asking, read apart
+  const graded = d.summary.grade != null;
+  const heldOut = useHeldOut(ref, graded);
 
   return (
     <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
@@ -319,20 +323,24 @@ function Details({
         <Part title="Цикл и автор">
           <RelatedWorks type={type} related={d.related} />
         </Part>
-        {d.heldOut ? (
+        {graded && heldOut.data === undefined && !heldOut.isError ? (
+          <Part title="Без вашей оценки">
+            <Skeleton className="h-16 w-full" />
+          </Part>
+        ) : heldOut.data ? (
           // A graded work: the model of every grade has seen it and partly learnt it by heart — this one has not
           <Part title="Без вашей оценки">
-            <div className="flex flex-col gap-1">
+            <div className={cn("flex flex-col gap-1", heldOut.isFetching && "opacity-60")}>
               <div className="text-sm">
-                Модель, не видевшая эту работу: <span className="font-semibold tabular-nums">{score(Math.max(0, d.heldOut.score))}</span>
-                {d.heldOut.gradePlace != null && (
+                Модель, не видевшая эту работу: <span className="font-semibold tabular-nums">{score(Math.max(0, heldOut.data.score))}</span>
+                {heldOut.data.gradePlace != null && (
                   <span className="text-muted-foreground">
                     {" "}
-                    · ваша оценка на шкале: <span className="tabular-nums">{score(d.heldOut.gradePlace)}</span>
+                    · ваша оценка на шкале: <span className="tabular-nums">{score(heldOut.data.gradePlace)}</span>
                   </span>
                 )}
               </div>
-              <Explanation groups={d.heldOut.explanation} title="За счёт чего" />
+              <Explanation groups={heldOut.data.explanation} title="За счёт чего" />
             </div>
           </Part>
         ) : (

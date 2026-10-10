@@ -1,7 +1,6 @@
 package io.github.vlsergey.recommend4me.item
 
 import io.github.vlsergey.recommend4me.api.model.FeatureContribution
-import io.github.vlsergey.recommend4me.api.model.HeldOut as ApiHeldOut
 import io.github.vlsergey.recommend4me.api.model.ItemDetails
 import io.github.vlsergey.recommend4me.api.model.NumberValue
 import io.github.vlsergey.recommend4me.api.model.PartInfo
@@ -88,9 +87,9 @@ class ItemDetailsReader(
             allNumbers = schema.numbers.mapNotNull { def ->
                 numbers[def.key]?.let { NumberValue(def.key, def.label, it, Corrected.numberField(def.key) in fields) }
             },
+            // Of a graded work, what a model that had not seen it says is read apart (heldOut): it is
+            // fitted for the asking, and every correction would wait a second or more for it
             explanation = model.explanation.map { it.toApi() },
-            // Of a graded work, what a model that had not seen it says: the interface shows it instead
-            heldOut = recommendations.heldOut(key)?.let { h -> ApiHeldOut(h.score, h.explanation.map { it.toApi() }, h.gradePlace) },
             ratings = ratings(type, key),
             reviews = model.reviews.map { (r, influence) ->
                 ReviewInfo(

@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, type ItemDetails, type ItemRef } from "@/api/client";
 import { applyDetails, ITEMS } from "@/item/lists";
+import { heldOutLater } from "@/item/useHeldOut";
 import { candidatesKey, suggestionsKey } from "@/suggestion/useSuggestions";
 
 /** The fields a correction overrides: the title, a text, a number. */
@@ -23,6 +24,8 @@ export function useCorrections(item: ItemRef, typeId: string) {
     queryClient.invalidateQueries({ queryKey: ["facets", typeId] });
     queryClient.invalidateQueries({ queryKey: suggestionsKey(item) });
     queryClient.invalidateQueries({ queryKey: candidatesKey(item) });
+    // The held-out model is slow to fit: read anew only once the answers have settled
+    heldOutLater(queryClient, details.summary);
     return details;
   };
 

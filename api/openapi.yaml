@@ -206,6 +206,9 @@ paths:
       tags: [items]
       operationId: getExplanation
       summary: What moves the work's prediction, part by part, strongest first - the parts alone, without their features
+      description: |
+        Of a graded work, the explanation of the model that had not seen it (HeldOut): that model is
+        fitted for the asking and takes a second or more, so a page reads it apart from the work.
       parameters:
         - $ref: '#/components/parameters/Source'
         - $ref: '#/components/parameters/Item'
@@ -218,6 +221,29 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ContributionGroup'
+        '404':
+          description: No such item
+
+  /api/items/{source}/{item}/held-out:
+    get:
+      tags: [items]
+      operationId: getHeldOut
+      summary: How a model that had not seen the graded work would grade it, and why
+      description: |
+        The model of the fold the work was left out of is fitted for the asking on the catalogue as
+        it is now: it takes a second or more, so it is read apart from the work's details.
+      parameters:
+        - $ref: '#/components/parameters/Source'
+        - $ref: '#/components/parameters/Item'
+      responses:
+        '200':
+          description: The work's score by that model and what moves it
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeldOut'
+        '204':
+          description: The work is not graded, there is no model, or too few works for folds
         '404':
           description: No such item
 
@@ -1811,8 +1837,6 @@ components:
           description: What moves the prediction, part by part - a facet, the pictures, a text - strongest first, each with every feature in it
           items:
             $ref: '#/components/schemas/ContributionGroup'
-        heldOut:
-          $ref: '#/components/schemas/HeldOut'
         ratings:
           type: array
           description: The grades of every item of the work, newest first
@@ -2582,7 +2606,10 @@ components:
 
     PageItem:
       type: object
-      required: [summary, facets, suggestions, explanation, grades, pictures, reviewMarks, ratings]
+      description: |
+        The work as a page shows it. What moves its prediction is read apart (getExplanation): of a
+        graded work it is the held-out model's, fitted for the asking
+      required: [summary, facets, suggestions, grades, pictures, reviewMarks, ratings]
       properties:
         summary:
           $ref: '#/components/schemas/ItemSummary'
@@ -2598,11 +2625,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FacetSuggestions'
-        explanation:
-          type: array
-          description: What moves the prediction, part by part, strongest first - the parts alone, without their features
-          items:
-            $ref: '#/components/schemas/ContributionGroup'
         grades:
           type: array
           description: The labels of the grades 1..5 of the work's content type

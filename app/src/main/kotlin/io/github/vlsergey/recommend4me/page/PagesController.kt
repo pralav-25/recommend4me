@@ -14,8 +14,6 @@ import io.github.vlsergey.recommend4me.correction.Corrected
 import io.github.vlsergey.recommend4me.item.ItemCards
 import io.github.vlsergey.recommend4me.item.ItemDetailsReader
 import io.github.vlsergey.recommend4me.item.ItemKey
-import io.github.vlsergey.recommend4me.item.toApi
-import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.source.PageDecor
 import io.github.vlsergey.recommend4me.source.SourceStore
@@ -37,7 +35,6 @@ class PagesController(
     private val plugins: Plugins,
     private val cards: ItemCards,
     private val details: ItemDetailsReader,
-    private val recommendations: Recommendations,
     private val suggestions: FacetSuggestions,
 ) : PagesApi {
 
@@ -85,8 +82,6 @@ class PagesController(
             summary = summary,
             facets = cards.facets(store, site, chances, corrections, names, texts, empty = true, complete = store.corrections.completeOf(itemId)) { it in wanted },
             suggestions = suggested,
-            // The parts alone: a page shows what moves the work, the dialog every feature
-            explanation = recommendations.explanation(key).map { it.toApi(withFeatures = false) },
             grades = type.type.grades,
             pictures = store.pictures.ofItem(itemId, plugins.imageEncoder()?.id).map { p ->
                 PagePicture(p.position, p.url, pictureMarks.firstOrNull { it.position == p.position && it.url == p.url }?.mark)

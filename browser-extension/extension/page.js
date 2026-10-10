@@ -55,6 +55,15 @@
   /** How many more a press of "…" shows. */
   const MORE_STEP = 5;
 
+  /**
+   * What moves the work's prediction ({ of: "source/item", parts }), read apart from the page: of
+   * a graded work the application fits a model that had not seen it for the asking, a second or
+   * more. After a change it is read anew only once the changes have settled for [SETTLE_MS].
+   */
+  let explanation = null;
+  let explanationTimer = null;
+  const SETTLE_MS = 2000;
+
   // --- Elements ---
 
   function el(tag, className, text) {
@@ -88,6 +97,8 @@
   function act(change, shown, about) {
     if (pending === 0) message = null;
     pending++;
+    // A new change puts off reading what moves the prediction
+    clearTimeout(explanationTimer);
     if (about) saving.add(about);
     if (shown && view && view.item) {
       try {
@@ -105,10 +116,34 @@
       }
       if (about) saving.delete(about);
       pending--;
-      if (pending === 0) await load();
-      else render();
+      if (pending === 0) {
+        await load();
+        explanationLater();
+      } else render();
     });
     return queue;
+  }
+
+  const keyOf = (item) => `${item.summary.source}/${item.summary.item}`;
+
+  /** Reads what moves the prediction of the work once no change has come for [SETTLE_MS]. */
+  function explanationLater() {
+    clearTimeout(explanationTimer);
+    explanationTimer = setTimeout(() => {
+      if (view && view.item && pending === 0) readExplanation(view.item);
+    }, SETTLE_MS);
+  }
+
+  async function readExplanation(item) {
+    const of = keyOf(item);
+    try {
+      const parts = await api("GET", `/api/items/${enc(item.summary.source)}/${enc(item.summary.item)}/explanation`);
+      explanation = { of, parts };
+    } catch (e) {
+      // The panel goes without it
+      return;
+    }
+    if (view && view.item && keyOf(view.item) === of) render();
   }
 
   /** A score of 0..10 as a class of colour, red to green. */
@@ -135,6 +170,8 @@
     try {
       server = await browser.runtime.sendMessage({ type: "server" });
       view = await api("GET", `/api/pages?url=${enc(location.href)}`);
+      // What moves the prediction is read apart, not waited for: a work seen first gets it at once
+      if (view.item && (!explanation || explanation.of !== keyOf(view.item))) readExplanation(view.item);
       // The candidates asked for are read anew too: an answer changes which the work may yet have
       if (view.item) for (const facet of more.keys()) await readCandidates(view.item, facet);
     } catch (e) {
@@ -261,10 +298,11 @@
 
     root.appendChild(grades(item));
 
-    if (item.explanation && item.explanation.length) {
+    const parts = explanation && explanation.of === keyOf(item) ? explanation.parts : null;
+    if (parts && parts.length) {
       const why = el("r4m-why");
       why.appendChild(el("span", "r4m-muted", "Почему: "));
-      item.explanation.slice(0, 6).forEach((c, i) => {
+      parts.slice(0, 6).forEach((c, i) => {
         if (i) why.appendChild(el("span", "r4m-muted", " · "));
         const sign = c.contribution >= 0 ? "+" : "−";
         why.appendChild(el("span", c.contribution >= 0 ? "r4m-up" : "r4m-down", `${sign}${Math.abs(c.contribution).toFixed(1)} ${c.label}`));

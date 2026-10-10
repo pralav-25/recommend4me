@@ -29,6 +29,7 @@ export type ReviewInfo = Schemas["ReviewInfo"];
 export type ReviewMatch = Schemas["ReviewMatch"];
 export type FeatureContribution = Schemas["FeatureContribution"];
 export type ContributionGroup = Schemas["ContributionGroup"];
+export type HeldOut = Schemas["HeldOut"];
 export type RelatedWorks = Schemas["RelatedWorks"];
 export type FacetRole = Schemas["FacetRole"];
 export type NumberRole = Schemas["NumberRole"];

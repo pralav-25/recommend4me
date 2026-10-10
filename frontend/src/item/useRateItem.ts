@@ -3,6 +3,7 @@ import { api, unwrap, type ContentTypeInfo, type Grade, type ItemRef, type ItemS
 import { toast } from "@/components/ui/toast";
 import { findSource, gradeLabel } from "@/contenttype/types";
 import { applyGrade, itemKey, ITEMS } from "./lists";
+import { heldOutLater } from "./useHeldOut";
 
 type Rate = { summary: ItemSummary; grade: Grade | null };
 
@@ -25,6 +26,7 @@ export function useRateItem() {
     const type = findSource(queryClient.getQueryData<ContentTypeInfo[]>(["types"]), updated.source)?.type;
     queryClient.invalidateQueries({ queryKey: ["model", type?.id] });
     queryClient.invalidateQueries({ queryKey: itemKey(updated) });
+    heldOutLater(queryClient, updated);
   };
 
   return useMutation({
@@ -67,6 +69,7 @@ export function useTakeBackGrade(shown: ItemRef) {
     const details = unwrap(await api.GET("/api/items/{source}/{item}", { params: { path: { source: shown.source, item: shown.item } } }));
     queryClient.setQueryData(itemKey(shown), details);
     applyGrade(queryClient, details.summary);
+    heldOutLater(queryClient, details.summary);
     const type = findSource(queryClient.getQueryData<ContentTypeInfo[]>(["types"]), shown.source)?.type;
     queryClient.invalidateQueries({ queryKey: ["model", type?.id] });
   };
