@@ -65,7 +65,7 @@ class Design(
     val valueKeys: List<String>,
 ) {
     private val contextIndex = contextKeys.withIndex().associate { (i, k) -> k to i }
-    private val valueIndex = valueKeys.withIndex().associate { (i, k) -> k to i }
+    internal val valueIndex = valueKeys.withIndex().associate { (i, k) -> k to i }
     private val groupIndex = groupings.map { (_, keys) -> keys.withIndex().associate { (i, k) -> k to i } }
 
     val itemWidth: Int = 1 + blocks.sumOf { 1 + it.dim } + contextKeys.size
@@ -140,6 +140,56 @@ class Design(
 
     /** The index in [valueKeys] of every value of the task; -1 for one the fitted task did not have. */
     fun valueIndices(task: SuggestionTask): IntArray = IntArray(task.valueCount) { valueIndex[task.valueKeys[it]] ?: -1 }
+
+    /**
+     * Where every feature of an item of this layout was in the [old] one, and by what its weight
+     * is multiplied there to weigh the same: the constant; a block of the same name and length —
+     * its mark, its coordinates by the ratio of the scales, so a feature times its weight stays as it
+     * was; a value of the context by its key. -1: a feature the old layout had not.
+     */
+    fun itemFeaturesFrom(old: Design): Pair<IntArray, FloatArray> {
+        val at = IntArray(itemWidth) { -1 }
+        val factor = FloatArray(itemWidth) { 1f }
+        at[0] = 0
+        val oldBlocks = old.blocks.withIndex().associate { (i, b) -> b.name to i }
+        blocks.forEachIndexed { i, b ->
+            val j = oldBlocks[b.name]?.takeIf { old.blocks[it].dim == b.dim } ?: return@forEachIndexed
+            val here = blockOffsets[i]
+            val there = old.blockOffsets[j]
+            at[here] = there
+            for (q in 0 until b.dim) {
+                at[here + 1 + q] = there + 1 + q
+                factor[here + 1 + q] = old.blocks[j].scale / b.scale
+            }
+        }
+        val base = 1 + blocks.sumOf { 1 + it.dim }
+        val oldBase = 1 + old.blocks.sumOf { 1 + it.dim }
+        contextKeys.forEachIndexed { c, key -> old.contextIndex[key]?.let { at[base + c] = oldBase + it } }
+        return at to factor
+    }
+
+    /** As [itemFeaturesFrom], of a value's features: the constant, its name's mark and coordinates, its groups by their keys. */
+    fun valueFeaturesFrom(old: Design): Pair<IntArray, FloatArray> {
+        val at = IntArray(valueWidth) { -1 }
+        val factor = FloatArray(valueWidth) { 1f }
+        at[0] = 0
+        if (names != null && old.names != null && nameDim == old.nameDim) {
+            at[1] = 1
+            for (q in 0 until nameDim) {
+                at[2 + q] = 2 + q
+                factor[2 + q] = old.names.scale / names.scale
+            }
+        }
+        var here = 2 + nameDim
+        val oldAt = HashMap<Pair<String, String>, Int>()
+        var there = 2 + old.nameDim
+        old.groupings.forEach { (g, keys) -> keys.forEachIndexed { k, key -> oldAt[g to key] = there + k }; there += keys.size }
+        groupings.forEach { (g, keys) ->
+            keys.forEachIndexed { k, key -> oldAt[g to key]?.let { at[here + k] = it } }
+            here += keys.size
+        }
+        return at to factor
+    }
 
     fun write(out: DataOutputStream) {
         out.writeInt(blocks.size)

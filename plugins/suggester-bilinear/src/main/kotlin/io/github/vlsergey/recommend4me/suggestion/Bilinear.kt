@@ -83,6 +83,15 @@ internal class Problem(val task: SuggestionTask, val design: Design, val folds: 
     /** How many pairs of a name and a value the names are judged on. */
     val hintPairs: Long = hintGroups.sumOf { it.rows.size.toLong() * it.values.size }
 
+    /**
+     * The values of every item whose pair with it weighs anything, in order: the only pairs it is
+     * learnt by — a work of no universe, or with no answer on the facet, has none.
+     */
+    val active: Array<IntArray> = Array(n) { IntArray(0) }
+
+    /** The weights of every item's pairs summed: the training's total is that of its items. */
+    val rowWeight = FloatArray(n)
+
     init {
         val row = FloatArray(m)
         val labels = FloatArray(m)
@@ -99,8 +108,29 @@ internal class Problem(val task: SuggestionTask, val design: Design, val folds: 
             has.forEach { row[it] = 1f; labels[it] = 1f }
             weight.put(row, 0, i * m, m)
             label.put(labels, 0, i * m, m)
+            active[i] = (0 until m).filter { row[it] != 0f }.toIntArray()
+            rowWeight[i] = row.sum()
         }
     }
+
+    /** Of every item's [active] pairs: the weight, the label. */
+    val activeWeight: Array<FloatArray> = Array(n) { i -> FloatArray(active[i].size).also { weight.gather(it, i * m, active[i]) } }
+    val activeLabel: Array<FloatArray> = Array(n) { i -> FloatArray(active[i].size).also { label.gather(it, i * m, active[i]) } }
+
+    /**
+     * Of every item's [active] pairs: where those the site gives as examples are, and those its
+     * texts name with log(1 + how many times) — a pair that weighs nothing teaches nothing by them.
+     */
+    val activeExamples: Array<IntArray> = Array(n) { i -> positions(i, examples[i]) }
+    val activeNamed: Array<IntArray> = Array(n) { i -> positions(i, mentions[i].first) }
+    val activeCounts: Array<FloatArray> = Array(n) { i ->
+        val (named, counts) = mentions[i]
+        val at = active[i]
+        named.indices.filter { at.binarySearch(named[it]) >= 0 }.map { counts[it] }.toFloatArray()
+    }
+
+    /** Where the [values] among the item's [active] pairs are, those not among them left out. */
+    private fun positions(i: Int, values: IntArray): IntArray = values.map { active[i].binarySearch(it) }.filter { it >= 0 }.toIntArray()
 
     /** The values no item outside [fold] has: what the model fitted without the fold learns of them is their name and groups alone. */
     fun unseenOutside(fold: Int): BooleanArray {
@@ -156,6 +186,9 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
     private val dv = Floats(m * rank)
     private val da = Floats(dx * rank)
     private val db = Floats(dz * rank)
+    /** A column of ones of the items, and the sums of the columns of their slopes it makes. */
+    private val itemOnes = Floats.of(FloatArray(n) { 1f })
+    private val itemColumns = Floats(m)
 
     // The names as texts of a work ([Problem.hints]): every text block of theirs holds the name, so
     // their coordinates are the name times the text blocks' weights summed, plus the constant's and
@@ -199,6 +232,30 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         val eAt = dx * rank + dz * rank
         val se = 0.1 / sqrt(rank.toDouble())
         for (v in 0 until m) if (used[v]) for (q in 0 until rank) out[eAt + v * rank + q] = (random.nextGaussian() * se).toFloat()
+        return out
+    }
+
+    /**
+     * The weights [w] fitted on the layout [old], carried to this task's: a feature or a value the
+     * old one had keeps its weight, scaled to weigh as it did; a new one starts at nought — its
+     * gradient is not, the other side being learnt already.
+     */
+    fun carried(w: Weights, old: Design): FloatArray {
+        check(w.rank == rank) { "Weights of rank ${w.rank}, a model of rank $rank" }
+        val out = FloatArray(size)
+        val (items, itemFactor) = p.design.itemFeaturesFrom(old)
+        for (f in 0 until dx) items[f].takeIf { it >= 0 }?.let { o -> for (q in 0 until rank) out[f * rank + q] = w.a[o * rank + q] * itemFactor[f] }
+        val bAt = dx * rank
+        val (values, valueFactor) = p.design.valueFeaturesFrom(old)
+        for (f in 0 until dz) values[f].takeIf { it >= 0 }?.let { o -> for (q in 0 until rank) out[bAt + f * rank + q] = w.b[o * rank + q] * valueFactor[f] }
+        val eAt = bAt + dz * rank
+        val biasAt = eAt + m * rank
+        p.design.valueKeys.forEachIndexed { v, key ->
+            val o = old.valueIndex[key] ?: return@forEachIndexed
+            for (q in 0 until rank) out[eAt + v * rank + q] = w.e[o * rank + q]
+            out[biasAt + v] = w.bias[o]
+        }
+        w.pair.copyInto(out, size - PAIR)
         return out
     }
 
@@ -369,40 +426,50 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         val bias = size - PAIR - m
         // The total weight first: the loss is a mean, so the penalty means the same at any size of the task
         var total = 0f
-        val w = FloatArray(m)
-        for (i in 0 until n) if (trains(i)) { p.weight.take(w, 0, i * m, m); total += w.sum() }
+        for (i in 0 until n) if (trains(i)) total += p.rowWeight[i]
         p.hints.forEach { total += 1 + it.against.size }
         if (total == 0f) total = 1f
-        var loss = 0f
-        val row = FloatArray(m)
-        val y = FloatArray(m)
-        val gr = FloatArray(m)
-        val gBias = FloatArray(m)
-        var gExample = 0f
-        var gMention = 0f
-        var gCommon = 0f
         // Every value's own bias with the common one, and the scale of a slope: the loss of a row taken in the wide registers
         val biases = FloatArray(m) { theta[bias + it] + pair[2] }
         val scale = 1 / total
-        val rowSums = FloatArray(2)
-        for (i in 0 until n) {
-            gr.fill(0f)
-            if (trains(i)) {
-                s.take(row, 0, i * m, m)
-                p.weight.take(w, 0, i * m, m)
-                p.label.take(y, 0, i * m, m)
-                addPair(i, row, pair)
-                rowSums.fill(0f)
-                Simd.weightedLogisticRow(row, biases, w, y, m, scale, gr, rowSums)
-                loss += rowSums[0]
-                gCommon += rowSums[1]
-                for (k in 0 until m) gBias[k] += gr[k]
-                p.examples[i].forEach { gExample += gr[it] }
-                val (named, counts) = p.mentions[i]
-                named.forEachIndexed { k, v -> gMention += gr[v] * counts[k] }
-            }
-            g.put(gr, 0, i * m, m)
+        // Every item on a core of its own, and only its pairs that weigh anything: the slope of the
+        // rest is nought. What a row adds to the shared sums is kept by the row and added after
+        g.clear()
+        val rowLoss = FloatArray(n)
+        val rowCommon = FloatArray(n)
+        val rowExample = FloatArray(n)
+        val rowMention = FloatArray(n)
+        IntStream.range(0, n).parallel().forEach { i ->
+            val at = p.active[i]
+            if (!trains(i) || at.isEmpty()) return@forEach
+            val z = FloatArray(at.size)
+            s.gather(z, i * m, at)
+            p.activeExamples[i].forEach { z[it] += pair[0] }
+            val named = p.activeNamed[i]
+            val counts = p.activeCounts[i]
+            for (k in named.indices) z[named[k]] += pair[1] * counts[k]
+            val shift = FloatArray(at.size) { biases[at[it]] }
+            val slopes = FloatArray(at.size)
+            val sums = FloatArray(2)
+            Simd.weightedLogisticRow(z, shift, p.activeWeight[i], p.activeLabel[i], at.size, scale, slopes, sums)
+            g.scatter(slopes, i * m, at)
+            rowLoss[i] = sums[0]
+            rowCommon[i] = sums[1]
+            var example = 0f
+            p.activeExamples[i].forEach { example += slopes[it] }
+            rowExample[i] = example
+            var mention = 0f
+            for (k in named.indices) mention += slopes[named[k]] * counts[k]
+            rowMention[i] = mention
         }
+        var loss = rowLoss.sum()
+        var gCommon = rowCommon.sum()
+        val gExample = rowExample.sum()
+        var gMention = rowMention.sum()
+        // The slope of every value's bias: the sum of its column of the items' slopes, by one product with a column of ones
+        Blas.transposedProduct(g, m, n, m, itemOnes, 1, itemColumns)
+        val gBias = FloatArray(m)
+        itemColumns.take(gBias, 0, 0, m)
         // The names as texts that name their values
         if (h > 0) {
             val sums = FloatArray(2)

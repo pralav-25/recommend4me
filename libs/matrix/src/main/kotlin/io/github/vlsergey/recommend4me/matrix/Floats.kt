@@ -46,6 +46,16 @@ class Floats(val count: Int) {
         from.seg, fromAt.toLong() * Float.SIZE_BYTES, seg, at.toLong() * Float.SIZE_BYTES, n.toLong() * Float.SIZE_BYTES,
     )
 
+    /** The numbers at [at] + every one of [indices], into [into] in their order: a sparse row read. */
+    fun gather(into: FloatArray, at: Int, indices: IntArray) {
+        for (k in indices.indices) into[k] = this[at + indices[k]]
+    }
+
+    /** [src] written at [at] + every one of [indices], in their order: a sparse row written. */
+    fun scatter(src: FloatArray, at: Int, indices: IntArray) {
+        for (k in indices.indices) this[at + indices[k]] = src[k]
+    }
+
     fun clear(at: Int = 0, n: Int = count) {
         seg.asSlice(at.toLong() * Float.SIZE_BYTES, n.toLong() * Float.SIZE_BYTES).fill(0)
     }

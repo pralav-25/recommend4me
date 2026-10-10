@@ -124,8 +124,13 @@ interface FacetSuggester {
     /** Stable: kept with the fitted state. */
     val id: String
 
-    /** Learns from every item of [task]; null when there is nothing to learn from — no item has a value, or every item has all. */
-    fun fit(task: SuggestionTask): FittedSuggester?
+    /**
+     * Learns from every item of [task]; null when there is nothing to learn from — no item has a
+     * value, or every item has all. [previous]: the state fitted last on the facet, unpacked against
+     * [task], to go on from — a few answers or works more move the fitted state a little, and the
+     * fitting is a short walk from it rather than a search from scratch; null: from scratch.
+     */
+    fun fit(task: SuggestionTask, previous: FittedSuggester? = null): FittedSuggester?
 
     /** A state kept by [FittedSuggester.pack]; null when it does not fit tasks of [task]'s shape — it is fitted again. */
     fun unpack(bytes: ByteArray, task: SuggestionTask): FittedSuggester?

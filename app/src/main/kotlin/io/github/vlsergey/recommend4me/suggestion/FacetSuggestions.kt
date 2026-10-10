@@ -31,6 +31,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.event.EventListener
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
+import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -189,6 +190,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val vocabulary = universeVocabulary(store, facet) ?: examplesVocabulary(store, facet)
         val data = load(store, facet, encoder, vocabulary, only)
         val read = System.currentTimeMillis() - started
+        // The whole task kept in a file when asked for: its fitting made again and measured apart from the application
+        if (only == null) System.getenv(TASKS_FOLDER)?.let { dir -> SuggestionTaskFile.write(data.task, Path.of(dir, "${store.id}-${facet.key}.task.gz")) }
         val now = Instant.now()
         if (data.values.isEmpty()) return nothingToGive(store, facet, data, only, now)
         val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id }
@@ -205,7 +208,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val fitted = when {
             current || only != null -> kept ?: return
             else -> {
-                val made = suggester.fit(data.task) ?: return nothingToGive(store, facet, data, null, now)
+                // From the state fitted last when there is one: the data moved a little since
+                val made = suggester.fit(data.task, kept) ?: return nothingToGive(store, facet, data, null, now)
                 store.suggestions.saveSuggester(facet.key, suggester.id, now, data.basis, made.pack())
                 log.info("{}: the suggester of {} fitted on {} items, {} values in {} ms, {} of them reading", store.id, facet.key, data.ids.size, data.values.size, System.currentTimeMillis() - started, read)
                 made
@@ -639,6 +643,9 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     companion object {
         /** The quiet after the last change before a source is refreshed: a page sends itself several times as it grows. */
         private const val DELAY_SECONDS = 5L
+
+        /** The environment variable naming the folder every task of a whole facet is kept in ([SuggestionTaskFile]); unset, none is. */
+        private const val TASKS_FOLDER = "RECOMMEND4ME_TASKS"
 
         /** Items scored at once and written in one transaction: memory, not meaning. */
         private const val CHUNK = 2_000

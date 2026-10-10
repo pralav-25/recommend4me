@@ -178,6 +178,25 @@ class BilinearSuggesterTest {
     }
 
     @Test
+    fun `gone on from the last state with more items, the model judges as one fitted from scratch`() {
+        val small = task(240)
+        val suggester = BilinearSuggester()
+        val last = assertNotNull(suggester.fit(small))
+        // Sixty items more, the same values: the refit starts where the last one stopped
+        val task = task(300)
+        val again = assertNotNull(suggester.fit(task, last))
+        val scratch = assertNotNull(suggester.fit(task))
+        val rows = IntArray(task.itemCount) { it }
+        val a = again.on(task).of(rows)
+        val b = scratch.on(task).of(rows)
+        // The two agree on which side of a half every pair is
+        var agree = 0
+        var all = 0
+        rows.forEach { i -> a[i].indices.forEach { v -> if ((a[i][v] > 0.5f) == (b[i][v] > 0.5f)) agree++; all++ } }
+        assertTrue(agree >= all * 0.95, "$agree of $all pairs agree")
+    }
+
+    @Test
     fun `nothing to learn from, nothing is fitted`() {
         val task = task(20)
         val empty = SuggestionTask(
