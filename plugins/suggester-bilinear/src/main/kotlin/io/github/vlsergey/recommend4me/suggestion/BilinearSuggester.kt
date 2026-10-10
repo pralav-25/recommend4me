@@ -44,7 +44,7 @@ class BilinearSuggester internal constructor(
 
     override val id = "bilinear-1"
 
-    override fun fit(task: SuggestionTask, previous: FittedSuggester?): FittedSuggester? {
+    override fun fit(task: SuggestionTask, previous: FittedSuggester?, stop: () -> Boolean): FittedSuggester? {
         if (task.valueCount == 0 || task.assigned.all { it.isEmpty() }) return null
         val started = System.currentTimeMillis()
         val design = Design.of(task)
@@ -74,7 +74,7 @@ class BilinearSuggester internal constructor(
                 if (faster(problem, rank, opened)) opened else { opened.close(); null }
             }
             onCard = onCard || card != null
-            card.use { tried += fitRank(problem, rank, lambdas, last, card) }
+            card.use { tried += fitRank(problem, rank, lambdas, last, card, stop) }
         }
         // The one-standard-error rule (Breiman et al.): of the penalties that hold out no worse than
         // the best by more than its standard error, the strongest — the data cannot tell them apart,
@@ -121,7 +121,7 @@ class BilinearSuggester internal constructor(
     }
 
     /** Every penalty of [lambdas] at [rank], the folds fitted side by side — on the [card] when there is one. */
-    private fun fitRank(problem: Problem, rank: Int, lambdas: List<Double>, last: Fitted?, card: StepOnCard?): List<Tried> =
+    private fun fitRank(problem: Problem, rank: Int, lambdas: List<Double>, last: Fitted?, card: StepOnCard?, stop: () -> Boolean): List<Tried> =
         // Every penalty side by side, its own models of the folds — they share nothing but the
         // problem and the card: the card is kept busy while the slowest fold of one walks its last steps
         lambdas.parallelStream().map { lambda ->
@@ -141,7 +141,7 @@ class BilinearSuggester internal constructor(
             val before = models.map { it.losses }
             val begun = System.currentTimeMillis()
             val thetas = IntStream.range(0, FOLDS).parallel()
-                .mapToObj { k -> models[k].fit(starts[k], step, k) }.toList()
+                .mapToObj { k -> models[k].fit(starts[k], step, k, stop = stop) }.toList()
             thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held, unseen) }
             Tried(
                 rank, lambda, held, unseen, Fitted(problem.design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }),

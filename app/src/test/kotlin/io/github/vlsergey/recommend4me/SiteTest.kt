@@ -483,13 +483,18 @@ class SiteTest {
         fun other(details: io.github.vlsergey.recommend4me.api.model.ItemDetails) =
             details.allFacets.single { it.facet == "universe" }.propertyValues.any { it.key == "fake:U1" } ||
                 suggestionsApi.getCandidates("site", "f1", "universe").body!!.any { it.key == "fake:U1" }
-        assertTrue(other(corrections.correctFacet("site", "f1", FacetCorrection(facet = "universe", added = true, key = "fake:U2")).body!!))
-        val named = corrections.completeFacet("site", "f1", "universe").body!!.allFacets.single { it.facet == "universe" }
+        // An answer is kept at once, the chances it changes made apart: the page reads the work again once they are made
+        fun settled(item: String) = suggestionsApi.settleSuggestions("site", item).let { items.getItem("site", item).body!! }
+        corrections.correctFacet("site", "f1", FacetCorrection(facet = "universe", added = true, key = "fake:U2"))
+        assertTrue(other(settled("f1")))
+        corrections.completeFacet("site", "f1", "universe")
+        val named = settled("f1").allFacets.single { it.facet == "universe" }
         assertEquals(true, named.complete)
         assertEquals(listOf("fake:U2"), named.propertyValues.filter { it.corrected != FacetValueInfo.Corrected.REMOVED }.map { it.key }, "values ${named.propertyValues}")
         assertEquals(emptyList(), suggestionsApi.getCandidates("site", "f1", "universe").body!!.map { it.key })
         // Taken back, the others are offered again
-        val reopened = corrections.uncompleteFacet("site", "f1", "universe").body!!
+        corrections.uncompleteFacet("site", "f1", "universe")
+        val reopened = settled("f1")
         assertNull(reopened.allFacets.single { it.facet == "universe" }.complete)
         assertTrue(other(reopened))
         this.universes.removeUniverse("books", "fake", "U1")

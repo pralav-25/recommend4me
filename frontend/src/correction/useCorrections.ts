@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, type ItemDetails, type ItemRef } from "@/api/client";
 import { applyDetails, ITEMS } from "@/item/lists";
 import { heldOutLater } from "@/item/useHeldOut";
-import { candidatesKey, suggestionsKey } from "@/suggestion/useSuggestions";
+import { candidatesKey, suggestionsKey, suggestionsLater } from "@/suggestion/useSuggestions";
 
 /** The fields a correction overrides: the title, a text, a number. */
 export const titleField = "title";
@@ -29,6 +29,13 @@ export function useCorrections(item: ItemRef, typeId: string) {
     return details;
   };
 
+  /** An answer on a facet: kept and shown at once; the chances it changes are made apart, and read when they are. */
+  const answered = (details: ItemDetails) => {
+    done(details);
+    suggestionsLater(queryClient, item);
+    return details;
+  };
+
   return {
     setField: async (field: string, content: string) =>
       done(unwrap(await api.PUT("/api/items/{source}/{item}/corrections/fields/{field}", { params: { path: { ...path, field } }, body: { content } }))),
@@ -41,14 +48,14 @@ export function useCorrections(item: ItemRef, typeId: string) {
      * key, or by its name alone: the backend finds it among the facet's values or makes it up.
      */
     setFacet: async (facet: string, value: { key?: string; name?: string }, added: boolean) =>
-      done(unwrap(await api.PUT("/api/items/{source}/{item}/corrections/facets", { params: { path }, body: { facet, ...value, added } }))),
+      answered(unwrap(await api.PUT("/api/items/{source}/{item}/corrections/facets", { params: { path }, body: { facet, ...value, added } }))),
 
     resetFacet: async (facet: string, key: string) =>
-      done(unwrap(await api.DELETE("/api/items/{source}/{item}/corrections/facets", { params: { path, query: { facet, key } } }))),
+      answered(unwrap(await api.DELETE("/api/items/{source}/{item}/corrections/facets", { params: { path, query: { facet, key } } }))),
 
     /** The work's values of the facet are all named ([complete]): every other is taken from it — or that is taken back. */
     setComplete: async (facet: string, complete: boolean) =>
-      done(
+      answered(
         unwrap(
           complete
             ? await api.PUT("/api/items/{source}/{item}/corrections/complete", { params: { path, query: { facet } } })

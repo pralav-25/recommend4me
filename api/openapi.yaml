@@ -271,6 +271,26 @@ paths:
         '404':
           description: No such item
 
+  /api/items/{source}/{item}/suggestions/settled:
+    get:
+      tags: [suggestions]
+      operationId: settleSuggestions
+      summary: Answers once the work's chances are made current after every answer on it so far
+      description: |
+        An answer on a facet (correctFacet, uncorrectFacet, completeFacet) is saved and returned at
+        once; the chances it changes - of that facet and of those made of its values - are made
+        apart, a second or two. Answers that come meanwhile are gathered and made once for them all.
+        This answers when that is done, at once when nothing is being made: the page then reads the
+        work and its suggestions anew.
+      parameters:
+        - $ref: '#/components/parameters/Source'
+        - $ref: '#/components/parameters/Item'
+      responses:
+        '204':
+          description: The work's chances are current
+        '404':
+          description: No such item
+
   /api/items/{source}/{item}/candidates:
     get:
       tags: [suggestions]

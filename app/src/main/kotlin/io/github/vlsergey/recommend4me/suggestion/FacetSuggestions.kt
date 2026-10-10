@@ -35,10 +35,13 @@ import org.springframework.stereotype.Service
 import java.nio.file.Path
 import java.time.Instant
 import java.util.IdentityHashMap
+import java.util.concurrent.CancellationException
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
@@ -65,10 +68,13 @@ class ItemFacetCandidates(val facet: FacetDef, val candidates: List<FacetCandida
  *
  * The suggester is fitted again whenever anything it learns from has changed (the fingerprint of
  * the whole facet), and every item is then worked out again. A page that asks for an item that
- * never had chances gets them at once, by the weights fitted last.
+ * never had chances gets them at once, by the weights fitted last. An answer of the user is not
+ * kept waiting for the chances it changes: they are made apart ([answered]), and a making of them
+ * — of a work, of the whole source — is given up for a newer change and made again after it.
  *
  * NOTHING IS KEPT BETWEEN OPERATIONS: each one reads the source's items, values and vectors in one
- * pass, and drops them at its end. The sources with changes waiting are the only thing kept.
+ * pass, and drops them at its end. Only the work waiting is kept: the sources with changes, how
+ * many changes each had, the works whose chances are being made after answers.
  */
 @Service
 class FacetSuggestions(private val stores: Stores, private val plugins: Plugins, private val events: ApplicationEventPublisher) {
@@ -77,6 +83,15 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     private val worker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "suggestions").apply { isDaemon = true } }
     private val scheduled = AtomicBoolean(false)
     private val locks = ConcurrentHashMap<String, ReentrantLock>()
+
+    /** How many changes each source has had ([changed]): a refresh begun before the last one is given up. */
+    private val generations = ConcurrentHashMap<String, AtomicLong>()
+
+    /** The items whose chances are being made current after the user's answers ([answered]), by "source/item"; guarded by itself. */
+    private val answering = HashMap<String, Answering>()
+
+    /** The making of chances after answers: apart from the background refresh, which takes seconds a facet. */
+    private val answers = Executors.newSingleThreadExecutor { r -> Thread(r, "answers").apply { isDaemon = true } }
 
     /**
      * The facets the model works on, in the order they are worked out: those it gives values of
@@ -94,13 +109,21 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     @EventListener
     fun partsSaved(event: PartsSaved) = changed(event.source)
 
-    /** Something the source's chances are made of changed: the source is refreshed after the quiet that follows. */
-    private fun changed(source: String) {
+    /**
+     * Something the source's chances are made of changed: the source is refreshed after the quiet
+     * that follows. A refresh under way is given up ([newer]): it works on what it read before the
+     * change, and the one after the quiet works on all of it.
+     */
+    private fun changed(source: String, newer: Boolean = true) {
         val store = stores.source(source) ?: return
         if (facetsOf(store).isEmpty()) return
+        if (newer) generationOf(source).incrementAndGet()
         waiting += source
         if (scheduled.compareAndSet(false, true)) worker.schedule(::drain, DELAY_SECONDS, TimeUnit.SECONDS)
     }
+
+    /** How many changes the source has had: a refresh begun before the last one is of stale data. */
+    private fun generationOf(source: String): AtomicLong = generations.computeIfAbsent(source) { AtomicLong() }
 
     private fun drain() {
         scheduled.set(false)
@@ -109,6 +132,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             val store = stores.source(source) ?: return@forEach
             try {
                 refresh(store)
+            } catch (e: CancellationException) {
+                log.info("{}: chances given up for newer changes, made again after the quiet", source)
             } catch (e: Exception) {
                 log.warn("{}: chances were not made: {}", source, e.message, e)
             }
@@ -124,6 +149,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             stores.sources.filter { facetsOf(it).isNotEmpty() }.forEach { s ->
                 try {
                     refresh(s)
+                } catch (e: CancellationException) {
+                    log.info("{}: chances given up on start for newer changes, made again after the quiet", s.id)
                 } catch (e: Exception) {
                     log.error("{}: chances were not made on start", s.id, e)
                 }
@@ -133,12 +160,15 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
 
     /**
      * Fits the suggester of every facet of the source again when what it learns from changed, and
-     * works out every item whose fingerprint changed — every item after a fitting.
+     * works out every item whose fingerprint changed — every item after a fitting. Given up with a
+     * [CancellationException] once the source changes again ([changed]).
      */
     fun refresh(store: SourceStore) {
         val suggester = plugins.suggester ?: return
         val encoder = plugins.textEncoder() ?: return
-        facetsOf(store).forEach { facet -> lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null) } }
+        val generation = generationOf(store.id).get()
+        val stop = { generationOf(store.id).get() != generation }
+        facetsOf(store).forEach { facet -> lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
     }
 
     /** One lock a facet: a page waits only for the facet it asks of, not for a long fitting of another. */
@@ -151,10 +181,10 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      * under way may write the item's chances made of what it read before; their fingerprint then
      * tells they are stale, and they are made again.
      */
-    private fun refreshNow(store: SourceStore, itemId: String, facets: List<FacetDef>) {
+    private fun refreshNow(store: SourceStore, itemId: String, facets: List<FacetDef>, stop: () -> Boolean = { false }) {
         val suggester = plugins.suggester ?: return
         val encoder = plugins.textEncoder() ?: return
-        facets.forEach { facet -> refreshFacet(store, facet, suggester, encoder, itemId) }
+        facets.forEach { facet -> refreshFacet(store, facet, suggester, encoder, itemId, stop) }
     }
 
     /** What the model of the facet reads — of the item [only] alone, when given. */
@@ -186,13 +216,25 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         return chances.indices.map { v -> Chance(itemId, facet.key, data.values[v], v in has, chances[v].toDouble(), named?.let { it[v] ?: 0 }) }
     }
 
-    /** The facet worked out: of every item whose fingerprint changed — of the item [only], by the weights fitted last, when given. */
-    private fun refreshFacet(store: SourceStore, facet: FacetDef, suggester: FacetSuggester, encoder: TextEncoder, only: String?) {
+    /**
+     * The facet worked out: of every item whose fingerprint changed — of the item [only], by the
+     * weights fitted last, when given. [stop] is asked between the stages, and by the fitting
+     * between its steps: newer data came, and the work is given up with a [CancellationException]
+     * before anything made of the old is kept.
+     */
+    private fun refreshFacet(
+        store: SourceStore, facet: FacetDef, suggester: FacetSuggester, encoder: TextEncoder, only: String?, stop: () -> Boolean = { false },
+    ) {
+        fun checkpoint() {
+            if (stop()) throw CancellationException("${store.id}: ${facet.key} given up for newer changes")
+        }
         val started = System.currentTimeMillis()
         val vocabulary = universeVocabulary(store, facet) ?: examplesVocabulary(store, facet)
         val vocabularyMillis = System.currentTimeMillis() - started
+        checkpoint()
         val data = load(store, facet, encoder, vocabulary, only)
         val read = System.currentTimeMillis() - started
+        checkpoint()
         // The whole task kept in a file when asked for: its fitting made again and measured apart from the application
         if (only == null) System.getenv(TASKS_FOLDER)?.let { dir -> SuggestionTaskFile.write(data.task, Path.of(dir, "${store.id}-${facet.key}.task.gz")) }
         val now = Instant.now()
@@ -200,27 +242,31 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id }
         val kept = stored?.let { suggester.unpack(it.content, data.task) }
         val unpacked = System.currentTimeMillis() - started
+        checkpoint()
         if (kept == null && only != null) {
             // Not fitted, or fitted on what no longer fits: a page never waits for a fitting of the
             // whole facet — minutes for the characters of every universe. The facet is fitted in the
             // background; an item that never had chances is kept with none until then, so a read
-            // does not ask again (the characters are offered without chances meanwhile)
+            // does not ask again (the characters are offered without chances meanwhile). Not a newer
+            // change: a fitting under way goes on
             if (store.suggestions.fingerprint(only, facet.key) == null) nothingToGive(store, facet, data, only, now)
-            return changed(store.id)
+            return changed(store.id, newer = false)
         }
         val current = kept != null && stored.basis == data.basis
         val fitted = when {
             current || only != null -> kept ?: return
             else -> {
                 // From the state fitted last when there is one: the data moved a little since
-                val made = suggester.fit(data.task, kept) ?: return nothingToGive(store, facet, data, null, now)
+                val made = suggester.fit(data.task, kept, stop) ?: return nothingToGive(store, facet, data, null, now)
+                checkpoint()
                 store.suggestions.saveSuggester(facet.key, suggester.id, now, data.basis, made.pack())
                 log.info("{}: the suggester of {} fitted on {} items, {} values in {} ms, {} of them reading", store.id, facet.key, data.ids.size, data.values.size, System.currentTimeMillis() - started, read)
                 made
             }
         }
-        // Fitted on other data: the whole facet is fitted again and worked out in the background
-        if (!current && only != null) changed(store.id)
+        // Fitted on other data: the whole facet is fitted again and worked out in the background —
+        // after the change that made it other, which was a newer one itself
+        if (!current && only != null) changed(store.id, newer = false)
         val refitted = !current && only == null
         val known = store.suggestions.fingerprints(facet.key)
         val rows = data.ids.indices.filter { i ->
@@ -585,6 +631,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val facets = facetsOf(store)
         val def = facets.find { it.key == facet } ?: return null
         if (store.items.find(itemId) == null) return null
+        // The chances being made after the user's answers are waited for, not made a second time beside them
+        settled(store, itemId)
         val corrections = store.corrections.facetsOf(itemId)
         val site = store.items.facets(itemId)
         // The facet and those worked out before it, its values made of theirs: not the long fittings after it
@@ -613,18 +661,77 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     }
 
     /**
-     * The item's chances of the facet the user just [answered] on, and of the facets worked out
-     * after it — made of its values — made current now, by the weights fitted last: the next
-     * likeliest values are offered at once, not after the refresh of the whole source in the
-     * background. The other facets are refreshed there.
+     * The user [answered] on a facet of the item: its chances of that facet and of the facets worked
+     * out after it — made of its values — are made current by the weights fitted last, apart from
+     * the answer, which is not kept waiting for them. Answers that come while they are made are
+     * gathered: the making under way is given up at its next stage — what it read is stale — and
+     * made once more for them all, from the earliest facet any of them was on. The whole source
+     * is refreshed in the background, after its quiet ([changed]).
      */
-    fun currentFor(store: SourceStore, itemId: String, answered: String) {
+    fun answered(store: SourceStore, itemId: String, answered: String) {
         val facets = facetsOf(store).filter { it.infer }
         // An answer on either facet of characters leaves a character out of the other: both made current
         val first = if (answered in UniverseFacet.CHARACTER_FACETS) UniverseFacets.CHARACTERS else answered
         val from = facets.indexOfFirst { it.key == first }
-        if (from < 0 || store.items.find(itemId) == null) return
-        ensure(store, itemId, facets.drop(from), store.items.facets(itemId), store.corrections.facetsOf(itemId), now = true)
+        if (from < 0) return
+        val key = "${store.id}/$itemId"
+        synchronized(answering) {
+            val work = answering.getOrPut(key) { Answering() }
+            work.generation++
+            work.from = minOf(work.from, from)
+            if (!work.running) {
+                work.running = true
+                answers.execute { makeCurrent(store, itemId, key, work) }
+            }
+        }
+    }
+
+    /** Waits until the item's chances are made current after every answer on it so far; at once when none is being made. */
+    fun settled(store: SourceStore, itemId: String) {
+        synchronized(answering) { answering["${store.id}/$itemId"]?.settled }?.get()
+    }
+
+    /** The making of an item's chances after the user's answers: until no answer came while it was made. */
+    private fun makeCurrent(store: SourceStore, itemId: String, key: String, work: Answering) {
+        while (true) {
+            val (generation, from) = synchronized(answering) { (work.generation to work.from).also { work.from = Int.MAX_VALUE } }
+            val stop = { synchronized(answering) { work.generation != generation } }
+            val started = System.currentTimeMillis()
+            val made = try {
+                val facets = facetsOf(store).filter { it.infer }
+                if (store.items.find(itemId) != null) {
+                    ensure(store, itemId, facets.drop(from), store.items.facets(itemId), store.corrections.facetsOf(itemId), now = true, stop = stop)
+                }
+                true
+            } catch (e: CancellationException) {
+                false
+            } catch (e: Exception) {
+                log.warn("{}: chances of {} were not made: {}", store.id, itemId, e.message, e)
+                true
+            }
+            synchronized(answering) {
+                if (!made) work.from = minOf(work.from, from)
+                if (work.generation == generation) {
+                    log.info("{}: chances of {} made current after the answers in {} ms", store.id, itemId, System.currentTimeMillis() - started)
+                    answering.remove(key)
+                    work.running = false
+                    work.settled.complete(Unit)
+                    return
+                }
+            }
+        }
+    }
+
+    /**
+     * An item's chances being made current after the user's answers: how many answers there were
+     * ([generation] — a making begun before the last one is stale), the earliest facet answered
+     * on not yet made, whether it is being made, and the waiters for its end.
+     */
+    private class Answering {
+        var generation = 0L
+        var from = Int.MAX_VALUE
+        var running = false
+        val settled = CompletableFuture<Unit>()
     }
 
     /**
@@ -644,7 +751,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      */
     private fun ensure(
         store: SourceStore, itemId: String, facets: List<FacetDef>, site: Map<String, List<String>>, corrections: List<FacetCorrection>,
-        now: Boolean = false,
+        now: Boolean = false, stop: () -> Boolean = { false },
     ) {
         val encoder = plugins.textEncoder() ?: return
         val fingerprint = FacetData.fingerprint(
@@ -654,13 +761,15 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val known = facets.associateWith { store.suggestions.fingerprint(itemId, it.key) }
         val stale = facets.filter { known[it] != fingerprint }
         if (stale.isEmpty()) return
-        if (now || stale.any { known[it] == null }) refreshNow(store, itemId, stale)
-        else changed(store.id)
+        if (now || stale.any { known[it] == null }) refreshNow(store, itemId, stale, stop)
+        // The change that made them stale was told already: a refresh under way is not given up for it
+        else changed(store.id, newer = false)
     }
 
     @PreDestroy
     fun shutdown() {
         worker.shutdownNow()
+        answers.shutdownNow()
     }
 
     companion object {

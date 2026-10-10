@@ -263,8 +263,8 @@ internal class Bilinear(private val p: Problem, val rank: Int, private val step:
         private set
 
     /** The weights minimising the loss over the items not of [heldOut] (-1: every item), from [from]. */
-    fun fit(from: FloatArray, lambda: Float, heldOut: Int, maxSteps: Int = MAX_STEPS): FloatArray =
-        Lbfgs.minimize(from, maxSteps) { theta, grad -> losses++; lossAndGradient(theta, grad, lambda) { p.foldOf[it] != heldOut } }
+    fun fit(from: FloatArray, lambda: Float, heldOut: Int, maxSteps: Int = MAX_STEPS, stop: () -> Boolean = { false }): FloatArray =
+        Lbfgs.minimize(from, maxSteps, stop) { theta, grad -> losses++; lossAndGradient(theta, grad, lambda) { p.foldOf[it] != heldOut } }
 
     /** The weighted losses of held-out pairs, summed: Σw, Σw·l, Σw·l², Σw². */
     class Held(var weight: Double = 0.0, var loss: Double = 0.0, var squares: Double = 0.0, var weights: Double = 0.0) {

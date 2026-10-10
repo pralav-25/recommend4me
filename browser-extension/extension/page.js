@@ -45,6 +45,8 @@
   const saving = new Set();
   /** The changes, sent one after another in the order made. */
   let queue = Promise.resolve();
+  /** How many times the page has waited for the chances made after answers: a wait begun before the last change is stale. */
+  let settling = 0;
 
   /**
    * How many of a facet's candidates the user asked to see besides what the page shows, by facet
@@ -90,13 +92,16 @@
   /**
    * Runs a change. ITS EFFECT IS SHOWN AT ONCE: [shown] changes the work as shown the way the
    * application will keep it, and the value it is [about] is marked as being saved until the
-   * application answers — an answer takes a second or two, and a click must be seen to have
-   * landed. Changes go one after another in the order made, none is dropped; when the last is
-   * answered the page is shown as the application now knows it.
+   * application answers — a click must be seen to have landed. Changes go one after another in
+   * the order made, none is dropped; when the last is answered the page is shown as the
+   * application now knows it, and again once the chances the answers change are made
+   * ([settledLater]).
    */
   function act(change, shown, about) {
     if (pending === 0) message = null;
     pending++;
+    // A wait for the chances of the answers before is stale now
+    settling++;
     // A new change puts off reading what moves the prediction
     clearTimeout(explanationTimer);
     if (about) saving.add(about);
@@ -117,8 +122,10 @@
       if (about) saving.delete(about);
       pending--;
       if (pending === 0) {
+        // The answers as kept, at once; the chances they change once they are made
         await load();
         explanationLater();
+        settledLater();
       } else render();
     });
     return queue;
@@ -172,13 +179,38 @@
       view = await api("GET", `/api/pages?url=${enc(location.href)}`);
       // What moves the prediction is read apart, not waited for: a work seen first gets it at once
       if (view.item && (!explanation || explanation.of !== keyOf(view.item))) readExplanation(view.item);
-      // The candidates asked for are read anew too: an answer changes which the work may yet have
-      if (view.item) for (const facet of more.keys()) await readCandidates(view.item, facet);
     } catch (e) {
       // What was shown stays, with why it is not current
       message = e.message;
     }
     render();
+    // The candidates asked for are read anew too, after the work is shown: an answer changes which
+    // the work may yet have, and they wait for its chances to be made
+    if (view && view.item && more.size) {
+      try {
+        for (const facet of more.keys()) await readCandidates(view.item, facet);
+      } catch (e) {
+        message = e.message;
+      }
+      render();
+    }
+  }
+
+  /**
+   * The work read again once the application has made the chances the answers changed — made
+   * apart from them, a second or two. An answer given meanwhile makes this one stale: the reading
+   * after it waits for the chances of all of them.
+   */
+  async function settledLater() {
+    const asked = ++settling;
+    const item = view && view.item;
+    if (!item) return;
+    try {
+      await api("GET", `/api/items/${enc(item.summary.source)}/${enc(item.summary.item)}/suggestions/settled`);
+    } catch (e) {
+      return;
+    }
+    if (asked === settling && pending === 0) await load();
   }
 
   function clear() {

@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
-import { api, unwrap, type ItemRef, type SourceInfo } from "@/api/client";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
+import { api, refKey, unwrap, type ItemRef, type SourceInfo } from "@/api/client";
+import { itemKey } from "@/item/lists";
 
 export function suggestionsKey(ref: ItemRef) {
   return ["suggestions", ref.source, ref.item];
@@ -36,5 +37,26 @@ export function useCandidates(ref: ItemRef, facet: string, enabled: boolean) {
       unwrap(
         await api.GET("/api/items/{source}/{item}/candidates", { params: { path: { source: ref.source, item: ref.item }, query: { facet } } }),
       ),
+  });
+}
+
+/** How many times each work has waited for the chances made after answers: a wait begun before the last answer is stale. */
+const settling = new Map<string, number>();
+
+/**
+ * The work, its suggestions and its candidates read again once the application has made the
+ * chances an answer changed — made apart from the answer, a second or two. An answer given
+ * meanwhile makes this wait stale: the one after it waits for the chances of all of them.
+ */
+export function suggestionsLater(queryClient: QueryClient, ref: ItemRef) {
+  const key = refKey(ref);
+  const asked = (settling.get(key) ?? 0) + 1;
+  settling.set(key, asked);
+  void api.GET("/api/items/{source}/{item}/suggestions/settled", { params: { path: { source: ref.source, item: ref.item } } }).then((result) => {
+    if (settling.get(key) !== asked || !result.response.ok) return;
+    settling.delete(key);
+    queryClient.invalidateQueries({ queryKey: itemKey(ref) });
+    queryClient.invalidateQueries({ queryKey: suggestionsKey(ref) });
+    queryClient.invalidateQueries({ queryKey: candidatesKey(ref) });
   });
 }

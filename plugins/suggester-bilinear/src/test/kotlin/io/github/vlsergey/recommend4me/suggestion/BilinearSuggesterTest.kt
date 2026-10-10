@@ -2,8 +2,10 @@ package io.github.vlsergey.recommend4me.suggestion
 
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import java.util.Random
+import java.util.concurrent.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -203,5 +205,11 @@ class BilinearSuggesterTest {
             task.itemIds, task.inputs, task.values, task.valueKeys, List(20) { IntArray(0) }, task.confirmed, task.rejected, task.context, task.contextKeys,
         )
         assertEquals(null, BilinearSuggester().fit(empty))
+    }
+
+    @Test
+    fun `told to stop, the fitting is given up`() {
+        val task = task(120)
+        assertFailsWith<CancellationException> { BilinearSuggester().fit(task, stop = { true }) }
     }
 }

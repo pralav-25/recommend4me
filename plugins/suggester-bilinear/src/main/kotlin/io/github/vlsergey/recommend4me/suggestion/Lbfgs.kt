@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.suggestion
 
 import io.github.vlsergey.recommend4me.matrix.Simd
+import java.util.concurrent.CancellationException
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -26,7 +27,8 @@ object Lbfgs {
     /** The least relative difference of two floats: a fall below it of the value is no fall a float can tell. */
     private val RESOLUTION = Math.ulp(1f)
 
-    fun minimize(start: FloatArray, maxSteps: Int, f: (FloatArray, FloatArray) -> Float): FloatArray {
+    /** [stop]: asked before every step; once it says yes the search is given up with a [CancellationException]. */
+    fun minimize(start: FloatArray, maxSteps: Int, stop: () -> Boolean = { false }, f: (FloatArray, FloatArray) -> Float): FloatArray {
         val n = start.size
         val x = start.copyOf()
         val g = FloatArray(n)
@@ -37,6 +39,7 @@ object Lbfgs {
         val next = FloatArray(n)
         val gNext = FloatArray(n)
         repeat(maxSteps) { step ->
+            if (stop()) throw CancellationException("the search is given up")
             val gNorm = norm(g)
             if (gNorm == 0f) return x
             // The direction: minus the gradient times the inverse Hessian the history stands for

@@ -42,18 +42,18 @@ class CorrectionsController(
         return details.read(ItemKey(store.id, item))?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
     }
 
-    /** An answer on a facet: [change] written, its chances made current, the work read back — how long each took, logged. */
+    /**
+     * An answer on a facet: [change] written and the work read back with it, at once. The chances
+     * it changes are made apart ([FacetSuggestions.answered]); the page asks for them when they
+     * are made (settleSuggestions).
+     */
     private fun answered(store: SourceStore, item: String, facet: String, change: () -> Unit): ResponseEntity<ItemDetails> {
         val started = System.currentTimeMillis()
         change()
         val written = System.currentTimeMillis()
-        suggestions.currentFor(store, item, facet)
-        val made = System.currentTimeMillis()
+        suggestions.answered(store, item, facet)
         return corrected(store, item).also {
-            log.info(
-                "{}: an answer on {} of {} in {} ms — written {}, chances made {}, the work read back {}",
-                store.id, facet, item, System.currentTimeMillis() - started, written - started, made - written, System.currentTimeMillis() - made,
-            )
+            log.info("{}: an answer on {} of {} in {} ms — written {}, the work read back {}", store.id, facet, item, System.currentTimeMillis() - started, written - started, System.currentTimeMillis() - written)
         }
     }
 

@@ -27,6 +27,13 @@ class SuggestionsController(private val stores: Stores, private val suggestions:
         return ResponseEntity.ok(suggestions.ofItem(store, item).map { it.toApi() })
     }
 
+    override fun settleSuggestions(source: String, item: String): ResponseEntity<Unit> {
+        val store = stores.source(source) ?: return ResponseEntity.notFound().build()
+        if (store.items.find(item) == null) return ResponseEntity.notFound().build()
+        suggestions.settled(store, item)
+        return ResponseEntity.noContent().build()
+    }
+
     override fun getCandidates(source: String, item: String, facet: String): ResponseEntity<List<Candidate>> {
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         val found = suggestions.candidates(store, item, facet) ?: return ResponseEntity.notFound().build()
