@@ -104,35 +104,41 @@ object Simd {
         var slope = 0.0
         if (on) {
             val sp = FloatVector.SPECIES_PREFERRED
+            val width = sp.length()
             val one = FloatVector.broadcast(sp, 1f)
-            val zero = FloatVector.zero(sp)
-            var lossAcc = zero
-            var slopeAcc = zero
+            var lossAcc = FloatVector.zero(sp)
+            var slopeAcc = FloatVector.zero(sp)
+            val full = sp.loopBound(n)
             var j = 0
-            // The last lanes past the row masked off: a universe of a few characters is all tail
-            while (j < n) {
-                val mask = sp.indexInRange(j, n)
-                val z = FloatVector.fromMemorySegment(sp, seg, (at + j) * bytes, ORDER, mask).add(FloatVector.fromArray(sp, shift, j, mask))
-                // softplus and sigmoid from one exponent
-                val e = z.abs().neg().lanewise(VectorOperators.EXP)
-                val inverse = one.div(one.add(e))
-                var sigmoid = e.mul(inverse).blend(inverse, z.compare(VectorOperators.GE, 0f))
-                var l = z.max(0f).add(e.lanewise(VectorOperators.LOG1P))
-                if (y != null) {
-                    val label = FloatVector.fromArray(sp, y, j, mask)
-                    l = l.sub(label.mul(z))
-                    sigmoid = sigmoid.sub(label)
+            while (j < full) {
+                val z = FloatVector.fromMemorySegment(sp, seg, (at + j) * bytes, ORDER).add(FloatVector.fromArray(sp, shift, j))
+                val label = y?.let { FloatVector.fromArray(sp, it, j) }
+                val weight = w?.let { FloatVector.fromArray(sp, it, j) }
+                lane(z, label, weight, one, scale) { l, d ->
+                    d.intoMemorySegment(out, (outAt + j) * bytes, ORDER)
+                    lossAcc = lossAcc.add(l)
+                    slopeAcc = slopeAcc.add(d)
                 }
-                if (w != null) {
-                    val weight = FloatVector.fromArray(sp, w, j, mask)
-                    l = l.mul(weight)
-                    sigmoid = sigmoid.mul(weight)
+                j += width
+            }
+            // The last lanes through a lane's worth of scratch: a mask on the registers is cheap, a
+            // mask on memory is not compiled to the wide instructions — and a universe of a few
+            // characters is all tail
+            val rest = n - j
+            if (rest > 0) {
+                val zs = FloatArray(width)
+                MemorySegment.copy(seg, ValueLayout.JAVA_FLOAT, (at + j) * bytes, zs, 0, rest)
+                fun padded(src: FloatArray) = FloatVector.fromArray(sp, FloatArray(width).also { System.arraycopy(src, j, it, 0, rest) }, 0)
+                val z = FloatVector.fromArray(sp, zs, 0).add(padded(shift))
+                val label = y?.let(::padded)
+                val weight = w?.let(::padded)
+                val mask = sp.indexInRange(0, rest)
+                lane(z, label, weight, one, scale) { l, d ->
+                    d.intoArray(zs, 0)
+                    MemorySegment.copy(zs, 0, out, ValueLayout.JAVA_FLOAT, (outAt + j) * bytes, rest)
+                    lossAcc = lossAcc.add(l, mask)
+                    slopeAcc = slopeAcc.add(d, mask)
                 }
-                val d = sigmoid.mul(scale)
-                d.intoMemorySegment(out, (outAt + j) * bytes, ORDER, mask)
-                lossAcc = lossAcc.add(l, mask)
-                slopeAcc = slopeAcc.add(d, mask)
-                j += sp.length()
             }
             loss = lossAcc.reduceLanes(VectorOperators.ADD).toDouble()
             slope = slopeAcc.reduceLanes(VectorOperators.ADD).toDouble()
@@ -148,6 +154,64 @@ object Simd {
         }
         sums[0] += loss
         sums[1] += slope
+    }
+
+    /**
+     * The loss and the slope of a lane's worth of scores [z] against the [label]s (nought when
+     * none), each pair weighed by its [weight] (one when none): softplus and sigmoid from one
+     * exponent, handed to [take].
+     */
+    private inline fun lane(
+        z: FloatVector, label: FloatVector?, weight: FloatVector?, one: FloatVector, scale: Float,
+        take: (loss: FloatVector, slope: FloatVector) -> Unit,
+    ) {
+        val e = z.abs().neg().lanewise(VectorOperators.EXP)
+        val inverse = one.div(one.add(e))
+        var sigmoid = e.mul(inverse).blend(inverse, z.compare(VectorOperators.GE, 0f))
+        var l = z.max(0f).add(e.lanewise(VectorOperators.LOG1P))
+        if (label != null) {
+            l = l.sub(label.mul(z))
+            sigmoid = sigmoid.sub(label)
+        }
+        if (weight != null) {
+            l = l.mul(weight)
+            sigmoid = sigmoid.mul(weight)
+        }
+        take(l, sigmoid.mul(scale))
+    }
+
+    /**
+     * Adds the columns [from] until [upTo] of [rows] rows of [m] (the first at [at], each [stride]
+     * floats after the one before) into [sums], in double precision: a lane's worth of a row at a
+     * time, widened to doubles in the registers.
+     */
+    fun addColumns(m: Floats, at: Int, stride: Int, rows: Int, from: Int, upTo: Int, sums: DoubleArray) {
+        val bytes = Float.SIZE_BYTES.toLong()
+        var j = from
+        if (on) {
+            // A lane's worth of floats is two of doubles of the same width
+            val fsp = FloatVector.SPECIES_PREFERRED
+            val dsp = DoubleVector.SPECIES_PREFERRED
+            val half = dsp.length()
+            while (j + fsp.length() <= upTo) {
+                var low = DoubleVector.zero(dsp)
+                var high = DoubleVector.zero(dsp)
+                for (r in 0 until rows) {
+                    val v = FloatVector.fromMemorySegment(fsp, m.seg, (at + r.toLong() * stride + j) * bytes, ORDER)
+                    low = low.add(v.convertShape(VectorOperators.F2D, dsp, 0) as DoubleVector)
+                    high = high.add(v.convertShape(VectorOperators.F2D, dsp, 1) as DoubleVector)
+                }
+                low.add(DoubleVector.fromArray(dsp, sums, j)).intoArray(sums, j)
+                high.add(DoubleVector.fromArray(dsp, sums, j + half)).intoArray(sums, j + half)
+                j += fsp.length()
+            }
+        }
+        while (j < upTo) {
+            var s = 0.0
+            for (r in 0 until rows) s += m[at + r * stride + j]
+            sums[j] += s
+            j++
+        }
     }
 
     /** `Σ a[k] · b[k]` in double precision, four sums at once in the wide registers. */

@@ -239,7 +239,7 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             addPair(i, row, pair)
             for (k in 0 until m) {
                 if (w[k] == 0f) continue
-                val z = row[k] + theta[bias + k]
+                val z = row[k] + theta[bias + k] + pair[2]
                 val l = softplus(z) - y[k] * z
                 into.add(w[k].toDouble(), l)
                 if (fresh != null && fresh[k]) unseen!!.add(w[k].toDouble(), l)
@@ -326,12 +326,7 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
             // The slope of every value's bias: the sum of its column, in double precision, the columns shared out among the cores
             val columnSums = DoubleArray(c)
             IntStream.range(0, (c + COLUMNS - 1) / COLUMNS).parallel().forEach { part ->
-                val from = part * COLUMNS
-                val upTo = minOf(c, from + COLUMNS)
-                for (r in 0 until k) {
-                    val at = r * c
-                    for (j in from until upTo) columnSums[j] += gs[at + j]
-                }
+                Simd.addColumns(gs, 0, c, k, part * COLUMNS, minOf(c, (part + 1) * COLUMNS), columnSums)
             }
             for (j in 0 until c) gBias[group.values[j]] += columnSums[j]
             // The gradient of the group's coordinates, scattered back
@@ -357,13 +352,11 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         }
     }
 
-    /** The pair's own features added to the item's row of scores. */
+    /** The pair's own features of the item added to its row of scores — the common bias is added with every value's own. */
     private fun addPair(i: Int, row: FloatArray, pair: DoubleArray) {
         p.examples[i].forEach { row[it] += pair[0].toFloat() }
         val (named, counts) = p.mentions[i]
         named.forEachIndexed { k, v -> row[v] += (pair[1] * counts[k]).toFloat() }
-        val common = pair[2].toFloat()
-        for (k in row.indices) row[k] += common
     }
 
     internal fun lossAndGradient(theta: DoubleArray, grad: DoubleArray, lambda: Double, trains: (Int) -> Boolean): Double {
@@ -384,8 +377,8 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         var gExample = 0.0
         var gMention = 0.0
         var gCommon = 0.0
-        // Every value's own bias, and the scale of a slope: the loss of a row taken in the wide registers
-        val biases = FloatArray(m) { theta[bias + it].toFloat() }
+        // Every value's own bias with the common one, and the scale of a slope: the loss of a row taken in the wide registers
+        val biases = FloatArray(m) { (theta[bias + it] + pair[2]).toFloat() }
         val scale = (1 / total).toFloat()
         val rowSums = DoubleArray(2)
         for (i in 0 until n) {

@@ -62,6 +62,21 @@ class SimdTest {
     }
 
     @Test
+    fun `the columns of rows are summed as the plain loop sums them`() {
+        val random = Random(5)
+        val rows = 37
+        val stride = 83
+        val m = Floats.of(FloatArray(3 + rows * stride) { random.nextFloat() - 0.5f })
+        // Not a whole number of lanes, and not from the first column
+        val sums = DoubleArray(stride) { 1.0 }
+        Simd.addColumns(m, 3, stride, rows, 5, 70, sums)
+        for (j in 0 until stride) {
+            val expected = 1.0 + if (j in 5 until 70) (0 until rows).sumOf { m[3 + it * stride + j].toDouble() } else 0.0
+            assertTrue(abs(sums[j] - expected) < 1e-9, "column $j: ${sums[j]} vs $expected")
+        }
+    }
+
+    @Test
     fun `dot and axpy agree with the plain loops`() {
         val random = Random(4)
         val a = DoubleArray(1027) { random.nextDouble() - 0.5 }
