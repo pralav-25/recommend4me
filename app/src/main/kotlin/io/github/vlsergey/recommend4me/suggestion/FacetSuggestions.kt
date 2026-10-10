@@ -21,6 +21,7 @@ import io.github.vlsergey.recommend4me.universe.UniverseFacets
 import io.github.vlsergey.recommend4me.universe.Mentions
 import io.github.vlsergey.recommend4me.universe.Naming
 import io.github.vlsergey.recommend4me.universe.Quote
+import io.github.vlsergey.recommend4me.universe.everyName
 import io.github.vlsergey.recommend4me.universe.workPassages
 import io.github.vlsergey.recommend4me.universe.workTexts
 import io.github.vlsergey.recommend4me.vector.Vectors
@@ -161,7 +162,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         store, facet, encoder, vocabulary?.values.orEmpty(),
         imageEncoder = plugins.imageEncoder()?.id, sets = stores.typeOf(store.id).embeddings.ids(), only = only,
         // Counted in the texts of the item [only] alone: no other item's chances are made
-        mentions = vocabulary?.mentions(store)?.let { of -> if (only == null) of else { id -> if (id == only) of(id) else null } },
+        mentions = vocabulary?.mentions(store, only),
         allowed = vocabulary?.allowed, groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
         hintNames = vocabulary?.hintNames.orEmpty(), hintAmong = vocabulary?.hintAmong ?: { emptyList() },
     )
@@ -319,8 +320,11 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val hintAmong: (String) -> Collection<String> = { emptyList() },
     ) {
         /** How often each item's own texts name each value, by [naming]; null when the values are not counted. */
-        fun mentions(store: SourceStore): ((String) -> Map<String, Int>?)? =
-            naming?.let { of -> { id -> of(id)?.count(store.workTexts(id)) } }
+        fun mentions(store: SourceStore, only: String?): ((String) -> Map<String, Int>?)? = naming?.let { of ->
+            // Of every work: the values' names read once for them all, not a query of each work's
+            val names = if (only == null) store.everyName() else store.items::facetNames
+            return { id -> if (only != null && id != only) null else of(id)?.count(store.workTexts(id, names)) }
+        }
     }
 
     /**
@@ -588,7 +592,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             .map { FacetCandidate(it.key, it.chance, it.mentions) }
         val unscored = if (facet !in UniverseFacet.CHARACTER_FACETS || chances.any { !it.had } || facet in store.corrections.completeOf(itemId)) emptyList() else {
             val vocabulary = universeVocabulary(store, def)
-            val named = vocabulary?.mentions(store)?.invoke(itemId)
+            val named = vocabulary?.mentions(store, itemId)?.invoke(itemId)
             vocabulary?.allowed?.invoke(itemId).orEmpty()
                 .filter { it !in answered && it !in current && it !in out && chances.none { c -> c.key == it } }
                 .map { FacetCandidate(it, null, named?.let { n -> n[it] ?: 0 }) }
