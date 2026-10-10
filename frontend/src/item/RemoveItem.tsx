@@ -8,9 +8,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ITEMS, itemKey } from "./lists";
 
 /**
- * "Удалить из библиотеки": for a work gone from the site, never to come back — with everything
- * known of it, the user's grades and answers too; asked to be confirmed, for it is not undone.
- * Removed, the work leaves the lists, and the card shows the next one in its place.
+ * "Удалить из библиотеки": for a work gone from the site — with everything known of it, the
+ * user's grades and answers too; asked to be confirmed, for it is not undone (a work still on the
+ * site is made anew when seen there again, without them). Removed, the work leaves the lists, and
+ * the card shows the next one in its place.
  */
 export function RemoveItem({ summary, typeId }: { summary: ItemSummary; typeId: string }) {
   const [asking, setAsking] = useState(false);
@@ -37,7 +38,8 @@ export function RemoveItem({ summary, typeId }: { summary: ItemSummary; typeId: 
             <DialogTitle>Удалить работу из библиотеки?</DialogTitle>
             <DialogDescription>
               «{summary.title}» — и всё, что о ней известно: тексты, обложки, отзывы, главы, ваши оценки и ответы по ней, связи с другими сайтами,
-              прогнозы. Отменить нельзя. Страница сайта, открытая снова, работу не вернёт.
+              прогнозы. Отменить нельзя. Если работа всё ещё есть на сайте, она вернётся, когда вы снова её там увидите, — но уже без ваших оценок
+              и ответов.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

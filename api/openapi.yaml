@@ -218,8 +218,8 @@ paths:
       description: |
         For a work gone from the site: the work, its texts, pictures (their files too), reviews,
         parts and every vector of them, the user's answers, links, grades and marks, and what the
-        model made of it. Kept as removed: a page of the site read again does not bring it back.
-        Not undone.
+        model made of it. Not undone: seen on the site again, the work is made anew, as one never
+        seen - without the user's grades and answers.
       parameters:
         - $ref: '#/components/parameters/Source'
         - $ref: '#/components/parameters/Item'
