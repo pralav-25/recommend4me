@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.optim
 
+import io.github.vlsergey.recommend4me.matrix.Simd
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -96,7 +97,7 @@ private class LbfgsMemory {
         for (j in h - 1 downTo 0) {
             val rho = 1.0 / dot(yHist[j], sHist[j])
             alpha[j] = rho * dot(sHist[j], dir)
-            for (k in dir.indices) dir[k] -= alpha[j] * yHist[j][k]
+            Simd.axpy(-alpha[j], yHist[j], dir)
         }
         if (h > 0) {
             val gamma = dot(sHist[h - 1], yHist[h - 1]) / dot(yHist[h - 1], yHist[h - 1])
@@ -105,7 +106,7 @@ private class LbfgsMemory {
         for (j in 0 until h) {
             val rho = 1.0 / dot(yHist[j], sHist[j])
             val beta = rho * dot(yHist[j], dir)
-            for (k in dir.indices) dir[k] += (alpha[j] - beta) * sHist[j][k]
+            Simd.axpy(alpha[j] - beta, sHist[j], dir)
         }
     }
 
@@ -126,11 +127,8 @@ private class LbfgsMemory {
     }
 }
 
-private fun dot(a: DoubleArray, b: DoubleArray): Double {
-    var s = 0.0
-    for (k in a.indices) s += a[k] * b[k]
-    return s
-}
+/** Of thousands of weights, dozens of times a step: in the wide registers. */
+private fun dot(a: DoubleArray, b: DoubleArray): Double = Simd.dot(a, b)
 
 private const val MEMORY = 10
 private const val FTOL = 64 * 2.220446049250313e-16

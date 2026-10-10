@@ -384,6 +384,10 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
         var gExample = 0.0
         var gMention = 0.0
         var gCommon = 0.0
+        // Every value's own bias, and the scale of a slope: the loss of a row taken in the wide registers
+        val biases = FloatArray(m) { theta[bias + it].toFloat() }
+        val scale = (1 / total).toFloat()
+        val rowSums = DoubleArray(2)
         for (i in 0 until n) {
             gr.fill(0f)
             if (trains(i)) {
@@ -391,15 +395,11 @@ internal class Bilinear(private val p: Problem, val rank: Int) {
                 p.weight.take(w, 0, i * m, m)
                 p.label.take(y, 0, i * m, m)
                 addPair(i, row, pair)
-                for (k in 0 until m) {
-                    if (w[k] == 0f) continue
-                    val z = row[k] + theta[bias + k]
-                    loss += w[k] * (softplus(z) - y[k] * z)
-                    val d = w[k] * (sigmoid(z) - y[k]) / total
-                    gr[k] = d.toFloat()
-                    gBias[k] += d
-                    gCommon += d
-                }
+                rowSums.fill(0.0)
+                Simd.weightedLogisticRow(row, biases, w, y, m, scale, gr, rowSums)
+                loss += rowSums[0]
+                gCommon += rowSums[1]
+                for (k in 0 until m) gBias[k] += gr[k]
                 p.examples[i].forEach { gExample += gr[it] }
                 val (named, counts) = p.mentions[i]
                 named.forEachIndexed { k, v -> gMention += gr[v] * counts[k] }

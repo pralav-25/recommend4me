@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.suggestion
 
+import io.github.vlsergey.recommend4me.matrix.Simd
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -76,15 +77,10 @@ object Lbfgs {
         return x
     }
 
-    private fun dot(a: DoubleArray, b: DoubleArray): Double {
-        var s = 0.0
-        for (i in a.indices) s += a[i] * b[i]
-        return s
-    }
+    // Hundreds of thousands of weights, dozens of times a step: in the wide registers
+    private fun dot(a: DoubleArray, b: DoubleArray): Double = Simd.dot(a, b)
 
     private fun norm(a: DoubleArray) = sqrt(dot(a, a))
 
-    private fun axpy(k: Double, x: DoubleArray, y: DoubleArray) {
-        for (i in x.indices) y[i] += k * x[i]
-    }
+    private fun axpy(k: Double, x: DoubleArray, y: DoubleArray) = Simd.axpy(k, x, y)
 }
