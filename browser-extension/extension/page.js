@@ -468,6 +468,39 @@
     line.appendChild(b);
   }
 
+  /**
+   * "Других вселенных нет": the user's word that the work's universes are all named — the others
+   * are not offered and count as rejected for the model; pressed again, taken back. Shown once the
+   * work has a universe, as in the application.
+   */
+  function completeButton(item, facet) {
+    if (facet.facet !== UNIVERSE || facet.editable === false) return null;
+    const own = (facet.values || []).filter((v) => v.corrected !== "REMOVED" && !v.offered);
+    if (!own.length) return null;
+    const s = item.summary;
+    const complete = facet.complete === true;
+    return button(
+      complete ? "✓ других вселенных нет" : "других вселенных нет",
+      complete
+        ? "Названы все вселенные работы: остальные не предлагаются и для модели отклонены. Нажмите, чтобы снять"
+        : "Все вселенные работы уже названы: остальные не предлагать и считать отклонёнными",
+      () => api(complete ? "DELETE" : "PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/corrections/complete?facet=${enc(UNIVERSE)}`),
+      `r4m-button r4m-complete${complete ? " r4m-current" : ""}${saving.has("complete") ? " r4m-saving" : ""}`,
+      (shown) => {
+        const f = (shown.facets || []).find((x) => x.facet === UNIVERSE);
+        if (!f) return;
+        f.complete = !complete;
+        // Said complete: nothing more is offered
+        if (!complete) {
+          f.values = (f.values || []).filter((v) => !v.offered);
+          const s2 = (shown.suggestions || []).find((x) => x.facet === UNIVERSE);
+          if (s2) s2.suggested = [];
+        }
+      },
+      "complete",
+    );
+  }
+
   /** The keys of the values a facet's line shows: the work's, the user's, the suggested. */
   function shownKeys(facet, suggestions) {
     return new Set([...(facet.values || []), ...((suggestions && suggestions.suggested) || [])].map((v) => v.key));
@@ -575,10 +608,12 @@
         for (const v of open) await correct(item, facet.facet, { key: v.key }, true);
       }, "r4m-button r4m-all", (shown) => open.forEach((v) => answeredShown(facet.facet, v, true)(shown))));
     }
+    const allNamed = completeButton(item, facet);
+    if (allNamed) label.appendChild(allNamed);
     stableOrder(item, facet.facet, values).forEach((v) => line.appendChild(valueChip(item, facet.facet, v, editable)));
     if (editable) {
       ((suggestions && suggestions.suggested) || []).forEach((v) => line.appendChild(suggestedChip(item, facet.facet, v)));
-      moreOf(item, facet.facet, line, shownKeys(facet, suggestions));
+      if (!facet.complete) moreOf(item, facet.facet, line, shownKeys(facet, suggestions));
       line.appendChild(addField(item, facet.facet, facet.label));
     }
     block.appendChild(line);
@@ -618,8 +653,10 @@
     const after = el("r4m-chips");
     values.filter((v) => v.corrected === "ADDED" || (v.inferred && v.corrected !== "REMOVED")).forEach((v) => after.appendChild(valueChip(item, decor.facet, v)));
     ((suggestions && suggestions.suggested) || []).forEach((v) => after.appendChild(suggestedChip(item, decor.facet, v)));
-    moreOf(item, decor.facet, after, shownKeys(facet, suggestions));
+    if (!facet.complete) moreOf(item, decor.facet, after, shownKeys(facet, suggestions));
     after.appendChild(addField(item, decor.facet, facet.label));
+    const allNamed = completeButton(item, facet);
+    if (allNamed) after.appendChild(allNamed);
     const last = elements[elements.length - 1];
     (last.nextElementSibling && last.nextElementSibling.tagName === "R4M-TOOLS" ? last.nextElementSibling : last)
       .insertAdjacentElement("afterend", after);
