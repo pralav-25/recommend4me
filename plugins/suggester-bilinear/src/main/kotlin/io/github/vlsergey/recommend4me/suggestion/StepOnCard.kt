@@ -13,8 +13,9 @@ private val log = LoggerFactory.getLogger(StepOnCard::class.java)
 
 /**
  * A STEP OF THE FITTING ON THE CARD ([Bilinear]): the data of the task — the items' features X, the
- * values' Z, the names' texts H and how the names fall into groups — put on the card once, among
- * the constants of two graphs of ONNX Runtime, and kept there for the whole fitting; a step sends
+ * values' Z, the names' texts H and how the names fall into groups — put on the card once, handed
+ * to two sessions of ONNX Runtime from the memory the task lies in ([OnnxGraph.supplied]), the
+ * groups among their graphs' constants, and kept there for the whole fitting; a step sends
  * the weights there and takes the gradient back. Forward, of the weights A, B, E and the biases:
  *
  *     U = X A,  V = Z B + E,  Uh = H Σ_b s_b A_b + A_const + Σ_b A_mark(b)
