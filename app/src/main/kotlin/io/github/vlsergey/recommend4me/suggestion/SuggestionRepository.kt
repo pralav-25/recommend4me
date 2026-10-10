@@ -146,6 +146,12 @@ class ValueNameRepository(private val db: DSLContext) {
             .where(FACET_VALUE_VECTOR.FACET.eq(facet), FACET_VALUE_VECTOR.ENCODER.eq(encoder))
             .fetchMap({ it.value1()!! }, { it.value2()!! to Vectors.fromHalf(it.value3()!!) })
 
+    /** Every stored vector of the facet's values by [encoder], streamed: (value key, hash of its name, vector) — none of them kept here. */
+    fun forEach(facet: String, encoder: String, action: (key: String, hash: String, vector: FloatArray) -> Unit) =
+        db.select(FACET_VALUE_VECTOR.VALUE_KEY, FACET_VALUE_VECTOR.NAME_HASH, FACET_VALUE_VECTOR.VEC).from(FACET_VALUE_VECTOR)
+            .where(FACET_VALUE_VECTOR.FACET.eq(facet), FACET_VALUE_VECTOR.ENCODER.eq(encoder))
+            .fetchSize(2000).fetchLazy().use { cursor -> cursor.forEach { action(it.value1()!!, it.value2()!!, Vectors.fromHalf(it.value3()!!)) } }
+
     fun save(facet: String, encoder: String, rows: List<Triple<String, String, FloatArray>>) {
         rows.chunked(1000).forEach { chunk ->
             db.batch(chunk.map { (key, hash, vector) ->

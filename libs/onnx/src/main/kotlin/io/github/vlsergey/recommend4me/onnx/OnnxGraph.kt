@@ -36,6 +36,23 @@ class OnnxGraph(private val name: String) {
         constants += tensor(name, FLOAT, dims, raw.array())
     }
 
+    /**
+     * A tensor of floats the graph does not carry: the session is handed it when it is opened
+     * ([Onnx.onCard]), from the memory it lies in — a matrix of data not copied into the graph's
+     * bytes, nor parsed out of them again. Written as external data (onnx.proto's
+     * `data_location = EXTERNAL`) of no file: the runtime takes it from what it is handed, by name.
+     */
+    fun supplied(name: String, vararg dims: Long) = apply {
+        constants += Proto().apply {
+            dims.forEach { varint(1, it) }
+            varint(2, FLOAT.toLong())
+            string(8, name)
+            message(13, Proto().apply { string(1, "location"); string(2, SUPPLIED) }.bytes())
+            message(13, Proto().apply { string(1, "length"); string(2, (dims.fold(1L, Long::times) * Float.SIZE_BYTES).toString()) }.bytes())
+            varint(14, DATA_EXTERNAL)
+        }.bytes()
+    }
+
     /** A tensor of 64-bit integers known when the graph is made. */
     fun constant(name: String, values: LongArray, vararg dims: Long) = apply {
         val raw = ByteBuffer.allocate(values.size * Long.SIZE_BYTES).order(ByteOrder.LITTLE_ENDIAN).also { b -> values.forEach { b.putLong(it) } }.array()
@@ -144,5 +161,11 @@ class OnnxGraph(private val name: String) {
         private const val ATTRIBUTE_FLOAT = 1L
         private const val ATTRIBUTE_INT = 2L
         private const val ATTRIBUTE_INTS = 7L
+
+        /** TensorProto.DataLocation: the data lies outside the graph. */
+        private const val DATA_EXTERNAL = 1L
+
+        /** The "file" a [supplied] tensor's data is in: none — a name only, for the format to have one. */
+        private const val SUPPLIED = "supplied"
     }
 }

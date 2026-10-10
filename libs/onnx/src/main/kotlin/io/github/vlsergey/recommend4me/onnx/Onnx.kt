@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.onnx
 
 import ai.onnxruntime.OnnxTensor
+import ai.onnxruntime.OnnxTensorLike
 import ai.onnxruntime.providers.OrtCUDAProviderOptions
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtException
@@ -87,12 +88,14 @@ class Onnx(
     /**
      * A session of a graph made in memory for one piece of work — its data among the graph's
      * constants — on the card, in single precision without TF32; null without a card. Not kept: the
-     * caller closes it when the work is done, and the card's memory is given back.
+     * caller closes it when the work is done, and the card's memory is given back. [supplied]: the
+     * tensors the graph does not carry ([OnnxGraph.supplied]), by name, over the memory they lie in —
+     * kept open by the caller as long as the session.
      */
-    fun onCard(graph: ByteArray): OrtSession? {
+    fun onCard(graph: ByteArray, supplied: Map<String, OnnxTensorLike> = emptyMap()): OrtSession? {
         if (!gpu || !synchronized(this) { cudaReady() }) return null
         return try {
-            open(graph, 0, cuda = true, tf32 = false)
+            env.createSession(graph, options(0, cuda = true, tf32 = false).apply { if (supplied.isNotEmpty()) addExternalInitializers(supplied) })
         } catch (e: OrtException) {
             log.warn("A graph of {} bytes cannot run on CUDA: {}", graph.size, e.message)
             null

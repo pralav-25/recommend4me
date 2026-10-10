@@ -31,6 +31,8 @@ internal class StepOnCard private constructor(
     private val onnx: Onnx,
     private val forward: OrtSession,
     private val backward: OrtSession,
+    /** The task's matrices the sessions were handed, over its memory: closed after them. */
+    private val data: List<OnnxTensor>,
     private val p: Problem,
     private val rank: Int,
 ) : AutoCloseable {
@@ -121,6 +123,7 @@ internal class StepOnCard private constructor(
     override fun close() {
         forward.close()
         backward.close()
+        data.forEach(OnnxTensor::close)
     }
 
     companion object {
@@ -134,14 +137,27 @@ internal class StepOnCard private constructor(
             val forwardBytes = forwardGraph(p, rank)
             val backwardBytes = backwardGraph(p)
             val made = System.currentTimeMillis()
-            val forward = onnx.onCard(forwardBytes) ?: return null
-            val backward = onnx.onCard(backwardBytes) ?: return null.also { forward.close() }
-            log.info(
-                "the task on the card: graphs of {} MB made in {} ms, opened in {} ms",
-                (forwardBytes.size + backwardBytes.size) / (1 shl 20), made - started, System.currentTimeMillis() - made,
+            // The task's matrices handed to the runtime over the memory they lie in: not copied into
+            // the graphs' bytes, nor parsed out of them; on the card a copy each session
+            val data = mapOf(
+                "X" to tensor(onnx, p.x.held.buffer(0, p.n * p.design.itemWidth), p.n, p.design.itemWidth),
+                "Z" to tensor(onnx, p.z.held.buffer(0, p.m * p.design.valueWidth), p.m, p.design.valueWidth),
+                "H" to tensor(onnx, p.hintText.held.buffer(0, p.hints.size * p.hintDim), p.hints.size, p.hintDim),
             )
-            return StepOnCard(onnx, forward, backward, p, rank)
+            // Kept open as long as the sessions, as the runtime asks of what it is handed
+            val forward = onnx.onCard(forwardBytes, data) ?: return null.also { data.values.forEach(OnnxTensor::close) }
+            val backward = onnx.onCard(backwardBytes, data.filterKeys { it != "H" })
+                ?: return null.also { forward.close(); data.values.forEach(OnnxTensor::close) }
+            log.info(
+                "the task on the card: graphs of {} KB made in {} ms, opened in {} ms",
+                (forwardBytes.size + backwardBytes.size) / (1 shl 10), made - started, System.currentTimeMillis() - made,
+            )
+            return StepOnCard(onnx, forward, backward, data.values.toList(), p, rank)
         }
+
+        /** A tensor over [data] where it lies — a direct buffer is not copied by the runtime. */
+        private fun tensor(onnx: Onnx, data: FloatBuffer, rows: Int, cols: Int): OnnxTensor =
+            OnnxTensor.createTensor(onnx.env, data, longArrayOf(rows.toLong(), cols.toLong()))
 
         private fun forwardGraph(p: Problem, rank: Int): ByteArray {
             val f = OnnxGraph.FLOAT
@@ -150,9 +166,9 @@ internal class StepOnCard private constructor(
                 .input("A", f, dx, rank.toLong()).input("B", f, p.design.valueWidth.toLong(), rank.toLong())
                 .input("E", f, p.m.toLong(), rank.toLong()).input("bias", f, p.m.toLong())
                 .input("common", f).input("named", f).input("scale", f)
-                .constant("X", p.x.held.buffer(0, p.n * p.design.itemWidth), p.n.toLong(), dx)
-                .constant("Z", p.z.held.buffer(0, p.m * p.design.valueWidth), p.m.toLong(), p.design.valueWidth.toLong())
-                .constant("H", p.hintText.held.buffer(0, p.hints.size * p.hintDim), p.hints.size.toLong(), p.hintDim.toLong())
+                .supplied("X", p.n.toLong(), dx)
+                .supplied("Z", p.m.toLong(), p.design.valueWidth.toLong())
+                .supplied("H", p.hints.size.toLong(), p.hintDim.toLong())
                 .constant("one", floatArrayOf(1f))
                 .constant("first", longArrayOf(0), 1)
                 .constant("second", longArrayOf(1), 1)
@@ -220,8 +236,8 @@ internal class StepOnCard private constructor(
             val f = OnnxGraph.FLOAT
             return OnnxGraph("suggester-step-backward")
                 .input("dU", f, p.n.toLong(), "rank").input("dV", f, p.m.toLong(), "rank")
-                .constant("X", p.x.held.buffer(0, p.n * p.design.itemWidth), p.n.toLong(), p.design.itemWidth.toLong())
-                .constant("Z", p.z.held.buffer(0, p.m * p.design.valueWidth), p.m.toLong(), p.design.valueWidth.toLong())
+                .supplied("X", p.n.toLong(), p.design.itemWidth.toLong())
+                .supplied("Z", p.m.toLong(), p.design.valueWidth.toLong())
                 .node("Gemm", listOf("X", "dU"), listOf("dA"), mapOf("transA" to 1))
                 .node("Gemm", listOf("Z", "dV"), listOf("dB"), mapOf("transA" to 1))
                 .output("dA", f, p.design.itemWidth.toLong(), "rank").output("dB", f, p.design.valueWidth.toLong(), "rank")

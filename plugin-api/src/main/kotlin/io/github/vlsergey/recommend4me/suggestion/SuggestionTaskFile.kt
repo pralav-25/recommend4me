@@ -5,6 +5,7 @@ import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.IdentityHashMap
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 
@@ -14,7 +15,8 @@ import java.util.zip.GZIPOutputStream
  * of the model tried on it — as often as needed, without waiting for the data to change.
  */
 object SuggestionTaskFile {
-    private const val FORMAT = 2
+    /** 3: the names' texts a matrix, their arrays of values once each; 2 and 1 read too. */
+    private const val FORMAT = 3
 
     fun write(task: SuggestionTask, file: Path) {
         Files.createDirectories(file.parent)
@@ -49,19 +51,23 @@ object SuggestionTaskFile {
                 lists(out, g.of)
             }
             out.writeDouble(task.lackWeight)
+            // Every array of values the names are judged among once, each name by its number
+            val among = IdentityHashMap<IntArray, Int>()
+            task.hints.forEach { among.putIfAbsent(it.among, among.size) }
+            out.writeInt(among.size)
+            among.entries.sortedBy { it.value }.forEach { ints(out, it.key) }
             out.writeInt(task.hints.size)
             task.hints.forEach { h ->
-                out.writeInt(h.vector.size)
-                h.vector.forEach(out::writeFloat)
                 out.writeInt(h.value)
-                ints(out, h.among)
+                out.writeInt(among.getValue(h.among))
             }
+            matrix(out, task.hintTexts)
         }
     }
 
     fun read(file: Path): SuggestionTask = DataInputStream(GZIPInputStream(Files.newInputStream(file)).buffered()).use { input ->
         val format = input.readInt()
-        check(format == FORMAT || format == FORMAT - 1) { "$file: not a task of format $FORMAT" }
+        check(format in 1..FORMAT) { "$file: not a task of format $FORMAT or before it" }
         val itemIds = strings(input)
         val inputs = List(input.readInt()) {
             val name = input.readUTF()
@@ -79,14 +85,23 @@ object SuggestionTaskFile {
         val allowed = List(input.readInt()) { if (input.readBoolean()) ints(input) else null }
         val groupings = List(input.readInt()) { ValueGrouping(input.readUTF(), strings(input), lists(input)) }
         val lackWeight = input.readDouble()
-        val hints = List(input.readInt()) {
-            val vector = FloatArray(input.readInt()) { input.readFloat() }
-            val value = input.readInt()
-            // The format before it kept the rivals alone, an array of every name
-            val among = ints(input).let { if (format == FORMAT) it else (it + value).distinct().sorted().toIntArray() }
-            NameHint(vector, value, among)
+        val (hints, hintTexts) = if (format == FORMAT) {
+            val among = List(input.readInt()) { ints(input) }
+            List(input.readInt()) { NameHint(input.readInt(), among[input.readInt()]) } to matrix(input)
+        } else {
+            // The formats before it: a vector with every name, and the values it is judged among —
+            // of the first its rivals alone — an array of every name
+            val read = List(input.readInt()) {
+                val vector = FloatArray(input.readInt()) { input.readFloat() }
+                val value = input.readInt()
+                val among = ints(input).let { if (format == 2) it else (it + value).distinct().sorted().toIntArray() }
+                vector to NameHint(value, among)
+            }
+            val texts = Matrix(read.size, read.firstOrNull()?.first?.size ?: 0)
+            read.forEachIndexed { k, (vector, _) -> texts.held.put(vector, 0, texts.row(k), texts.cols) }
+            read.map { it.second } to texts
         }
-        SuggestionTask(itemIds, inputs, values, valueKeys, assigned, confirmed, rejected, context, contextKeys, mentions, allowed, groupings, lackWeight, examples, hints)
+        SuggestionTask(itemIds, inputs, values, valueKeys, assigned, confirmed, rejected, context, contextKeys, mentions, allowed, groupings, lackWeight, examples, hints, hintTexts)
     }
 
     private fun strings(out: DataOutputStream, list: List<String>) {

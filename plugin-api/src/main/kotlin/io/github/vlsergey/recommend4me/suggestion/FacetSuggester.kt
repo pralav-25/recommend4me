@@ -1,6 +1,8 @@
 package io.github.vlsergey.recommend4me.suggestion
 
 import io.github.vlsergey.recommend4me.matrix.Matrix
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /**
  * One input of the items, as the model of the grades reads them too: a vector per item, as it was
@@ -20,14 +22,14 @@ class InputBlock(val name: String, val vectors: Matrix, val present: BooleanArra
  * universe (its own, its characters'), of a pairing — "Гермиона", "Hermione Granger" — read as a
  * text of a work, the work's every text, which names the [value] and none of the other values
  * [among] (the other characters of its universe). The works the model learns from are few; the
- * names of the values tell it how a text that names one looks. [vector]: the name encoded as a text
- * of a work is, of the length of the task's text inputs.
+ * names of the values tell it how a text that names one looks. The name encoded as a text of a work
+ * is, is its row of the task's [SuggestionTask.hintTexts].
  *
  * [among]: the values the name is judged among, its own with them, in ascending order — one array
  * for every name judged among the same values: the names of a universe's thousands of characters
  * share one, not thousands of copies of it.
  */
-class NameHint(val vector: FloatArray, val value: Int, val among: IntArray)
+class NameHint(val value: Int, val among: IntArray)
 
 /**
  * A way the values of a facet fall into groups alike in what goes with them — the pairings of two
@@ -97,6 +99,12 @@ class SuggestionTask(
     val examples: List<IntArray> = List(assigned.size) { IntArray(0) },
     /** The names of the values as texts that name them ([NameHint]); none for a facet whose values are not named in texts. */
     val hints: List<NameHint> = emptyList(),
+    /**
+     * One row per name of [hints], in their order: the name encoded as a text of a work is, of the
+     * length of the task's text inputs. A matrix, not a vector of each: thousands of names of
+     * thousands of numbers, read into the memory a suggester reads them from.
+     */
+    val hintTexts: Matrix = Matrix(0, 0),
 ) {
     val itemCount: Int get() = assigned.size
     val valueCount: Int get() = values.rows
@@ -116,10 +124,13 @@ class SuggestionTask(
         require(groupings.all { g -> g.of.size == valueCount && g.of.all { groups -> groups.all { it in g.groups.indices } } }) { "A grouping not of the $valueCount values" }
         require(lackWeight > 0 && lackWeight <= 1) { "A lacking value weighs $lackWeight" }
         require(examples.size == itemCount) { "$itemCount items, ${examples.size} lists of examples" }
-        require(hints.all { h -> h.value in 0 until valueCount && h.among.all { it in 0 until valueCount } }) { "A hint of a value not of the task" }
-        require(hints.all { h -> h.among.binarySearch(h.value) >= 0 && (1 until h.among.size).all { h.among[it - 1] < h.among[it] } }) {
-            "A hint judged among values not in order, or not with its own"
+        require(hintTexts.rows == hints.size) { "${hints.size} names, ${hintTexts.rows} texts of them" }
+        // Every array of values checked once, however many names share it
+        val among = hints.mapTo(Collections.newSetFromMap(IdentityHashMap())) { it.among }
+        require(among.all { a -> a.all { it in 0 until valueCount } && (1 until a.size).all { a[it - 1] < a[it] } }) {
+            "Names judged among values not of the task, or not in order"
         }
+        require(hints.all { h -> h.value in 0 until valueCount && h.among.binarySearch(h.value) >= 0 }) { "A name judged among values without its own" }
     }
 }
 

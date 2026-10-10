@@ -63,12 +63,14 @@ internal class Problem(val task: SuggestionTask, val design: Design, val folds: 
     /**
      * The names of the values as texts of a work ([SuggestionTask.hints]), learnt from in every fold
      * and judged in none: a name read as the work's every text — each block of [hintBlocks] — that
-     * names its value and none of its rivals.
+     * names its value and none of its rivals. All or none: the names' texts are of one length, read
+     * as the text blocks of that length are — none when the items have no such block. The task's
+     * matrix of them read as it is, not copied.
      */
-    val hints: List<NameHint> = task.hints.filter { h -> design.textBlocks(h.vector.size).isNotEmpty() }
-    val hintDim = hints.firstOrNull()?.vector?.size ?: 0
-    val hintBlocks: List<Int> = if (hints.isEmpty()) emptyList() else design.textBlocks(hintDim)
-    val hintText: Matrix = Matrix(hints.size, hintDim).also { m -> hints.forEachIndexed { k, h -> m.held.put(h.vector, 0, m.row(k), hintDim) } }
+    val hintBlocks: List<Int> = design.textBlocks(task.hintTexts.cols).takeIf { task.hints.isNotEmpty() }.orEmpty()
+    val hints: List<NameHint> = if (hintBlocks.isEmpty()) emptyList() else task.hints
+    val hintDim = if (hints.isEmpty()) 0 else task.hintTexts.cols
+    val hintText: Matrix = if (hints.isEmpty()) Matrix(0, 0) else task.hintTexts
 
     /** Names that are judged against the same values — a universe's characters' names — scored together. */
     class HintGroup(val rows: IntArray, val values: IntArray, val positive: IntArray)

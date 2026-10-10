@@ -769,6 +769,10 @@ internal class FacetData(
             // An item whose values of the facet are all named: every other value rejected by the user's word
             val allNamed = BooleanArray(ids.size) { facet.key in complete[ids[it]].orEmpty() }
             val assigned = ids.map { indices(corrected[it]?.get(facet.key).orEmpty()) }
+            // What is learnt from, not what is judged: no names when the item [only] is judged by the weights fitted last
+            val (hintValues, hintTexts) = if (only != null) emptyList<String>() to Matrix(0, 0) else hints(store, facet.key, hintNames, encoder)
+            // The names of values of the task: every one, but of a dictionary's value the task lacks
+            val named = hintValues.indices.filter { index[hintValues[it]] != null }
             val task = SuggestionTask(
                 itemIds = ids,
                 inputs = inputs,
@@ -787,20 +791,20 @@ internal class FacetData(
                 groupings = grouped,
                 lackWeight = lackWeight,
                 examples = ids.map { id -> examples?.invoke(id)?.let(::indices) ?: IntArray(0) },
-                // What is learnt from, not what is judged: none when the item [only] is judged by the weights fitted last
-                hints = if (only != null) emptyList() else {
+                hints = run {
                     // Every collection of values the names are judged among made indices once, one array
                     // shared by all its names: of a universe's characters thousands of names, each of
                     // thousands of rivals
                     val made = IdentityHashMap<Collection<String>, IntArray>()
-                    hints(store, facet.key, hintNames, encoder).mapNotNull { (key, vector) ->
-                        index[key]?.let { v ->
-                            val of = hintAmong(key)
-                            val among = made.getOrPut(of) { indices(of).also { it.sort() } }
-                            NameHint(vector, v, if (among.binarySearch(v) >= 0) among else (among + v).also { it.sort() })
-                        }
+                    named.map { k ->
+                        val key = hintValues[k]
+                        val v = index.getValue(key)
+                        val of = hintAmong(key)
+                        val among = made.getOrPut(of) { indices(of).also { it.sort() } }
+                        NameHint(v, if (among.binarySearch(v) >= 0) among else (among + v).also { it.sort() })
                     }
                 },
+                hintTexts = if (named.size == hintValues.size) hintTexts else hintTexts.gather(named.toIntArray()),
             )
             val hashes = HashMap<String, MutableList<String>>()
             store.textVectors.hashes(encoder.id).forEach { (k, hash) -> hashes.getOrPut(k.first) { ArrayList() } += hash }
@@ -884,26 +888,32 @@ internal class FacetData(
         /**
          * Every name of every value as a text of a work is encoded — a passage, not a query — each
          * with the value it names; kept with the source's vectors of names under "hint:<facet>",
-         * encoded again only when new.
+         * encoded again only when new. The value of every name, and the names' vectors as the rows of
+         * one matrix, read into it as they are streamed: thousands of names of a thousand numbers
+         * each are not held twice. A name the encoder gave no vector is left out.
          */
-        private fun hints(store: SourceStore, facet: String, names: Map<String, List<String>>, encoder: TextEncoder): List<Pair<String, FloatArray>> {
-            if (names.isEmpty()) return emptyList()
+        private fun hints(store: SourceStore, facet: String, names: Map<String, List<String>>, encoder: TextEncoder): Pair<List<String>, Matrix> {
+            if (names.isEmpty()) return emptyList<String>() to Matrix(0, 0)
             val kept = "hint:$facet"
-            val stored = store.valueNames.of(kept, encoder.id)
             val wanted = names.flatMap { (value, list) -> list.distinct().map { value to it } }
-            val out = ArrayList<Pair<String, FloatArray>>()
-            val todo = ArrayList<Pair<String, String>>()
-            wanted.forEach { (value, name) ->
-                val have = stored["$value\u0001$name"]
-                if (have != null && have.first == Vectors.hash(name)) out += value to have.second else todo += value to name
+            val at = wanted.withIndex().associate { (k, w) -> "${w.first}\u0001${w.second}" to k }
+            val hashes = wanted.map { Vectors.hash(it.second) }
+            val texts = Matrix(wanted.size, encoder.dim)
+            val have = BooleanArray(wanted.size)
+            fun put(k: Int, v: FloatArray) {
+                if (v.size != texts.cols) return
+                texts.held.put(v, 0, texts.row(k), texts.cols)
+                have[k] = true
             }
-            todo.chunked(ENCODE_BATCH).forEach { batch ->
-                val vectors = encoder.encode(batch.map { it.second }, TextKind.PASSAGE)
-                val rows = batch.indices.mapNotNull { k -> vectors[k]?.let { Triple("${batch[k].first}\u0001${batch[k].second}", Vectors.hash(batch[k].second), it) } }
+            store.valueNames.forEach(kept, encoder.id) { key, hash, v -> at[key]?.takeIf { hashes[it] == hash }?.let { put(it, v) } }
+            wanted.indices.filter { !have[it] }.chunked(ENCODE_BATCH).forEach { batch ->
+                val vectors = encoder.encode(batch.map { wanted[it].second }, TextKind.PASSAGE)
+                val rows = batch.indices.mapNotNull { j -> vectors[j]?.let { Triple("${wanted[batch[j]].first}\u0001${wanted[batch[j]].second}", hashes[batch[j]], it) } }
                 store.valueNames.save(kept, encoder.id, rows)
-                batch.indices.forEach { k -> vectors[k]?.let { out += batch[k].first to it } }
+                batch.indices.forEach { j -> vectors[j]?.let { put(batch[j], it) } }
             }
-            return out
+            val rows = wanted.indices.filter { have[it] }
+            return rows.map { wanted[it].first } to if (rows.size == wanted.size) texts else texts.gather(rows.toIntArray())
         }
 
         /** Names encoded in one call: memory, not meaning. */
