@@ -12,6 +12,7 @@ import io.github.vlsergey.recommend4me.source.SourceSchema
 import io.github.vlsergey.recommend4me.source.TextDef
 import io.github.vlsergey.recommend4me.api.model.CaptureRequest
 import io.github.vlsergey.recommend4me.api.model.FacetCorrection
+import io.github.vlsergey.recommend4me.api.model.ItemRef
 import io.github.vlsergey.recommend4me.api.model.ItemSort
 import io.github.vlsergey.recommend4me.api.model.ItemView
 import io.github.vlsergey.recommend4me.api.model.RatingRequest
@@ -132,6 +133,27 @@ class ScenarioTest {
         assertEquals("A boy finds a dragon egg", items.getItem("test", "w1").body!!.texts.single().content)
         // The source's filter facet, and the kind and the universe the application gives every book
         assertEquals(listOf("test.tag", "kind", "universe"), items.listFacets("books").body!!.map { it.id })
+
+        // Linked, two items are one work: a grade of either is written to both, in the list as graded alike
+        fun gradeOf(id: String) = items.getItem("test", id).body!!.summary.grade
+        corrections.linkItem("test", "w2", ItemRef("test", "w3"))
+        items.rateItem("test", "w2", RatingRequest(3))
+        assertEquals(3, gradeOf("w3"))
+        assertEquals(3, list(view = ItemView.RATED).total)
+        // Taken back of one, taken back of both
+        items.unrateItem("test", "w3", null)
+        assertNull(gradeOf("w2"))
+        assertEquals(1, list(view = ItemView.RATED).total)
+        // The link taken back leaves both their grades; graded after, each is its own
+        items.rateItem("test", "w3", RatingRequest(4))
+        assertEquals(4, gradeOf("w2"))
+        corrections.unlinkItem("test", "w2", "test", "w3")
+        assertEquals(4, gradeOf("w2"))
+        assertEquals(4, gradeOf("w3"))
+        items.rateItem("test", "w2", RatingRequest(2))
+        assertEquals(4, gradeOf("w3"))
+        items.unrateItem("test", "w2", null)
+        items.unrateItem("test", "w3", null)
 
         // Removed from the library — gone from the site — with its grade and the user's answers
         corrections.correctFacet("test", "w1", FacetCorrection(facet = "tags", added = true, key = "magic"))

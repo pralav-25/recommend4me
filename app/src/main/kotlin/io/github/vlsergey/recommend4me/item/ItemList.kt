@@ -113,13 +113,11 @@ class ItemList(
                 rows += Row(key, k.updatedAt, k.id in grades, predictions[k.id], numbers[k.id] ?: surprises[k.id])
             }
         }
-        // A work graded in any of its sources is graded
-        val gradedWorks = rows.filter { it.graded }.map { clusters.work(it.key) }.toSet()
+        // An item is graded by its own grade: a linked one has the work's written to it ([LinkedGrades][io.github.vlsergey.recommend4me.rating.LinkedGrades])
         val viewed = rows.filter { row ->
-            val graded = row.graded || (clusters.linked(row.key) && clusters.work(row.key) in gradedWorks)
             when (view) {
-                ItemView.UNRATED -> !graded
-                ItemView.RATED -> graded
+                ItemView.UNRATED -> !row.graded
+                ItemView.RATED -> row.graded
                 ItemView.ALL -> true
             }
         }

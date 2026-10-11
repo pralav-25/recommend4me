@@ -167,7 +167,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     linked = clusters.members(key).drop(1).mapNotNull { m ->
                         heads[m]?.let { (h, t) -> LinkedItem(m.source, m.id, t, h.url) }
                     },
-                    grade = g?.grade ?: clusters.members(key).drop(1).firstNotNullOfOrNull { m -> memberGrade(m, heads) },
+                    // Its own: a linked item has the work's grade written to it ([LinkedGrades][io.github.vlsergey.recommend4me.rating.LinkedGrades])
+                    grade = g?.grade,
                     previousGrade = g?.previousGrade,
                     previousGradeVersion = g?.previousVersion,
                     prediction = predictions[id]?.let { Prediction(it) },
@@ -180,12 +181,5 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             }
         }
         return keys.mapNotNull { out[it] }
-    }
-
-    /** The grade of the current version of a linked item, read alone: links are few. */
-    private fun memberGrade(key: ItemKey, heads: Map<ItemKey, Pair<io.github.vlsergey.recommend4me.source.StoredItem, String>>): Int? {
-        val store = stores.source(key.source) ?: return null
-        val version = heads[key]?.first?.version ?: return null
-        return store.ratings.ofItem(key.id).filter { it.version == version }.maxByOrNull { it.ratedAt }?.grade
     }
 }

@@ -1708,7 +1708,9 @@ components:
         pictureCount:
           type: integer
         grade:
-          description: The grade of the work's current version - given to this item or to another item of the same work
+          description: |
+            The grade of this item's current version. Items the user linked as one work have one grade,
+            written to each of them: given to one, it is given to the others; a link taken back leaves each its own
           allOf:
             - $ref: '#/components/schemas/Grade'
         previousGrade:

@@ -24,6 +24,7 @@ import io.github.vlsergey.recommend4me.picture.PictureService
 import io.github.vlsergey.recommend4me.picture.Served
 import io.github.vlsergey.recommend4me.rating.Grades
 import io.github.vlsergey.recommend4me.rating.GradesChanged
+import io.github.vlsergey.recommend4me.rating.LinkedGrades
 import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.SourceMode
 import io.github.vlsergey.recommend4me.source.Stores
@@ -57,6 +58,7 @@ class ItemsController(
     private val recommendations: Recommendations,
     private val events: ApplicationEventPublisher,
     private val removal: ItemRemoval,
+    private val linkedGrades: LinkedGrades,
 ) : ItemsApi {
 
     override fun removeItem(source: String, item: String): ResponseEntity<Unit> =
@@ -151,6 +153,8 @@ class ItemsController(
         if (ratingRequest.grade !in Grades.RANGE) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Оценка — от ${Grades.MIN} до ${Grades.MAX}")
         store.ratings.rate(item, head.version, ratingRequest.grade, Instant.now())
         events.publishEvent(GradesChanged(store.type, source, item))
+        // The items linked to it are the same work: graded the same
+        linkedGrades.share(ItemKey(source, item))
         return card(ItemKey(source, item))
     }
 
@@ -159,6 +163,8 @@ class ItemsController(
         val head = store.items.find(item) ?: return ResponseEntity.notFound().build()
         store.ratings.unrate(item, version ?: head.version)
         events.publishEvent(GradesChanged(store.type, source, item))
+        // The grade of the work taken back: of the items linked to it too; an old version's grade is the item's own
+        if ((version ?: head.version) == head.version) linkedGrades.takeBack(ItemKey(source, item))
         return card(ItemKey(source, item))
     }
 

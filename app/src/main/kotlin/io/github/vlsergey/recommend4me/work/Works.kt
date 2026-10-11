@@ -23,6 +23,9 @@ class WorkClusters(private val clusters: Map<ItemKey, List<ItemKey>>) {
 
     fun linked(key: ItemKey): Boolean = key in clusters
 
+    /** Every work of more than one item: its items. */
+    fun linkedWorks(): List<List<ItemKey>> = clusters.values.distinct()
+
     companion object {
         fun of(links: List<Pair<ItemKey, ItemKey>>): WorkClusters {
             val parent = HashMap<ItemKey, ItemKey>()
