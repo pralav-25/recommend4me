@@ -12,6 +12,8 @@ import io.github.vlsergey.recommend4me.source.SourceSchema
 import io.github.vlsergey.recommend4me.source.TextDef
 import io.github.vlsergey.recommend4me.api.model.CaptureRequest
 import io.github.vlsergey.recommend4me.api.model.FacetCorrection
+import io.github.vlsergey.recommend4me.api.model.FacetChoice
+import io.github.vlsergey.recommend4me.api.model.ItemQuery
 import io.github.vlsergey.recommend4me.api.model.ItemRef
 import io.github.vlsergey.recommend4me.api.model.ItemSort
 import io.github.vlsergey.recommend4me.api.model.ItemView
@@ -96,8 +98,8 @@ class ScenarioTest {
     private fun capture(body: String) = captures.capturePage(CaptureRequest("https://test.example/work/${body.substringBefore('|')}", body)).body!!
 
     private fun list(
-        view: ItemView = ItemView.ALL, sort: ItemSort = ItemSort.SCORE, sortNumber: String? = null, hidden: List<String>? = null, range: List<String>? = null,
-    ) = items.listItems("books", view, sort, sortNumber, null, hidden, null, null, range, 0, 60).body!!
+        view: ItemView = ItemView.ALL, sort: ItemSort = ItemSort.SCORE, sortNumber: String? = null, facets: List<FacetChoice>? = null, range: List<String>? = null,
+    ) = items.listItems("books", ItemQuery(view = view, sort = sort, sortNumber = sortNumber, facets = facets, ranges = range)).body!!
 
     @Test
     fun `a captured page becomes an item that can be graded, corrected, filtered and sorted`() {
@@ -117,9 +119,13 @@ class ScenarioTest {
 
         // The site's tags are its word, not corrected; the list is filtered by them
         assertThrows<ResponseStatusException> { corrections.correctFacet("test", "w2", FacetCorrection(facet = "tag", added = true, key = "fantasy")) }
-        assertEquals(2, list(hidden = listOf("test.tag=romance")).total)
-        val notFantasy = list(hidden = listOf("test.tag=fantasy", "test.tag=dragons"))
+        assertEquals(2, list(facets = listOf(FacetChoice("test.tag", hidden = listOf("romance")))).total)
+        val notFantasy = list(facets = listOf(FacetChoice("test.tag", hidden = listOf("fantasy", "dragons"))))
         assertEquals(listOf("w2"), notFantasy.items.map { it.item })
+        // The values shown alone, when fewer: every other hidden, the hidden list not read
+        val dragons = list(facets = listOf(FacetChoice("test.tag", hidden = listOf("dragons"), shown = listOf("dragons"))))
+        assertEquals(listOf("w1"), dragons.items.map { it.item })
+        assertEquals(0, list(facets = listOf(FacetChoice("test.tag", shown = emptyList()))).total)
 
         assertEquals("w3", list(sort = ItemSort.NUMBER, sortNumber = "test.likes").items.first().item)
         // Limited to a range of a number, both ends included, an end left out open

@@ -10,6 +10,7 @@ import io.github.vlsergey.recommend4me.correction.Corrected
 import io.github.vlsergey.recommend4me.correction.FacetValues
 import io.github.vlsergey.recommend4me.api.model.ItemDetails
 import io.github.vlsergey.recommend4me.api.model.ItemPage
+import io.github.vlsergey.recommend4me.api.model.ItemQuery
 import io.github.vlsergey.recommend4me.api.model.ItemSort
 import io.github.vlsergey.recommend4me.api.model.ItemSummary
 import io.github.vlsergey.recommend4me.api.model.Mark
@@ -64,15 +65,16 @@ class ItemsController(
     override fun removeItem(source: String, item: String): ResponseEntity<Unit> =
         if (removal.remove(ItemKey(source, item))) ResponseEntity.noContent().build() else ResponseEntity.notFound().build()
 
-    override fun listItems(
-        type: String, view: ApiItemView, sort: ItemSort, sortNumber: String?, search: String?,
-        hidden: List<String>?, hiddenWithout: List<String>?, source: List<String>?, range: List<String>?, offset: Int, limit: Int,
-    ): ResponseEntity<ItemPage> {
-        val ranges = range.orEmpty().map { NumberRange.parse(it) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Диапазон «$it» не понят: нужно «число=от..до»") }
+    override fun listItems(type: String, itemQuery: ItemQuery): ResponseEntity<ItemPage> {
+        val q = itemQuery
+        // A field sent as null is the field left out: the defaults of the API's own schema
+        val d = ItemQuery()
+        val ranges = q.ranges.orEmpty().map { NumberRange.parse(it) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Диапазон «$it» не понят: нужно «число=от..до»") }
+        val facets = q.facets.orEmpty().map { c -> FacetChoice(c.facet, c.hidden.orEmpty().toSet(), c.shown?.toSet(), c.withoutHidden == true) }
         return ResponseEntity.ok(
             list.page(
-                type, ItemView.valueOf(view.name), ItemOrder.valueOf(sort.name), sortNumber, search,
-                hidden.orEmpty().toSet(), hiddenWithout.orEmpty().toSet(), source?.toSet()?.takeIf { it.isNotEmpty() }, ranges, offset, limit,
+                type, ItemView.valueOf((q.view ?: d.view!!).name), ItemOrder.valueOf((q.sort ?: d.sort!!).name), q.sortNumber, q.search,
+                facets, q.sources?.toSet()?.takeIf { it.isNotEmpty() }, ranges, q.offset ?: d.offset!!, q.limit ?: d.limit!!,
             ),
         )
     }

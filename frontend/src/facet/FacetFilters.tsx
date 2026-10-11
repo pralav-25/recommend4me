@@ -14,30 +14,69 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * What is hidden: facet values as "<facet id>=<value key>", and the facets whose works without
- * any of their values are hidden too. Everything else shows — a value a site adds later as well.
+ * What a filter facet shows, kept as the user meant it: the values hidden — every other shows, a
+ * value a site adds later too — or, given [shown], those alone — every other hidden, one added
+ * later too; and whether the works without any value of it are hidden. The one meant is the
+ * shorter at the choice: two fandoms of 361 checked are those two, not 359 others unchecked.
  */
-export type FacetSelection = { hidden: string[]; hiddenWithout: string[] };
+export type FacetChoice = { hidden?: string[]; shown?: string[]; withoutHidden?: boolean };
 
-export const NOTHING_HIDDEN: FacetSelection = { hidden: [], hiddenWithout: [] };
+/** The facets that hide anything, by facet id. */
+export type FacetSelection = Record<string, FacetChoice>;
+
+export const NOTHING_HIDDEN: FacetSelection = {};
 
 export function isFiltered(s: FacetSelection): boolean {
-  return s.hidden.length > 0 || s.hiddenWithout.length > 0;
+  return Object.keys(s).length > 0;
 }
 
-export function valueRef(facetId: string, key: string): string {
-  return `${facetId}=${key}`;
+/** Whether a value of a facet shows by the choice. */
+function isShown(choice: FacetChoice | undefined, key: string): boolean {
+  if (!choice) return true;
+  return choice.shown ? choice.shown.includes(key) : !(choice.hidden ?? []).includes(key);
 }
 
 /**
- * A remembered selection without the facets of the old "<source>:<key>" ids (now
- * "<source>.<key>"): the backend knows them no more, and they would hide nothing.
+ * The choice of a facet that shows the values [shown] of [all], written as the shorter list of the
+ * two; null when it hides nothing. Asked again of the values a facet has now, it stays what it was
+ * meant: the values a site added since show by a list of the hidden, and not by one of the shown.
  */
-export function validSelection(s: FacetSelection): FacetSelection {
+export function compact(all: string[], shown: Set<string>, withoutHidden: boolean): FacetChoice | null {
+  const hidden = all.filter((k) => !shown.has(k));
+  if (hidden.length === 0 && !withoutHidden) return null;
+  const visible = all.filter((k) => shown.has(k));
+  return visible.length < hidden.length ? { shown: visible, withoutHidden } : { hidden, withoutHidden };
+}
+
+/** The choices as the list asks for them: each of the values the facets have now, the shorter list. */
+export function facetQuery(selection: FacetSelection, facets: FacetFilter[] | undefined) {
+  return Object.entries(selection).flatMap(([facet, choice]) => {
+    const values = facets?.find((f) => f.id === facet)?.values.map((v) => v.key);
+    // The values not known yet: the choice as it is kept
+    const asked = values ? compact(values, new Set(values.filter((k) => isShown(choice, k))), choice.withoutHidden === true) : choice;
+    return asked ? [{ facet, ...asked }] : [];
+  });
+}
+
+/**
+ * A remembered selection as it is kept now: of the old form — every value hidden as
+ * "<facet id>=<value key>", and the facets hiding their works without values — the hidden values
+ * of each facet; without the facets of the old "<source>:<key>" ids, which the backend knows no more.
+ */
+export function validSelection(s: unknown): FacetSelection {
   const current = (facetId: string) => !facetId.includes(":");
-  const hidden = s.hidden.filter((ref) => current(ref.slice(0, Math.max(0, ref.indexOf("=")))));
-  const hiddenWithout = s.hiddenWithout.filter(current);
-  return hidden.length === s.hidden.length && hiddenWithout.length === s.hiddenWithout.length ? s : { hidden, hiddenWithout };
+  if (s && typeof s === "object" && Array.isArray((s as { hidden?: unknown }).hidden)) {
+    const old = s as { hidden: string[]; hiddenWithout?: string[] };
+    const out: FacetSelection = {};
+    old.hidden.forEach((ref) => {
+      const at = ref.indexOf("=");
+      const facet = ref.slice(0, Math.max(0, at));
+      if (at > 0 && current(facet)) (out[facet] ??= { hidden: [] }).hidden!.push(ref.slice(at + 1));
+    });
+    (old.hiddenWithout ?? []).filter(current).forEach((facet) => ((out[facet] ??= { hidden: [] }).withoutHidden = true));
+    return out;
+  }
+  return (s as FacetSelection | null) ?? NOTHING_HIDDEN;
 }
 
 /** A list this long gets a line to find a value in. */
@@ -68,25 +107,35 @@ export function FacetFilters({ type, value, onChange }: { type: string; value: F
 
 function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: FacetSelection; onChange: (v: FacetSelection) => void }) {
   const [find, setFind] = useState("");
-  const refs = new Set(facet.values.map((v) => valueRef(facet.id, v.key)));
   const hasWithout = facet.noneLabel !== undefined && facet.noneLabel !== "";
   const withoutLabel = facet.noneLabel ?? "";
-  const shownValues = facet.values.filter((v) => !value.hidden.includes(valueRef(facet.id, v.key)));
-  const withoutShown = !value.hiddenWithout.includes(facet.id);
+  const choice = value[facet.id];
+  const keys = facet.values.map((v) => v.key);
+  const shownValues = facet.values.filter((v) => isShown(choice, v.key));
+  const withoutShown = !choice?.withoutHidden;
   const total = facet.values.length + (hasWithout ? 1 : 0);
   const shown = shownValues.length + (hasWithout && withoutShown ? 1 : 0);
   // All shown says nothing; one shown is named; else how many of how many
   const summary =
     shown === total ? null : shown === 0 ? "ничего" : shown === 1 ? (shownValues[0]?.name ?? withoutLabel) : `${shown} из ${total}`;
 
-  // The facet's own choices are replaced, the other facets' kept
-  const others = { hidden: value.hidden.filter((r) => !refs.has(r)), hiddenWithout: value.hiddenWithout.filter((f) => f !== facet.id) };
-  const toggle = (ref: string, on: boolean) =>
-    onChange({ ...value, hidden: on ? value.hidden.filter((r) => r !== ref) : [...value.hidden, ref] });
-  const toggleWithout = (on: boolean) => onChange({ ...value, hiddenWithout: on ? others.hiddenWithout : [...others.hiddenWithout, facet.id] });
-  const all = () => onChange(others);
-  const none = () =>
-    onChange({ hidden: [...others.hidden, ...refs], hiddenWithout: hasWithout ? [...others.hiddenWithout, facet.id] : others.hiddenWithout });
+  // The facet's own choice written anew, the shorter list; the other facets' kept
+  const choose = (visible: Set<string>, withoutHidden: boolean) => {
+    const rest = { ...value };
+    delete rest[facet.id];
+    const next = compact(keys, visible, withoutHidden);
+    onChange(next ? { ...rest, [facet.id]: next } : rest);
+  };
+  const visible = () => new Set(shownValues.map((v) => v.key));
+  const toggle = (key: string, on: boolean) => {
+    const v = visible();
+    if (on) v.add(key);
+    else v.delete(key);
+    choose(v, !withoutShown);
+  };
+  const toggleWithout = (on: boolean) => choose(visible(), !on);
+  const all = () => choose(new Set(keys), false);
+  const none = () => choose(new Set(), hasWithout);
 
   const needle = find.trim().toLowerCase();
   const listed = needle ? facet.values.filter((v) => v.name.toLowerCase().includes(needle)) : facet.values;
@@ -124,15 +173,12 @@ function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: 
           </div>
         )}
         <DropdownMenuSeparator />
-        {listed.map((v) => {
-          const ref = valueRef(facet.id, v.key);
-          return (
-            <DropdownMenuCheckboxItem key={v.key} checked={!value.hidden.includes(ref)} onCheckedChange={(on) => toggle(ref, on)} closeOnClick={false}>
-              <span className="flex-1">{v.name}</span>
-              <span className="text-xs tabular-nums text-muted-foreground">{v.items}</span>
-            </DropdownMenuCheckboxItem>
-          );
-        })}
+        {listed.map((v) => (
+          <DropdownMenuCheckboxItem key={v.key} checked={isShown(choice, v.key)} onCheckedChange={(on) => toggle(v.key, on)} closeOnClick={false}>
+            <span className="flex-1">{v.name}</span>
+            <span className="text-xs tabular-nums text-muted-foreground">{v.items}</span>
+          </DropdownMenuCheckboxItem>
+        ))}
         {hasWithout && !needle && (
           <DropdownMenuCheckboxItem checked={withoutShown} onCheckedChange={toggleWithout} closeOnClick={false}>
             <span className="flex-1 italic">{withoutLabel}</span>

@@ -40,72 +40,21 @@ paths:
                   $ref: '#/components/schemas/ContentTypeInfo'
 
   /api/types/{type}/items:
-    get:
+    post:
       tags: [items]
       operationId: listItems
       summary: A page of the works of a content type, one card per work
+      description: |
+        Asked with a body, not with the address: the values of a filter hidden are hundreds at
+        times (every fandom but two), and an address of them all is beyond what the server reads.
       parameters:
         - $ref: '#/components/parameters/Type'
-        - name: view
-          in: query
-          schema:
-            $ref: '#/components/schemas/ItemView'
-        - name: sort
-          in: query
-          schema:
-            $ref: '#/components/schemas/ItemSort'
-        - name: sortNumber
-          in: query
-          description: The number to sort by when sort is NUMBER (a facet id of the numbers)
-          schema:
-            type: string
-        - name: search
-          in: query
-          description: A line searched by meaning and by words; the order is then the relevance
-          schema:
-            type: string
-        - name: hidden
-          in: query
-          description: Values of filter facets not shown, as "<facet id>=<value key>"
-          schema:
-            type: array
-            items:
-              type: string
-        - name: hiddenWithout
-          in: query
-          description: Filter facets whose works without any value of them are not shown
-          schema:
-            type: array
-            items:
-              type: string
-        - name: source
-          in: query
-          description: Only the works of these sources; all when none
-          schema:
-            type: array
-            items:
-              type: string
-        - name: range
-          in: query
-          description: |
-            Only the works whose number lies within a range, as "<number id>=<from>..<to>"
-            (ContentTypeInfo.filterNumbers), both ends included; an end left out is open - "ficbook.parts=1..1",
-            "ficbook.parts=10..". A work of a source that has the number and no value of it is not
-            shown; the works of a source without the number are not limited by it.
-          schema:
-            type: array
-            items:
-              type: string
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 60
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemQuery'
       responses:
         '200':
           description: The page
@@ -1773,6 +1722,72 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ItemSummary'
+
+    ItemQuery:
+      type: object
+      description: Which works a page of the list is of, and in what order
+      properties:
+        view:
+          $ref: '#/components/schemas/ItemView'
+        sort:
+          $ref: '#/components/schemas/ItemSort'
+        sortNumber:
+          type: string
+          description: The number to sort by when sort is NUMBER (ContentTypeInfo.numbers)
+        search:
+          type: string
+          description: A line searched by meaning and by words; the order is then the relevance
+        facets:
+          type: array
+          description: The filter facets that hide anything; a facet not here shows every work
+          items:
+            $ref: '#/components/schemas/FacetChoice'
+        sources:
+          type: array
+          description: Only the works of these sources; all when none
+          items:
+            type: string
+        ranges:
+          type: array
+          description: |
+            Only the works whose number lies within a range, as "<number id>=<from>..<to>"
+            (ContentTypeInfo.filterNumbers), both ends included; an end left out is open - "ficbook.parts=1..1",
+            "ficbook.parts=10..". A work of a source that has the number and no value of it is not
+            shown; the works of a source without the number are not limited by it.
+          items:
+            type: string
+        offset:
+          type: integer
+          default: 0
+        limit:
+          type: integer
+          default: 60
+
+    FacetChoice:
+      type: object
+      description: |
+        What a filter facet shows: a work shows when it has a value shown - or none of the facet's,
+        and those are not hidden. Of the values, the shorter list is given: those hidden (every other
+        shows, a value a site adds later too) or, when fewer, those shown alone (every other hidden,
+        a value added later too).
+      required: [facet]
+      properties:
+        facet:
+          type: string
+          description: The filter facet (FacetFilter.id)
+        hidden:
+          type: array
+          description: The values not shown, by key
+          items:
+            type: string
+        shown:
+          type: array
+          description: When given, the values shown alone, by key; hidden is then not read
+          items:
+            type: string
+        withoutHidden:
+          type: boolean
+          description: The works without any value of the facet are not shown
 
     FacetFilter:
       type: object

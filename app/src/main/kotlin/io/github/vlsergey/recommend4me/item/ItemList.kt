@@ -20,6 +20,19 @@ import kotlin.math.abs
 enum class ItemView { UNRATED, RATED, ALL }
 enum class ItemOrder { SCORE, UPDATED, NUMBER, SURPRISE }
 
+/**
+ * What a filter facet shows: a work with a value [shown] — when given, those alone, every other
+ * value hidden, one a site adds later too — or else a value not [hidden], every other shown, one
+ * added later too; a work without any value of the facet unless [withoutHidden].
+ */
+class FacetChoice(val facet: String, val hidden: Set<String>, val shown: Set<String>?, val withoutHidden: Boolean) {
+    fun passes(keys: Collection<String>): Boolean = when {
+        keys.isEmpty() -> !withoutHidden
+        shown != null -> keys.any { it in shown }
+        else -> keys.any { it !in hidden }
+    }
+}
+
 /** The works whose number [numberId] lies within [from]..[to], both ends included; a null end is open. */
 class NumberRange(val numberId: String, val from: Double?, val to: Double?) {
     operator fun contains(value: Double) = (from == null || value >= from) && (to == null || value <= to)
@@ -65,8 +78,7 @@ class ItemList(
         order: ItemOrder,
         sortNumber: String?,
         line: String?,
-        hidden: Set<String>,
-        hiddenWithout: Set<String>,
+        facets: List<FacetChoice>,
         sources: Set<String>?,
         ranges: List<NumberRange>,
         offset: Int,
@@ -77,8 +89,7 @@ class ItemList(
         val places = if (order == ItemOrder.SURPRISE) recommendations.gradePlaces(typeId) else null
         val found = line?.takeIf { it.isNotBlank() }?.let { search.search(typeId, it) }
         val relevance = found?.keys?.withIndex()?.associate { (i, k) -> k to i }
-        val hiddenValues = hidden.mapNotNull { it.split('=', limit = 2).takeIf { p -> p.size == 2 }?.let { p -> p[0] to p[1] } }
-            .groupBy({ it.first }, { it.second }).mapValues { it.value.toSet() }
+        val choices = facets.associateBy { it.facet }
 
         val rows = ArrayList<Row>()
         type.sources.filter { sources == null || it.id in sources }.forEach { s ->
@@ -101,7 +112,7 @@ class ItemList(
                     }
                 }.toMap()
             } else emptyMap()
-            val passes = facetFilter(s, hiddenValues, hiddenWithout)
+            val passes = facetFilter(s, choices)
             // The ranges of the numbers the source has, with their values: a source without one is not limited by it
             val limits = ranges.mapNotNull { r -> numberOf(s, r.numberId)?.let { r to it } }
             keys.forEach { k ->
@@ -144,22 +155,15 @@ class ItemList(
     }
 
     /**
-     * Whether an item of the source shows by the filters: in every filtered facet, one of its values
-     * not [hidden] — or, without any, its facet's "none" line not [hiddenWithout]. A value the site
-     * adds later is not hidden: it shows. Null when no facet of the source is filtered.
+     * Whether an item of the source shows by the filters: by every facet's [FacetChoice] the source
+     * has. Null when no facet of the source is filtered.
      */
-    private fun facetFilter(s: SourceStore, hidden: Map<String, Set<String>>, hiddenWithout: Set<String>): ((String) -> Boolean)? {
-        val filtered = s.schema.facets.filter { it.filter && (filterId(s, it) in hidden || filterId(s, it) in hiddenWithout) }
+    private fun facetFilter(s: SourceStore, choices: Map<String, FacetChoice>): ((String) -> Boolean)? {
+        val filtered = s.schema.facets.filter { it.filter }.mapNotNull { def -> choices[filterId(s, def)]?.let { def to it } }
         if (filtered.isEmpty()) return null
         val corrections = s.corrections.allFacets().groupBy { it.itemId }
-        val values = filtered.associateWith { def -> valuesOf(s, def, corrections) }
-        return { id ->
-            values.all { (def, byItem) ->
-                val keys = byItem[id].orEmpty()
-                val id2 = filterId(s, def)
-                if (keys.isEmpty()) id2 !in hiddenWithout else keys.any { it !in hidden[id2].orEmpty() }
-            }
-        }
+        val values = filtered.map { (def, choice) -> valuesOf(s, def, corrections) to choice }
+        return { id -> values.all { (byItem, choice) -> choice.passes(byItem[id].orEmpty()) } }
     }
 
     /** Every item's values of one facet as the user sees them: the site's, the model's of a facet it works out, the user's corrections on top. */

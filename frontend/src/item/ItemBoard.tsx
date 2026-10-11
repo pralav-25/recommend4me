@@ -3,7 +3,7 @@ import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { InboxIcon, Loader2Icon } from "lucide-react";
 import { api, refKey, unwrap, type ContentTypeInfo, type Grade, type ItemSummary, type ItemView } from "@/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
-import { isFiltered, type FacetSelection } from "@/facet/FacetFilters";
+import { facetQuery, isFiltered, useFacets, type FacetSelection } from "@/facet/FacetFilters";
 import { rangeParams, type NumberRanges } from "@/number/NumberFilters";
 import { ItemCard } from "./ItemCard";
 import { ItemDialog } from "./ItemDialog";
@@ -39,26 +39,26 @@ export function ItemBoard({ type, view, sort, search, facets, sources, ranges, l
   const sentinel = useRef<HTMLDivElement>(null);
   const rate = useRateItem();
 
+  // Every facet's choice the shorter list of the values it has now: two fandoms checked are sent as two
+  const facetValues = useFacets(type.id).data;
+  const facetChoices = useMemo(() => facetQuery(facets, facetValues), [facets, facetValues]);
   const list = useInfiniteQuery({
-    queryKey: [ITEMS, type.id, view, sort, search, facets, sources, ranges],
+    queryKey: [ITEMS, type.id, view, sort, search, facetChoices, sources, ranges],
     initialPageParam: 0,
     queryFn: async ({ pageParam }) =>
       unwrap(
-        await api.GET("/api/types/{type}/items", {
-          params: {
-            path: { type: type.id },
-            query: {
-              view,
-              sort: sort.sort,
-              sortNumber: sort.sort === "NUMBER" ? sort.number : undefined,
-              search: search || undefined,
-              hidden: facets.hidden.length ? facets.hidden : undefined,
-              hiddenWithout: facets.hiddenWithout.length ? facets.hiddenWithout : undefined,
-              source: sources.length ? sources : undefined,
-              range: Object.keys(ranges).length ? rangeParams(ranges) : undefined,
-              offset: pageParam,
-              limit: PAGE_SIZE,
-            },
+        await api.POST("/api/types/{type}/items", {
+          params: { path: { type: type.id } },
+          body: {
+            view,
+            sort: sort.sort,
+            sortNumber: sort.sort === "NUMBER" ? sort.number : undefined,
+            search: search || undefined,
+            facets: facetChoices.length ? facetChoices : undefined,
+            sources: sources.length ? sources : undefined,
+            ranges: Object.keys(ranges).length ? rangeParams(ranges) : undefined,
+            offset: pageParam,
+            limit: PAGE_SIZE,
           },
         }),
       ),
