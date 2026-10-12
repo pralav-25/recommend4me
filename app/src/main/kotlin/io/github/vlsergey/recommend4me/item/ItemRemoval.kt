@@ -43,6 +43,7 @@ class ItemRemoval(private val stores: Stores, private val recommendations: Recom
         type.likeness.forget(key)
         type.workLikeness.forget(key)
         type.searchJudgments.forget(key)
+        type.searchScores.forget(key)
         log.info("{}: {} removed from the library, with everything of it", key.source, key.id)
         events.publishEvent(ItemsChanged(key.source, listOf(key.id)))
         if (graded) events.publishEvent(GradesChanged(type.id, key.source, key.id))

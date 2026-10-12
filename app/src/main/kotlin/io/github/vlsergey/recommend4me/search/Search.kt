@@ -12,6 +12,7 @@ import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
+import io.github.vlsergey.recommend4me.vector.Vectors
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -59,6 +60,8 @@ class Search(
     @EventListener(ApplicationReadyEvent::class)
     fun build() {
         val provider = plugins.search ?: return
+        // The scores of another reranker are of another model: read again as asked for
+        plugins.reranker()?.let { r -> stores.types.forEach { it.searchScores.keepOnly(r.id) } }
         stores.types.forEach { built[it.id] = CountDownLatch(1) }
         worker.execute {
             stores.types.forEach { type ->
@@ -96,8 +99,7 @@ class Search(
                 facetCorrections.values.flatten().filter { it.facet == def.key && it.name != null }.associate { it.key to it.name!! }
         }
         val vectors = plugins.textEncoder()?.let { e -> s.textVectors.ofMany(ids, e.id) }.orEmpty()
-        // A line of names is searched by its words: as a meaning it lies near any line
-        val meaningful = schema.texts.filter { it.searchByMeaning && !it.names }.map { it.key }.toSet()
+        val meaningful = schema.texts.filter { it.searchByMeaning }.map { it.key }.toSet()
         return heads.mapNotNull { (id, head) ->
             val own = fields[id].orEmpty()
             val itemFacets = Corrected.facets(facets[id].orEmpty(), facetCorrections[id].orEmpty())
@@ -157,23 +159,35 @@ class Search(
         return if (rerank) reranked(type, found) else found
     }
 
-    /** Every work found, read against the line by the reranker, in the order of its score; as found without a reranker. */
+    /**
+     * Every work found, read against the line by the reranker, in the order of its score; as found
+     * without a reranker. A work read for the line before, its text the same, is not read again
+     * ([SearchScoreRepository]): the next page of a search, the line searched again, read nothing.
+     */
     private fun reranked(type: TypeStore, found: SearchResult): SearchResult {
         val reranker = plugins.reranker() ?: return found
         if (found.keys.size < 2) return found
         val started = System.currentTimeMillis()
         val documents = context(type).documents(found.keys)
-        val scores = reranker.rank(found.line, found.keys.map { key -> documents[key]?.let(::readable).orEmpty() })
-        val order = found.keys.indices.sortedByDescending { scores[it] }
-        log.info("'{}' in {}: {} works read by {} in {} ms", found.line, type.id, found.keys.size, reranker.id, System.currentTimeMillis() - started)
-        return SearchResult(found.line, order.map { found.keys[it] }, found.state)
+        val texts = found.keys.associateWith { key -> documents[key]?.let { readable(type, it) }.orEmpty() }
+        val hashes = texts.mapValues { Vectors.keyOf(it.value) }
+        val stored = type.searchScores.of(reranker.id, found.line).filter { (key, s) -> hashes[key] == s.textsHash }
+        val todo = found.keys.filter { it !in stored }
+        val read = if (todo.isEmpty()) emptyMap() else {
+            val scores = reranker.rank(found.line, todo.map { texts.getValue(it) })
+            todo.indices.associate { todo[it] to StoredScore(hashes.getValue(todo[it]), scores[it]) }.also { type.searchScores.save(reranker.id, found.line, it) }
+        }
+        val scores = stored + read
+        val order = found.keys.sortedByDescending { scores.getValue(it).score }
+        log.info("'{}' in {}: {} works, {} read by {} in {} ms", found.line, type.id, found.keys.size, todo.size, reranker.id, System.currentTimeMillis() - started)
+        return SearchResult(found.line, order, found.state)
     }
 
     /**
      * A work as the reranker reads it: every field by its name, the weightiest first — the title, the
      * names, the description — as far as the reranker reads.
      */
-    private fun readable(doc: SearchDocument): String =
+    private fun readable(type: TypeStore, doc: SearchDocument): String =
         doc.fields.sortedByDescending { it.weight }.joinToString("\n") { f -> f.name + ": " + f.values.joinToString(if (f.list) ", " else "\n") }
 
     fun matches(typeId: String, result: SearchResult, keys: Collection<ItemKey>): Map<ItemKey, SearchMatch> {

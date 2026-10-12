@@ -194,13 +194,6 @@ class TextDef(
     val spoiler: Boolean = false,
     /** What the text is, for the card to put it where it decides; null — a detail, shown folded. */
     val role: TextRole? = null,
-    /**
-     * A line of names — the characters, the pairings — not words about the work: searched by its
-     * words, where a name is found as it is written. Its vector says what names a work has, and the
-     * model reads it; as a meaning searched for it lies near any line — "time loop" found a dozen
-     * pairings of the same two names.
-     */
-    val names: Boolean = false,
 )
 
 /**
