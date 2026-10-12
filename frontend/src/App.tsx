@@ -212,7 +212,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
       </header>
 
       <div className="mx-auto max-w-[1800px] px-4">
-        <div className="flex flex-wrap items-center gap-3 pt-4 pb-2">
+        <div className="flex flex-wrap items-center gap-2 py-4">
           <Tabs value={view} onValueChange={(v) => setView(v as ItemView)}>
             <TabsList>
               {VIEWS.map((v) => (
@@ -331,10 +331,8 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
               <RefreshCcwIcon /> Прогнозы обновились — пересортировать
             </Button>
           )}
-        </div>
 
-        {/* Every filter and the way the list is shown on one line: where it does not fit, it scrolls sideways */}
-        <div className="-mx-4 mb-3 flex items-center gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:thin] *:shrink-0">
+          {/* The filters flow on with everything else, one by one, not as a block of their own */}
           <ErrorBoundary compact resetKey={type.id} title="Фильтры не показываются">
             <SourceFilter type={type} hidden={hiddenSources} onChange={setHiddenSources} />
             <FacetFilters type={type.id} value={facets} onChange={setFacets} />

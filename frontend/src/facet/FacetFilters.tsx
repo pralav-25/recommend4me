@@ -97,8 +97,8 @@ export function useFacets(type: string) {
 export function FacetFilters({ type, value, onChange }: { type: string; value: FacetSelection; onChange: (v: FacetSelection) => void }) {
   const facets = useFacets(type);
   return (
-    // On one line with the other filters: the line scrolls, the facets do not wrap
-    <div className="flex items-center gap-1">
+    // No box of its own: every facet is an item of the toolbar, wrapped to the next line alone
+    <div className="contents">
       {(facets.data ?? []).map((f) => (
         <FacetDropdown key={f.id} facet={f} value={value} onChange={onChange} />
       ))}
