@@ -24,6 +24,12 @@ interface TextEncoder {
      * text (a chapter) is a set of vectors rather than their average.
      */
     fun encodeWindows(texts: List<String>): List<List<FloatArray>>
+
+    /**
+     * Where every window [encodeWindows] makes of the text lies in it, in characters, in order: the
+     * piece of the text a window's vector is of — read by a reranker, shown as what was found.
+     */
+    fun windowSpans(text: String): List<IntRange>
 }
 
 /**

@@ -67,10 +67,10 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         index(contentType).update(documents, removed)
     }
 
-    /** What [matches] needs of a search: the line's words, its vector and the text of every item nearest by meaning. */
-    private class State(val terms: List<String>, val vector: FloatArray?, val nearest: Map<ItemKey, String>)
+    /** What [matches] needs of a search: the line's words, its vector and the passage of every item nearest by meaning. */
+    private class State(val terms: List<String>, val vector: FloatArray?, val nearest: Map<ItemKey, SearchPassage>)
 
-    private class Nearest(val cosine: Double, val field: String)
+    private class Nearest(val cosine: Double, val passage: SearchPassage)
 
     override fun search(contentType: String, line: String, context: SearchContext): SearchResult {
         val q = line.trim().lowercase()
@@ -83,8 +83,8 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         val terms = q.split(Regex("[^\\p{L}\\p{N}']+")).filter { it.length >= 2 && !STOP_WORDS.contains(it) }.distinct()
         val nearest = index.search { searcher ->
             val fields = index.fields(searcher)
-            val nearest = vector?.let { nearest(searcher, fields, it) }.orEmpty()
-            val semantic = closeness(nearest, searcher.indexReader.numDocs())
+            val nearest = vector?.takeIf { fields.vectors }?.let { nearest(searcher, it) }.orEmpty()
+            val semantic = closeness(nearest, index.items(searcher))
             semantic.forEach { (key, closeness) -> if (closeness >= SEMANTIC_FLOOR) scores[key] = SEMANTIC_WEIGHT * closeness }
             byWords(searcher, fields, q, terms).forEach { (key, score) ->
                 // An item found by words still keeps its meaning score, so the two add up
@@ -94,7 +94,8 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         }
         val ranked = scores.entries.sortedByDescending { it.value }.take(MAX_RESULTS).map { it.key }
         log.info("'{}' in {}: {} items in {} ms", line, contentType, ranked.size, System.currentTimeMillis() - started)
-        return SearchResult(q, ranked, State(terms, vector, nearest.mapValues { it.value.field }))
+        val passages = nearest.mapValues { it.value.passage }
+        return SearchResult(q, ranked, State(terms, vector, passages), passages)
     }
 
     /**
@@ -112,10 +113,11 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
             val doc = documents[key] ?: return@forEach
             val words = snippet(state.terms, doc)
             if (words != null) byWords[key] = SearchMatch(words.first.name, false, words.second.text, words.second.highlights)
-            // The words apart did not make the item a match, its meaning did: the phrase nearest by meaning is shown
+            // The words apart did not make the item a match, its meaning did: the phrase of the passage nearest by meaning is shown
             if (words?.third == true) return@forEach
-            val field = state.nearest[key]?.let { f -> doc.fields.firstOrNull { it.key == f } } ?: return@forEach
-            val phrases = field.values.flatMap(Phrases::split).filter { it.length >= MIN_PHRASE }
+            val passage = state.nearest[key] ?: return@forEach
+            val field = doc.fields.firstOrNull { it.key == passage.field } ?: return@forEach
+            val phrases = passage.text(doc)?.let(Phrases::split).orEmpty().filter { it.length >= MIN_PHRASE }
             if (phrases.isNotEmpty()) byMeaning[key] = field to phrases
         }
         val q = state.vector ?: return byWords
@@ -128,24 +130,32 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         return byWords + nearestPhrases
     }
 
-    /** The items nearest to the query's vector [q] by meaning: the [NEAREST] nearest by every text, an item by its nearest text. */
-    private fun nearest(searcher: org.apache.lucene.search.IndexSearcher, fields: LuceneIndex.Fields, q: FloatArray): Map<ItemKey, Nearest> {
+    /**
+     * The items nearest to the query's vector [q] by meaning: the [NEAREST] passages nearest — of
+     * descriptions, of notes, of chapters — an item by its nearest passage.
+     */
+    private fun nearest(searcher: org.apache.lucene.search.IndexSearcher, q: FloatArray): Map<ItemKey, Nearest> {
         val out = HashMap<ItemKey, Nearest>()
         val stored = searcher.storedFields()
-        val unit = LuceneIndex.unit(q)
-        fields.vectors.forEach { field ->
-            val hits = try {
-                searcher.search(KnnFloatVectorQuery(LuceneIndex.vectorField(field), unit, NEAREST), NEAREST).scoreDocs
-            } catch (e: IllegalArgumentException) {
-                // A field of another dimension: an encoder changed and the index is not made again yet
-                log.debug("vectors of {} are not searched: {}", field, e.message)
-                return@forEach
-            }
-            hits.forEach { hit ->
-                // The score of a dot product is (1 + cos) / 2
-                val cosine = 2.0 * hit.score - 1.0
-                val key = ItemKey.parse(stored.document(hit.doc).get(LuceneIndex.ID))
-                if ((out[key]?.cosine ?: Double.NEGATIVE_INFINITY) < cosine) out[key] = Nearest(cosine, field)
+        val hits = try {
+            searcher.search(KnnFloatVectorQuery(LuceneIndex.VECTOR, LuceneIndex.unit(q), NEAREST), NEAREST).scoreDocs
+        } catch (e: IllegalArgumentException) {
+            // Vectors of another dimension: an encoder changed and the index is not made again yet
+            log.debug("passages are not searched: {}", e.message)
+            return out
+        }
+        hits.forEach { hit ->
+            // The score of a dot product is (1 + cos) / 2
+            val cosine = 2.0 * hit.score - 1.0
+            val doc = stored.document(hit.doc)
+            val key = ItemKey.parse(doc.get(LuceneIndex.ID))
+            if ((out[key]?.cosine ?: Double.NEGATIVE_INFINITY) < cosine) {
+                val passage = SearchPassage(
+                    doc.get(LuceneIndex.PASSAGE_FIELD),
+                    doc.getField(LuceneIndex.PASSAGE_FROM).numericValue().toInt(),
+                    doc.getField(LuceneIndex.PASSAGE_TO).numericValue().toInt(),
+                )
+                out[key] = Nearest(cosine, passage)
             }
         }
         return out

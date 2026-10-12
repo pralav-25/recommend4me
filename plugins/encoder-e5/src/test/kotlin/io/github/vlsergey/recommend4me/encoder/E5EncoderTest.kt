@@ -51,4 +51,16 @@ class E5EncoderTest {
         windows.forEach { assertEquals(1.0, cos(it, it), 1e-4) }
         assertTrue(empty.isEmpty())
     }
+
+    @Test
+    fun `every window lies where it is in the text, one after another`() {
+        assumeTrue(textVec.ready(), "multilingual-e5 files are not in the models folder")
+        val long = (1..120).joinToString(" ") { "Глава $it: герой идёт дальше." }
+        val spans = textVec.windowSpans(long)
+        assertEquals(textVec.encodeWindows(listOf(long)).single().size, spans.size)
+        assertEquals(0, spans.first().first)
+        assertEquals(long.length, spans.last().last + 1)
+        spans.zipWithNext().forEach { (a, b) -> assertTrue(a.last < b.first, "$a before $b") }
+        assertTrue(textVec.windowSpans("   ").isEmpty())
+    }
 }

@@ -3,13 +3,14 @@ package io.github.vlsergey.recommend4me.search
 import io.github.vlsergey.recommend4me.item.ItemKey
 
 /**
- * Everything searchable of an item: its fields of text — the title, the facets' names, the texts —
- * each with the weight of a match in it, and the vectors of its texts for the search by meaning.
+ * Everything searchable of an item: its fields of text — the title, the facets' names, the texts,
+ * the chapters read — each with the weight of a match in it, and the passages of its texts for the
+ * search by meaning: every window of every text the encoder reads, each with its vector.
  */
 class SearchDocument(
     val key: ItemKey,
     val fields: List<SearchField>,
-    val vectors: List<SearchVector>,
+    val passages: List<SearchPassage>,
 )
 
 /**
@@ -24,13 +25,29 @@ class SearchField(
     val list: Boolean = false,
     /** The title, the author: the whole query standing there is what was looked for. */
     val naming: Boolean = false,
-)
+) {
+    /** The field's values as one text: what its passages' characters count in. */
+    val text: String get() = values.joinToString(if (list) ", " else "\n\n")
+}
 
-/** The vector of the text [field] (a [SearchField.key]) by the text encoder. */
-class SearchVector(val field: String, val vector: FloatArray)
+/**
+ * A piece of the text of the field [field] (a [SearchField.key]) — a window of the text encoder —
+ * its characters [from] until [to] in the field's [text][SearchField.text], and its vector: a work
+ * is found by meaning by the piece of it nearest to the line, a scene of a chapter as well as its
+ * description.
+ */
+class SearchPassage(val field: String, val from: Int, val to: Int, val vector: FloatArray? = null) {
+    /** The piece's text, of the document it is of. */
+    fun text(doc: SearchDocument): String? = doc.fields.firstOrNull { it.key == field }?.text?.let { t ->
+        if (from in 0..to && to <= t.length) t.substring(from, to) else null
+    }
+}
 
-/** What a search found: the items, most relevant first, and what the provider needs to explain them. */
-class SearchResult(val line: String, val keys: List<ItemKey>, val state: Any?)
+/**
+ * What a search found: the items, most relevant first, what the provider needs to explain them,
+ * and of every item found by meaning the passage of it nearest to the line ([SearchPassage], no vector).
+ */
+class SearchResult(val line: String, val keys: List<ItemKey>, val state: Any?, val nearest: Map<ItemKey, SearchPassage> = emptyMap())
 
 /** The piece of an item's text a search found it by, with the words found marked ([highlights], start until end). */
 class SearchMatch(val field: String, val byMeaning: Boolean, val text: String, val highlights: List<Pair<Int, Int>>)

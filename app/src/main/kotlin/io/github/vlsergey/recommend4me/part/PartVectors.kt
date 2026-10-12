@@ -2,7 +2,9 @@ package io.github.vlsergey.recommend4me.part
 
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.source.Stores
+import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
 import jakarta.annotation.PreDestroy
+import org.springframework.context.ApplicationEventPublisher
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
@@ -19,7 +21,7 @@ private val log = LoggerFactory.getLogger(PartVectors::class.java)
  * not averaged away. A part read again with another text is encoded again.
  */
 @Service
-class PartVectors(private val stores: Stores, private val plugins: Plugins) {
+class PartVectors(private val stores: Stores, private val plugins: Plugins, private val events: ApplicationEventPublisher) {
 
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "part-vectors").apply { isDaemon = true } }
     private val wake = Object()
@@ -68,6 +70,8 @@ class PartVectors(private val stores: Stores, private val plugins: Plugins) {
             busy = true
             val windows = encoder.encodeWindows(todo.map { it.content })
             todo.forEachIndexed { i, part -> s.parts.saveVectors(part.itemId, part.partId, encoder.id, part.hash, windows[i]) }
+            // The works searched by the meaning of their chapters' windows: indexed again with them
+            events.publishEvent(TextVectorsChanged(s.id, todo.map { it.itemId }.distinct()))
             done += todo.size
         }
         return done

@@ -127,6 +127,30 @@ class PartRepository(private val db: DSLContext) {
         return out
     }
 
+    /** The texts of every part of the items [ids] that has one, in their order: item to (part, title, text). */
+    fun contentsOf(ids: Collection<String>): Map<String, List<Triple<String, String?, String>>> {
+        val out = HashMap<String, MutableList<Triple<String, String?, String>>>()
+        ids.distinct().chunked(BATCH).forEach { chunk ->
+            db.select(PART.ITEM_ID, PART.PART_ID, PART.TITLE, PART.CONTENT).from(PART)
+                .where(PART.ITEM_ID.`in`(chunk), PART.CONTENT.isNotNull).orderBy(PART.ITEM_ID, PART.POSITION)
+                .fetch { out.getOrPut(it.value1()!!) { ArrayList() } += Triple(it.value2()!!, it.value3(), it.value4()!!) }
+        }
+        return out
+    }
+
+    /** The window vectors by [encoder] of the parts of the items [ids]: item to part to its windows in order. */
+    fun windowsByParts(ids: Collection<String>, encoder: String): Map<String, Map<String, List<FloatArray>>> {
+        val out = HashMap<String, MutableMap<String, MutableList<FloatArray>>>()
+        ids.distinct().chunked(BATCH).forEach { chunk ->
+            db.select(PART_VECTOR.ITEM_ID, PART_VECTOR.PART_ID, PART_VECTOR.VEC).from(PART_VECTOR)
+                .join(PART).on(PART.ITEM_ID.eq(PART_VECTOR.ITEM_ID), PART.PART_ID.eq(PART_VECTOR.PART_ID))
+                .where(PART_VECTOR.ITEM_ID.`in`(chunk), PART.ENCODER.eq(encoder))
+                .orderBy(PART_VECTOR.ITEM_ID, PART_VECTOR.PART_ID, PART_VECTOR.WINDOW_NO)
+                .fetch { out.getOrPut(it.value1()!!) { HashMap() }.getOrPut(it.value2()!!) { ArrayList() } += Vectors.fromHalf(it.value3()!!) }
+        }
+        return out
+    }
+
     /** The window vectors by [encoder] of the item's parts: part to its windows in order. */
     fun windowsByPart(itemId: String, encoder: String): Map<String, List<FloatArray>> {
         val out = LinkedHashMap<String, MutableList<FloatArray>>()

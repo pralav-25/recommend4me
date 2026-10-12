@@ -84,8 +84,13 @@ class Search(
         }
     }
 
-    /** The documents of the items [ids] of a source, read in one batch per table. */
-    fun documents(s: SourceStore, ids: List<String>): Map<ItemKey, SearchDocument> {
+    /**
+     * The documents of the items [ids] of a source, read in one batch per table: their fields — the
+     * chapters read among them — and, with [passages], the passages of the texts searched by meaning
+     * and of the chapters: every window of a text longer than one with its own vector, a shorter one
+     * whole with the text's.
+     */
+    fun documents(s: SourceStore, ids: List<String>, passages: Boolean = true): Map<ItemKey, SearchDocument> {
         val schema = s.schema
         val heads = s.items.heads(ids)
         val chances = s.suggestions.ofItems(ids)
@@ -98,14 +103,32 @@ class Search(
             def.key to s.items.facetNames(def.key, ids.flatMap { facets[it]?.get(def.key).orEmpty() }) +
                 facetCorrections.values.flatten().filter { it.facet == def.key && it.name != null }.associate { it.key to it.name!! }
         }
-        val vectors = plugins.textEncoder()?.let { e -> s.textVectors.ofMany(ids, e.id) }.orEmpty()
+        val encoder = plugins.textEncoder()?.takeIf { passages }
+        val vectors = encoder?.let { e -> s.textVectors.ofMany(ids, e.id) }.orEmpty()
+        val windows = encoder?.let { e -> s.textVectors.windowsOf(ids, e.id) }.orEmpty()
+        val parts = s.parts.contentsOf(ids)
+        val partWindows = encoder?.let { e -> s.parts.windowsByParts(ids, e.id) }.orEmpty()
+        // A word in a chapter says the least of what the work is about: its weight the least of the texts'
+        val partWeight = schema.texts.minOfOrNull { it.searchWeight } ?: 0f
         val meaningful = schema.texts.filter { it.searchByMeaning }.map { it.key }.toSet()
+
+        /** The passages of a field: its windows with their vectors when it has more than one, else the whole of it with [whole]. */
+        fun passagesOf(field: SearchField, whole: FloatArray?, windowVectors: List<FloatArray>?): List<SearchPassage> {
+            val text = field.text
+            if (encoder != null && windowVectors != null && windowVectors.size > 1) {
+                val spans = encoder.windowSpans(text)
+                // The windows of the text as it is now: of another text, the whole is its one passage
+                if (spans.size == windowVectors.size) return spans.zip(windowVectors).map { (r, v) -> SearchPassage(field.key, r.first, r.last + 1, v) }
+            }
+            return listOfNotNull(whole?.let { SearchPassage(field.key, 0, text.length, it) })
+        }
+
         return heads.mapNotNull { (id, head) ->
             val own = fields[id].orEmpty()
             val itemFacets = Corrected.facets(facets[id].orEmpty(), facetCorrections[id].orEmpty())
             val itemTexts = Corrected.texts(texts[id].orEmpty(), own)
             val docFields = ArrayList<SearchField>()
-            docFields += SearchField("title", "Название", 1.0f, listOf(Corrected.title(head.title, own)), naming = true)
+            docFields += SearchField(TITLE, "Название", 1.0f, listOf(Corrected.title(head.title, own)), naming = true)
             searchedFacets.forEach { def ->
                 val keys = itemFacets[def.key].orEmpty()
                 if (keys.isNotEmpty()) docFields += SearchField(
@@ -115,8 +138,16 @@ class Search(
             schema.texts.filter { it.searchWeight > 0 }.forEach { def ->
                 itemTexts[def.key]?.let { docFields += SearchField(def.key, def.label, def.searchWeight, listOf(it)) }
             }
-            val docVectors = vectors[id].orEmpty().filterKeys { it in meaningful }.map { (k, v) -> SearchVector(k, v) }
-            ItemKey(s.id, id) to SearchDocument(ItemKey(s.id, id), docFields, docVectors)
+            val docPassages = ArrayList<SearchPassage>()
+            docFields.filter { it.key in meaningful }.forEach { f -> docPassages += passagesOf(f, vectors[id]?.get(f.key), windows[id]?.get(f.key)) }
+            // The chapters read: searched by their words and by the meaning of every window of them
+            parts[id].orEmpty().forEachIndexed { n, (partId, title, content) ->
+                val field = SearchField(PART + partId, title?.takeIf { it.isNotBlank() } ?: "Часть ${n + 1}", partWeight, listOf(content))
+                docFields += field
+                val w = partWindows[id]?.get(partId)
+                docPassages += passagesOf(field, w?.singleOrNull(), w)
+            }
+            ItemKey(s.id, id) to SearchDocument(ItemKey(s.id, id), docFields, docPassages)
         }.toMap()
     }
 
@@ -168,8 +199,10 @@ class Search(
         val reranker = plugins.reranker() ?: return found
         if (found.keys.size < 2) return found
         val started = System.currentTimeMillis()
-        val documents = context(type).documents(found.keys)
-        val texts = found.keys.associateWith { key -> documents[key]?.let { readable(type, it) }.orEmpty() }
+        val documents = found.keys.groupBy { it.source }.flatMap { (source, list) ->
+            stores.source(source)?.let { documents(it, list.map { k -> k.id }, passages = false).entries }.orEmpty()
+        }.associate { it.key to it.value }
+        val texts = found.keys.associateWith { key -> documents[key]?.let { readable(it, found.nearest[key]) }.orEmpty() }
         val hashes = texts.mapValues { Vectors.keyOf(it.value) }
         val stored = type.searchScores.of(reranker.id, found.line).filter { (key, s) -> hashes[key] == s.textsHash }
         val todo = found.keys.filter { it !in stored }
@@ -180,15 +213,21 @@ class Search(
         val scores = stored + read
         val order = found.keys.sortedByDescending { scores.getValue(it).score }
         log.info("'{}' in {}: {} works, {} read by {} in {} ms", found.line, type.id, found.keys.size, todo.size, reranker.id, System.currentTimeMillis() - started)
-        return SearchResult(found.line, order, found.state)
+        return SearchResult(found.line, order, found.state, found.nearest)
     }
 
     /**
-     * A work as the reranker reads it: every field by its name, the weightiest first — the title, the
-     * names, the description — as far as the reranker reads.
+     * A work as the reranker reads it, as far as it reads: its title; the passage of it nearest to the
+     * line — a window of a description, a scene of a chapter — when it was found by meaning; then its
+     * fields by their names, the weightiest first. A chapter is read by its passage alone: whole, the
+     * chapters are megabytes cut on every search to the few hundred pieces the reranker reaches.
      */
-    private fun readable(type: TypeStore, doc: SearchDocument): String =
-        doc.fields.sortedByDescending { it.weight }.joinToString("\n") { f -> f.name + ": " + f.values.joinToString(if (f.list) ", " else "\n") }
+    private fun readable(doc: SearchDocument, nearest: SearchPassage?): String {
+        val title = doc.fields.firstOrNull { it.key == TITLE }
+        val piece = nearest?.let { p -> p.text(doc)?.let { text -> doc.fields.first { it.key == p.field }.name + ": " + text } }
+        val rest = doc.fields.filter { it !== title && it.key != nearest?.field && !it.key.startsWith(PART) }.sortedByDescending { it.weight }
+        return (listOfNotNull(title?.let { it.name + ": " + it.text }, piece) + rest.map { it.name + ": " + it.text }).joinToString("\n")
+    }
 
     fun matches(typeId: String, result: SearchResult, keys: Collection<ItemKey>): Map<ItemKey, SearchMatch> {
         val provider = plugins.search ?: return emptyMap()
@@ -206,5 +245,11 @@ class Search(
 
         /** How long a search waits for the index of the start; the index of the last run serves meanwhile. */
         private const val WAIT_FOR_INDEX_SECONDS = 0L
+
+        /** The field of the title. */
+        private const val TITLE = "title"
+
+        /** The fields of the chapters: "part:<part id>". */
+        private const val PART = "part:"
     }
 }

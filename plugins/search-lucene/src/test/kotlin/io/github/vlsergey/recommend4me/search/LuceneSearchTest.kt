@@ -49,6 +49,48 @@ class LuceneSearchTest {
     }
 
     @Test
+    fun `found by the meaning of a passage of a chapter, which goes with its item`() {
+        val chapter = "Дождь шёл всю ночь. Наутро они встретились у маяка и долго молчали."
+        val scene = chapter.indexOf("Наутро")
+        val lighthouse = floatArrayOf(1f, 0f, 0f)
+        val withChapter = SearchDocument(
+            ItemKey("test", "4"),
+            listOf(
+                SearchField("title", "Название", 1.0f, listOf("Тихий берег"), naming = true),
+                SearchField("annotation", "Аннотация", 0.6f, listOf("История о двух людях у моря.")),
+                SearchField("part:1", "Глава 1", 0.5f, listOf(chapter)),
+            ),
+            listOf(
+                SearchPassage("annotation", 0, 28, floatArrayOf(0f, 1f, 0f)),
+                SearchPassage("part:1", 0, scene, floatArrayOf(0f, 0f, 1f)),
+                SearchPassage("part:1", scene, chapter.length, lighthouse),
+            ),
+        )
+        val other = SearchDocument(
+            ItemKey("test", "5"), listOf(SearchField("title", "Название", 1.0f, listOf("Другое"), naming = true)),
+            listOf(SearchPassage("title", 0, 6, floatArrayOf(0f, 1f, 0f))),
+        )
+        val byMeaning = object : SearchContext by context {
+            override fun queryVector(line: String) = lighthouse
+            override fun documents(keys: Collection<ItemKey>) = listOf(withChapter, other).filter { it.key in keys }.associateBy { it.key }
+        }
+        LuceneSearch(Files.createTempDirectory("search")).use { search ->
+            search.rebuild("books", sequenceOf(withChapter, other))
+            val found = search.search("books", "свидание у маяка утром", byMeaning)
+            assertEquals("4", found.keys.first().id)
+            val nearest = found.nearest.getValue(ItemKey("test", "4"))
+            assertEquals("part:1", nearest.field)
+            assertEquals(chapter.substring(scene), nearest.text(withChapter))
+            val shown = search.matches("books", found, listOf(ItemKey("test", "4")), byMeaning).getValue(ItemKey("test", "4"))
+            assertEquals("Глава 1", shown.field)
+            assertTrue(shown.byMeaning && shown.text.startsWith("Наутро"), shown.text)
+            // Removed, the item's passages go with it
+            search.update("books", emptyList(), listOf(ItemKey("test", "4")))
+            assertTrue(ItemKey("test", "4") !in search.search("books", "свидание у маяка утром", byMeaning).keys)
+        }
+    }
+
+    @Test
     fun `an update is found without a rebuild`() {
         LuceneSearch(Files.createTempDirectory("search")).use { search ->
             search.rebuild("books", documents.take(1).asSequence())

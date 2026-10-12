@@ -71,12 +71,27 @@ class E5Encoder(private val onnx: Onnx) : TextEncoder {
         return out
     }
 
+    /** The windows of [encodeWindows] in the text, by the characters of their first and last pieces. */
+    override fun windowSpans(text: String): List<IntRange> {
+        if (text.isBlank()) return emptyList()
+        val spans = tokenizer.encode(text, false, false).charTokenSpans
+        return spans.indices.chunked(room(prefixIds.getValue(TextKind.PASSAGE))).mapNotNull { chunk ->
+            // A piece of no characters of its own (a joined byte) has no span: the window's ends are its pieces that have
+            val from = chunk.firstNotNullOfOrNull { spans[it] }?.start ?: return@mapNotNull null
+            val to = chunk.asReversed().firstNotNullOfOrNull { spans[it] }?.end ?: return@mapNotNull null
+            from until to
+        }
+    }
+
+    /** The pieces of the text a window holds besides its two special ones and the prefix. */
+    private fun room(prefix: LongArray) = WINDOW - 2 - prefix.size
+
     /**
      * Every window of every text in one list, so windows of different texts share batches, with
      * the text each is of; at most [limit] windows of a text.
      */
     private fun windowsOf(texts: List<String>, prefix: LongArray, limit: Int): Pair<List<LongArray>, List<Int>> {
-        val room = WINDOW - 2 - prefix.size
+        val room = room(prefix)
         val windows = ArrayList<LongArray>()
         val owner = ArrayList<Int>()
         texts.forEachIndexed { t, text ->

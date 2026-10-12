@@ -165,6 +165,8 @@ class SiteTest {
         }
 
         override fun encodeWindows(texts: List<String>): List<List<FloatArray>> = encode(texts).map { listOfNotNull(it) }
+
+        override fun windowSpans(text: String): List<IntRange> = if (text.isBlank()) emptyList() else listOf(text.indices)
     }
 
     @Autowired lateinit var captures: CaptureController

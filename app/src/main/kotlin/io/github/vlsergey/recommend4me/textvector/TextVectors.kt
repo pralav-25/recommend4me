@@ -79,6 +79,7 @@ class TextVectors(
             stores.sources.forEach { s ->
                 try {
                     refresh(s)
+                    fillWindows(s)
                 } catch (e: Exception) {
                     log.error("{}: text vectors were not refreshed on start", s.id, e)
                 }
@@ -145,6 +146,7 @@ class TextVectors(
                 batch.forEachIndexed { i, t ->
                     vectors[i]?.let { store.textVectors.save(t.itemId, t.key, encoder.id, t.hash, it) }
                 }
+                keepWindows(store, batch.filterIndexed { i, _ -> vectors[i] != null }.map { Triple(it.itemId, it.key, it.text) })
                 events.publishEvent(TextVectorsChanged(store.id, batch.map { it.itemId }.distinct()))
                 done += batch.size
                 progress(done, todo.size)
@@ -155,6 +157,51 @@ class TextVectors(
             if (only == null) flag.set(false)
             running = false
         }
+    }
+
+    /**
+     * The windows of texts just encoded: how many each has, and of a text of more than one the
+     * vector of every window — what the search finds a piece of a long text by.
+     */
+    private fun keepWindows(store: SourceStore, texts: List<Triple<String, String, String>>) {
+        val encoder = plugins.textEncoder() ?: return
+        val counts = texts.map { encoder.windowSpans(it.third).size }
+        val long = texts.indices.filter { counts[it] > 1 }
+        val windows = if (long.isEmpty()) emptyList() else encoder.encodeWindows(long.map { texts[it].third })
+        val of = long.withIndex().associate { (k, i) -> i to windows[k] }
+        texts.forEachIndexed { i, (id, key, _) -> store.textVectors.saveWindows(id, key, counts[i], of[i].orEmpty()) }
+    }
+
+    /**
+     * The windows of the texts encoded before their windows were kept, made now, a batch at a time:
+     * of the texts as they are now — a text changed since is encoded again by [refresh], its windows
+     * with it. Answers how many texts were gone through.
+     */
+    fun fillWindows(store: SourceStore, cancelled: () -> Boolean = { false }): Int {
+        val encoder = plugins.textEncoder() ?: return 0
+        val keys = store.schema.texts.filter { it.block != null || it.searchByMeaning }.map { it.key }
+        var done = 0
+        val started = System.currentTimeMillis()
+        while (!cancelled()) {
+            val todo = store.textVectors.withoutWindows(encoder.id, keys + TITLE, BATCH)
+            if (todo.isEmpty()) break
+            val ids = todo.map { it.first }.distinct()
+            val fields = store.corrections.fieldsOf(ids)
+            val site = store.items.textsOf(ids, keys)
+            val titles = store.items.heads(ids).mapValues { it.value.title }
+            val texts = todo.map { (id, key) ->
+                val own = fields[id].orEmpty()
+                val all = Corrected.texts(site[id].orEmpty(), own) + listOfNotNull(titles[id]?.let { TITLE to Corrected.title(it, own) })
+                // A text gone since: no windows, and the next refresh drops its vector
+                Triple(id, key, all[key].orEmpty())
+            }
+            keepWindows(store, texts)
+            // The works searched by the meaning of the windows just kept: indexed again with them
+            events.publishEvent(TextVectorsChanged(store.id, ids))
+            done += texts.size
+        }
+        if (done > 0) log.info("{}: windows of {} texts counted in {} ms", store.id, done, System.currentTimeMillis() - started)
+        return done
     }
 
     /** The vector of a search line as a query; null without a text encoder. */
