@@ -447,7 +447,8 @@ class SiteTest {
         assertTrue(offered.none { it.key in given }, "offered $offered, given $given")
         assertTrue(offered.zipWithNext().all { (a, b) -> a.chance!! >= b.chance!! }, "the likeliest first: $offered")
         offered.find { it.key == "fake:C2" }?.let { assertEquals(3, it.mentions) }
-        assertEquals(0, offered.single { it.key == "oc:male" }.mentions)
+        // Given or offered as the model's chance falls (above): when offered, no text of the work names it
+        offered.find { it.key == "oc:male" }?.let { assertEquals(0, it.mentions) }
         assertEquals("Captain", offered.find { it.key == "fake:C2" }?.name ?: "Captain")
         assertEquals(404, suggestionsApi.getCandidates("site", "n1", "nope").statusCode.value())
 
