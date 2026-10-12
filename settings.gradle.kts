@@ -21,6 +21,7 @@ include(
     "libs:onnx",
     "app",
     "plugins:catalogue-wikidata",
+    "plugins:encoder-bge-m3",
     "plugins:encoder-e5",
     "plugins:encoder-siglip2",
     "plugins:reranker-bge",

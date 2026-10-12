@@ -24,7 +24,8 @@ folder of jars in `plugins/`:
 |---|---|
 | `source-author-today` | [author.today](https://author.today) books, browser tracking only |
 | `source-ficbook` | [ficbook.net](https://ficbook.net) fanfics and originals, browser tracking only |
-| `encoder-e5` | texts → vectors by multilingual-e5-small (any language, one space) |
+| `encoder-bge-m3` | texts → vectors by bge-m3 (any language, one space, 1024 numbers); the one used when its files are there |
+| `encoder-e5` | texts → vectors by multilingual-e5-small: the one used without bge-m3's files |
 | `encoder-siglip2` | pictures → vectors by SigLIP2 NaFlex, proportions kept |
 | `reranker-bge` | bge-reranker-v2-m3 reads a work's description together with every graded work's: the likeness the model reads |
 | `scorer-pairwise` | pairwise logistic ranking (RankNet with a line), the default |
@@ -79,7 +80,18 @@ folder beside the installed ones (a plugin of another repository):
 
 ### Neural encoders
 
-The encoders' files go into the `models` folder of the data folder (not into git):
+The encoders' files go into the `models` folder of the data folder (not into git). The text encoder,
+bge-m3 (1.1 GB, in half precision; fast on a card, slow on the CPU):
+
+```bash
+curl -L -o "$LOCALAPPDATA/recommend4me/models/bge-m3-fp16.onnx" https://huggingface.co/Xenova/bge-m3/resolve/main/onnx/model_fp16.onnx
+```
+
+```bash
+curl -L -o "$LOCALAPPDATA/recommend4me/models/bge-m3-tokenizer.json" https://huggingface.co/Xenova/bge-m3/resolve/main/tokenizer.json
+```
+
+Without it, multilingual-e5-small (small and fast, weaker by far):
 
 ```bash
 curl -L -o "$LOCALAPPDATA/recommend4me/models/e5-small.onnx" https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/model.onnx
