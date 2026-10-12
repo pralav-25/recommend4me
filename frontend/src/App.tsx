@@ -59,6 +59,12 @@ const HOTKEYS: [string, string][] = [
   ["Esc", "закрыть окно"],
 ];
 
+/**
+ * The pause in the typing after which the line is searched: the user's choice of a second — the
+ * 300 ms usual for suggestions searched every few words cost a reranking each.
+ */
+const SEARCH_SETTLE_MS = 1000;
+
 /** The content types as tabs; the chosen one is remembered, and the whole screen below is its own. */
 export function App() {
   const types = useTypes();
@@ -112,8 +118,11 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
     return hidden.length === 0 ? [] : type.sources.filter((s) => !hiddenSources.includes(s.id)).map((s) => s.id);
   }, [type, hiddenSources]);
 
+  // The line searched once the typing has paused for SEARCH_SETTLE_MS — at once on Enter: a line
+  // searched is a second or two of the reranker reading every work found, and every half-typed word
+  // was one ("г", "голы", "голыш" — each read whole)
   useEffect(() => {
-    const t = setTimeout(() => setSearch(searchInput.trim()), 300);
+    const t = setTimeout(() => setSearch(searchInput.trim()), SEARCH_SETTLE_MS);
     return () => clearTimeout(t);
   }, [searchInput]);
 
@@ -221,7 +230,14 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
               ref={searchRef}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Escape" && (setSearchInput(""), e.currentTarget.blur())}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  setSearchInput("");
+                  e.currentTarget.blur();
+                }
+                // Enter: the line as typed, not waiting for the pause
+                if (e.key === "Enter") setSearch(searchInput.trim());
+              }}
               placeholder="Поиск по смыслу и словам: «космос и романтика», имя автора…"
               className="pr-8 pl-8"
               type="search"
