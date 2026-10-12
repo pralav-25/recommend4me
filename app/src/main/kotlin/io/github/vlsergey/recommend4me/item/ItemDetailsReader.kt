@@ -42,7 +42,12 @@ class ItemDetailsReader(
     private val works: Works,
     private val suggestions: FacetSuggestions,
 ) {
-    fun read(key: ItemKey): ItemDetails? {
+    /**
+     * The work as the dialog shows it. [withChances]: its chances made current first — waited for
+     * while an answer's are being made; without, the chances as they are now: the answer is read back
+     * at once, and the page asks for the chances it changes once they are made (settleSuggestions).
+     */
+    fun read(key: ItemKey, withChances: Boolean = true): ItemDetails? {
         val store = stores.source(key.source) ?: return null
         val type = stores.typeOf(key.source)
         val summary = cards.cards(type, listOf(key)).firstOrNull() ?: return null
@@ -51,7 +56,7 @@ class ItemDetailsReader(
         val corrections = store.corrections.facetsOf(key.id)
         val fields = store.corrections.fieldsOf(key.id)
         // Made now for a work that never had them; the answer itself made those it changed current
-        suggestions.ensureFor(store, key.id)
+        if (withChances) suggestions.ensureFor(store, key.id)
         val chances = store.suggestions.ofItems(listOf(key.id))[key.id]
         val names = schema.facets.associate { def ->
             def.key to store.items.facetNames(

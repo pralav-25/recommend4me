@@ -131,7 +131,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             waiting -= source
             val store = stores.source(source) ?: return@forEach
             try {
-                refresh(store)
+                refresh(store, givenUp = true)
             } catch (e: CancellationException) {
                 log.info("{}: chances given up for newer changes, made again after the quiet", source)
             } catch (e: Exception) {
@@ -148,7 +148,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         worker.execute {
             stores.sources.filter { facetsOf(it).isNotEmpty() }.forEach { s ->
                 try {
-                    refresh(s)
+                    refresh(s, givenUp = true)
                 } catch (e: CancellationException) {
                     log.info("{}: chances given up on start for newer changes, made again after the quiet", s.id)
                 } catch (e: Exception) {
@@ -160,14 +160,17 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
 
     /**
      * Fits the suggester of every facet of the source again when what it learns from changed, and
-     * works out every item whose fingerprint changed — every item after a fitting. Given up with a
-     * [CancellationException] once the source changes again ([changed]).
+     * works out every item whose fingerprint changed — every item after a fitting. For a caller that
+     * waits for it: carried through whatever changes meanwhile; those are refreshed after their quiet.
      */
-    fun refresh(store: SourceStore) {
+    fun refresh(store: SourceStore) = refresh(store, givenUp = false)
+
+    /** [refresh]; [givenUp] — with a [CancellationException] once the source changes again ([changed]): the background's. */
+    private fun refresh(store: SourceStore, givenUp: Boolean) {
         val suggester = plugins.suggester ?: return
         val encoder = plugins.textEncoder() ?: return
         val generation = generationOf(store.id).get()
-        val stop = { generationOf(store.id).get() != generation }
+        val stop = if (givenUp) ({ generationOf(store.id).get() != generation }) else ({ false })
         facetsOf(store).forEach { facet -> lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
     }
 

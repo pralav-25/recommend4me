@@ -43,7 +43,8 @@ class CorrectionsController(
     private fun corrected(store: SourceStore, item: String): ResponseEntity<ItemDetails> {
         events.publishEvent(ItemsChanged(store.id, listOf(item)))
         recommendations.scheduleRetrain(store.type)
-        return details.read(ItemKey(store.id, item))?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
+        // Not waiting for the chances the change makes: the page asks for them apart
+        return details.read(ItemKey(store.id, item), withChances = false)?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
     }
 
     /**
