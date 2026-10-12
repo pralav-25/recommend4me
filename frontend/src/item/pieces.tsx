@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckIcon, StarIcon, ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
+import { CheckIcon, StarIcon } from "lucide-react";
 import {
   api,
   pictureSrc,
@@ -121,7 +121,7 @@ const INTERESTING_GRADE = 4;
 
 /**
  * Whether the work is interesting to read at all — beside how good it is: the user's mark, pressed
- * again to take it back. Without a mark a grade of 4 or 5 says it was (the 👍 drawn dashed), or
+ * again to take it back. Without a mark a grade of 4 or 5 says it was (the 🤔 drawn dashed), or
  * else the model's chance is shown. The list sorted by the prediction multiplies it by the chance.
  */
 export function InterestButtons({
@@ -153,6 +153,7 @@ export function InterestButtons({
               variant="outline"
               size={size}
               aria-pressed={summary.interest === true}
+              aria-label="Интересно"
               className={cn(
                 "min-w-0 px-2",
                 summary.interest === true ? "border-emerald-600! bg-emerald-600! text-white! hover:bg-emerald-600/90!" : "hover:border-emerald-600 hover:text-emerald-600",
@@ -162,7 +163,8 @@ export function InterestButtons({
             />
           }
         >
-          <ThumbsUpIcon />
+          {/* Not a thumb: a thumb says liked or not, and interest is another thing */}
+          <span aria-hidden>🤔</span>
           {labels && <span>Интересно</span>}
         </TooltipTrigger>
         <TooltipContent>
@@ -176,6 +178,7 @@ export function InterestButtons({
               variant="outline"
               size={size}
               aria-pressed={summary.interest === false}
+              aria-label="Неинтересно"
               className={cn(
                 "min-w-0 px-2",
                 summary.interest === false ? "border-grade-1! bg-grade-1! text-white! hover:bg-grade-1/90!" : "hover:border-grade-1 hover:text-grade-1",
@@ -184,7 +187,7 @@ export function InterestButtons({
             />
           }
         >
-          <ThumbsDownIcon />
+          <span aria-hidden>🥱</span>
           {labels && <span>Неинтересно</span>}
         </TooltipTrigger>
         <TooltipContent>

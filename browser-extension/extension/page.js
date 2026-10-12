@@ -408,7 +408,8 @@
     const s = item.summary;
     const line = el("r4m-line", "r4m-interest");
     line.appendChild(el("span", null, "Интерес: "));
-    [[true, "интересно"], [false, "неинтересно"]].forEach(([value, label]) => {
+    // Not thumbs: a thumb says liked or not, and interest is another thing
+    [[true, "🤔 интересно"], [false, "🥱 неинтересно"]].forEach(([value, label]) => {
       const current = s.interest === value;
       line.appendChild(button(
         label,
