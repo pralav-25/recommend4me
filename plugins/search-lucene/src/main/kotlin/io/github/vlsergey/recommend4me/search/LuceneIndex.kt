@@ -174,7 +174,7 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
         }
 
         fun fieldName(field: SearchField): String =
-            (if (field.naming) "n." else "t.") + Math.round(field.weight * 100) + "." + field.key
+            (if (field.naming) "n." else "t.") + Math.round(field.weight * 100) + "." + field.group
 
         private fun textField(name: String): IndexedField? {
             if (!name.startsWith("t.") && !name.startsWith("n.")) return null

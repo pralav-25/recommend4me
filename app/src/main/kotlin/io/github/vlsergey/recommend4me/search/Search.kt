@@ -142,7 +142,7 @@ class Search(
             docFields.filter { it.key in meaningful }.forEach { f -> docPassages += passagesOf(f, vectors[id]?.get(f.key), windows[id]?.get(f.key)) }
             // The chapters read: searched by their words and by the meaning of every window of them
             parts[id].orEmpty().forEachIndexed { n, (partId, title, content) ->
-                val field = SearchField(PART + partId, title?.takeIf { it.isNotBlank() } ?: "Часть ${n + 1}", partWeight, listOf(content))
+                val field = SearchField(PART + partId, title?.takeIf { it.isNotBlank() } ?: "Часть ${n + 1}", partWeight, listOf(content), group = PARTS)
                 docFields += field
                 val w = partWindows[id]?.get(partId)
                 docPassages += passagesOf(field, w?.singleOrNull(), w)
@@ -249,7 +249,8 @@ class Search(
         /** The field of the title. */
         private const val TITLE = "title"
 
-        /** The fields of the chapters: "part:<part id>". */
+        /** The fields of the chapters: "part:<part id>", searched as one field of the index, [PARTS]. */
         private const val PART = "part:"
+        private const val PARTS = "parts"
     }
 }

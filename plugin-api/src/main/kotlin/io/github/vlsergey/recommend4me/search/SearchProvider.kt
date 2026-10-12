@@ -25,6 +25,11 @@ class SearchField(
     val list: Boolean = false,
     /** The title, the author: the whole query standing there is what was looked for. */
     val naming: Boolean = false,
+    /**
+     * The field of the index it is searched in: its own [key], or one it shares with the fields of
+     * its kind — the chapters of a work, hundreds of them, are one field searched, each shown by its name.
+     */
+    val group: String = key,
 ) {
     /** The field's values as one text: what its passages' characters count in. */
     val text: String get() = values.joinToString(if (list) ", " else "\n\n")
