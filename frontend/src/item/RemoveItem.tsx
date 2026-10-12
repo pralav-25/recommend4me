@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Trash2Icon } from "lucide-react";
-import { api, unwrap, type ItemSummary } from "@/api/client";
+import { api, ensureOk, type ItemSummary } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -19,7 +19,7 @@ export function RemoveItem({ summary, typeId }: { summary: ItemSummary; typeId: 
   const ref = { source: summary.source, item: summary.item };
 
   const remove = async () => {
-    unwrap(await api.DELETE("/api/items/{source}/{item}", { params: { path: ref } }));
+    ensureOk(await api.DELETE("/api/items/{source}/{item}", { params: { path: ref } }));
     setAsking(false);
     queryClient.removeQueries({ queryKey: itemKey(ref) });
     queryClient.invalidateQueries({ queryKey: [ITEMS] });

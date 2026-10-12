@@ -2,6 +2,7 @@ import { forwardRef } from "react";
 import type { ContentTypeInfo, Grade, ItemSummary } from "@/api/client";
 import { ago } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { SearchJudge } from "@/search/SearchJudge";
 import {
   Cover,
   FacetBadges,
@@ -22,12 +23,14 @@ export type ItemViewProps = {
   onOpen: () => void;
   onSelect: () => void;
   onRate: (grade: Grade | null) => void;
+  /** Found by a search: the user's word on whether it answers the line. */
+  onJudge?: (relevant: boolean | null) => Promise<unknown>;
 };
 
 const SHOWN_FACET_VALUES = 8;
 
 /** A work in the grid: the cover first, as the sites show their banners, with the answer under it. */
-export const ItemCard = forwardRef<HTMLElement, ItemViewProps>(function ItemCard({ type, summary, selected, onOpen, onSelect, onRate }, ref) {
+export const ItemCard = forwardRef<HTMLElement, ItemViewProps>(function ItemCard({ type, summary, selected, onOpen, onSelect, onRate, onJudge }, ref) {
   return (
     <article
       ref={ref}
@@ -62,6 +65,7 @@ export const ItemCard = forwardRef<HTMLElement, ItemViewProps>(function ItemCard
         </div>
 
         {summary.searchMatch && <SearchMatchLine match={summary.searchMatch} className="line-clamp-3" />}
+        {onJudge && <SearchJudge value={summary.searchRelevant} onJudge={onJudge} />}
 
         <FacetBadges facets={summary.facets} limit={SHOWN_FACET_VALUES} />
 

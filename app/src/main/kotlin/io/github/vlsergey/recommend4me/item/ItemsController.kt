@@ -11,6 +11,8 @@ import io.github.vlsergey.recommend4me.correction.FacetValues
 import io.github.vlsergey.recommend4me.api.model.ItemDetails
 import io.github.vlsergey.recommend4me.api.model.ItemPage
 import io.github.vlsergey.recommend4me.api.model.ItemQuery
+import io.github.vlsergey.recommend4me.api.model.SearchJudgment
+import io.github.vlsergey.recommend4me.api.model.SearchQuality
 import io.github.vlsergey.recommend4me.api.model.ItemSort
 import io.github.vlsergey.recommend4me.api.model.ItemSummary
 import io.github.vlsergey.recommend4me.api.model.Mark
@@ -60,7 +62,18 @@ class ItemsController(
     private val events: ApplicationEventPublisher,
     private val removal: ItemRemoval,
     private val linkedGrades: LinkedGrades,
+    private val searchQuality: io.github.vlsergey.recommend4me.search.SearchQuality,
 ) : ItemsApi {
+
+    override fun judgeSearch(type: String, searchJudgment: SearchJudgment): ResponseEntity<Unit> {
+        val store = stores.type(type) ?: return ResponseEntity.notFound().build()
+        val j = searchJudgment
+        store.searchJudgments.judge(j.query, ItemKey(j.source, j.item), j.relevant, Instant.now())
+        return ResponseEntity.noContent().build()
+    }
+
+    override fun getSearchQuality(type: String, top: Int): ResponseEntity<SearchQuality> =
+        searchQuality.measure(type, top)?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
 
     override fun removeItem(source: String, item: String): ResponseEntity<Unit> =
         if (removal.remove(ItemKey(source, item))) ResponseEntity.noContent().build() else ResponseEntity.notFound().build()

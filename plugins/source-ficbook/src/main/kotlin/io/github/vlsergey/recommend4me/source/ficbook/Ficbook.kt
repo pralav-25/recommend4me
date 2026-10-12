@@ -58,7 +58,7 @@ class Ficbook : Source {
             TextDef(ANNOTATION, "Описание", block = "text:annotation", searchWeight = 0.6f, role = TextRole.DESCRIPTION),
             TextDef(NOTES, "Примечания", block = "text:notes", searchWeight = 0.5f, role = TextRole.NOTES),
             TextDef(DEDICATION, "Посвящение", searchWeight = 0.3f, role = TextRole.NOTES),
-            TextDef(PAIRINGS_LINE, "Пэйринг и персонажи на сайте", searchWeight = 0.7f, searchByMeaning = true),
+            TextDef(PAIRINGS_LINE, "Пэйринг и персонажи на сайте", searchWeight = 0.7f, searchByMeaning = true, names = true),
         ),
         reviewsLabel = "Отзывы",
         partsLabel = "Части",

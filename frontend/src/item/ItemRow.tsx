@@ -2,6 +2,7 @@ import { forwardRef } from "react";
 import type { Grade } from "@/api/client";
 import { ago } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { SearchJudge } from "@/search/SearchJudge";
 import type { ItemViewProps } from "./ItemCard";
 import {
   Cover,
@@ -19,7 +20,7 @@ import {
  * A work in the compact list: more works on a screen, for going through many quickly. On a
  * phone the grades go under the work, on a line of their own; there is no room for them beside it.
  */
-export const ItemRow = forwardRef<HTMLElement, ItemViewProps>(function ItemRow({ type, summary, selected, onOpen, onSelect, onRate }, ref) {
+export const ItemRow = forwardRef<HTMLElement, ItemViewProps>(function ItemRow({ type, summary, selected, onOpen, onSelect, onRate, onJudge }, ref) {
   const facetLine = summary.facets
     .flatMap((f) => f.values.filter((v) => v.corrected !== "REMOVED").map((v) => v.name))
     .join(" · ");
@@ -53,6 +54,7 @@ export const ItemRow = forwardRef<HTMLElement, ItemViewProps>(function ItemRow({
         ) : (
           facetLine && <div className="mt-1 hidden truncate text-xs text-muted-foreground/80 sm:block">{facetLine}</div>
         )}
+        {onJudge && <SearchJudge value={summary.searchRelevant} onJudge={onJudge} />}
       </div>
       <ScoreBadge type={type} summary={summary} />
       <RatingButtons type={type} value={summary.grade as Grade | undefined} onRate={onRate} size="sm" className="w-full shrink-0 md:w-80" />

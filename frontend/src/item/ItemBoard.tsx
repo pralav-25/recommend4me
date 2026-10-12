@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { InboxIcon, Loader2Icon } from "lucide-react";
-import { api, refKey, unwrap, type ContentTypeInfo, type Grade, type ItemSummary, type ItemView } from "@/api/client";
+import { api, ensureOk, refKey, unwrap, type ContentTypeInfo, type Grade, type ItemSummary, type ItemView } from "@/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { facetQuery, isFiltered, useFacets, type FacetSelection } from "@/facet/FacetFilters";
 import { rangeParams, type NumberRanges } from "@/number/NumberFilters";
@@ -209,6 +209,17 @@ export function ItemBoard({ type, view, sort, search, facets, sources, ranges, l
                 setOpened(i);
               }}
               onRate={(grade) => onRate(summary, grade)}
+              onJudge={
+                search
+                  ? async (relevant) =>
+                      ensureOk(
+                        await api.PUT("/api/types/{type}/search/judgments", {
+                          params: { path: { type: type.id } },
+                          body: { query: search, source: summary.source, item: summary.item, relevant: relevant ?? undefined },
+                        }),
+                      )
+                  : undefined
+              }
             />
           );
         })}

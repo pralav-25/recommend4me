@@ -96,7 +96,8 @@ class Search(
                 facetCorrections.values.flatten().filter { it.facet == def.key && it.name != null }.associate { it.key to it.name!! }
         }
         val vectors = plugins.textEncoder()?.let { e -> s.textVectors.ofMany(ids, e.id) }.orEmpty()
-        val meaningful = schema.texts.filter { it.searchByMeaning }.map { it.key }.toSet()
+        // A line of names is searched by its words: as a meaning it lies near any line
+        val meaningful = schema.texts.filter { it.searchByMeaning && !it.names }.map { it.key }.toSet()
         return heads.mapNotNull { (id, head) ->
             val own = fields[id].orEmpty()
             val itemFacets = Corrected.facets(facets[id].orEmpty(), facetCorrections[id].orEmpty())
@@ -140,14 +141,40 @@ class Search(
             }.associate { it.key to it.value }
     }
 
-    /** The works matching [line], most relevant first; null without a search plugin. */
-    fun search(typeId: String, line: String): SearchResult? {
+    /**
+     * The works matching [line], most relevant first; null without a search plugin. Found by the
+     * plugin — by meaning and by words — and then, with a reranker ([rerank]), every one of them
+     * read together with the line and put in the order of what it says: a vector of a text is the
+     * text squeezed before it meets the line, and "a detective in Victorian London" found the works
+     * whose texts named a Victor and London.
+     */
+    fun search(typeId: String, line: String, rerank: Boolean = true): SearchResult? {
         val provider = plugins.search ?: return null
         val type = stores.type(typeId) ?: return null
         built[typeId]?.await(WAIT_FOR_INDEX_SECONDS, TimeUnit.SECONDS)
         catchUp(type)
-        return provider.search(typeId, line, context(type))
+        val found = provider.search(typeId, line, context(type))
+        return if (rerank) reranked(type, found) else found
     }
+
+    /** Every work found, read against the line by the reranker, in the order of its score; as found without a reranker. */
+    private fun reranked(type: TypeStore, found: SearchResult): SearchResult {
+        val reranker = plugins.reranker() ?: return found
+        if (found.keys.size < 2) return found
+        val started = System.currentTimeMillis()
+        val documents = context(type).documents(found.keys)
+        val scores = reranker.rank(found.line, found.keys.map { key -> documents[key]?.let(::readable).orEmpty() })
+        val order = found.keys.indices.sortedByDescending { scores[it] }
+        log.info("'{}' in {}: {} works read by {} in {} ms", found.line, type.id, found.keys.size, reranker.id, System.currentTimeMillis() - started)
+        return SearchResult(found.line, order.map { found.keys[it] }, found.state)
+    }
+
+    /**
+     * A work as the reranker reads it: every field by its name, the weightiest first — the title, the
+     * names, the description — as far as the reranker reads.
+     */
+    private fun readable(doc: SearchDocument): String =
+        doc.fields.sortedByDescending { it.weight }.joinToString("\n") { f -> f.name + ": " + f.values.joinToString(if (f.list) ", " else "\n") }
 
     fun matches(typeId: String, result: SearchResult, keys: Collection<ItemKey>): Map<ItemKey, SearchMatch> {
         val provider = plugins.search ?: return emptyMap()

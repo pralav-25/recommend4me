@@ -26,6 +26,7 @@ import io.github.vlsergey.recommend4me.suggestion.ValueNameRepository
 import io.github.vlsergey.recommend4me.textvector.TextVectorRepository
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
 import io.github.vlsergey.recommend4me.universe.UniverseRepository
+import io.github.vlsergey.recommend4me.search.SearchJudgmentRepository
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
@@ -90,6 +91,7 @@ class TypeStore(val type: ContentType, val sources: List<SourceStore>, databases
 
     val links = TypeLinkRepository(databases.typeCorrections(type.id))
     val universes = UniverseRepository(databases.typeCorrections(type.id), languages)
+    val searchJudgments = SearchJudgmentRepository(databases.typeCorrections(type.id))
     val models = ModelRepository(databases.model(type.id))
     val embeddings = SetEmbeddingRepository(databases.model(type.id))
     val likeness = MarkLikenessRepository(databases.model(type.id))

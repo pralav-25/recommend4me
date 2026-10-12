@@ -141,7 +141,8 @@ class ItemList(
         }
         val pageKeys = sorted.drop(offset.coerceAtLeast(0)).take(limit.coerceIn(1, 500)).map { it.key }
         val matches = found?.let { search.matches(typeId, it, pageKeys) }.orEmpty()
-        return ItemPage(total = sorted.size, items = cards.cards(type, pageKeys, matches, clusters))
+        val judged = found?.let { type.searchJudgments.of(it.line) }.orEmpty()
+        return ItemPage(total = sorted.size, items = cards.cards(type, pageKeys, matches, clusters, judged))
     }
 
     /** The values of the number [numberId] (shared, or "<source>.<key>") of the source's items, as the user corrected them; null when the source has no such number. */

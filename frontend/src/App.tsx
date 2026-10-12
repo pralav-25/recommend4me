@@ -37,6 +37,7 @@ import { usePref } from "@/lib/usePref";
 import { ModelButton } from "@/model/ModelDialog";
 import { useModel } from "@/model/useModel";
 import { SettingsDialog } from "@/settings/SettingsDialog";
+import { SearchQualityDialog } from "@/search/SearchQualityDialog";
 import { SourceFilter } from "@/source/SourceFilter";
 import { WorkProgress } from "@/status/WorkProgress";
 import { ThemeToggle } from "@/theme/ThemeToggle";
@@ -229,6 +230,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
               /
             </kbd>
           </div>
+          <SearchQualityDialog type={type.id} />
 
           <div className="flex items-center gap-1">
             <Tabs

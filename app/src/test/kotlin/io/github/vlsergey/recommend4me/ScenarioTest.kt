@@ -18,6 +18,7 @@ import io.github.vlsergey.recommend4me.api.model.ItemRef
 import io.github.vlsergey.recommend4me.api.model.ItemSort
 import io.github.vlsergey.recommend4me.api.model.ItemView
 import io.github.vlsergey.recommend4me.api.model.RatingRequest
+import io.github.vlsergey.recommend4me.api.model.SearchJudgment
 import io.github.vlsergey.recommend4me.capture.CaptureController
 import io.github.vlsergey.recommend4me.contenttype.TypesController
 import io.github.vlsergey.recommend4me.correction.CorrectionsController
@@ -139,6 +140,16 @@ class ScenarioTest {
         assertEquals("A boy finds a dragon egg", items.getItem("test", "w1").body!!.texts.single().content)
         // The source's filter facet, and the kind and the universe the application gives every book
         assertEquals(listOf("test.tag", "kind", "universe"), items.listFacets("books").body!!.map { it.id })
+
+        // The user's word on what a search found: one line however typed, taken back when pressed again
+        items.judgeSearch("books", SearchJudgment("  Dragons ", "test", "w1", relevant = true))
+        items.judgeSearch("books", SearchJudgment("dragons", "test", "w2", relevant = false))
+        items.judgeSearch("books", SearchJudgment("knights", "test", "w3", relevant = true))
+        items.judgeSearch("books", SearchJudgment("knights", "test", "w3", relevant = null))
+        val quality = items.getSearchQuality("books", 10).body!!
+        assertEquals(listOf("dragons"), quality.queries.map { it.query })
+        assertEquals(1, quality.queries.single().relevant)
+        assertEquals(1, quality.queries.single().irrelevant)
 
         // Linked, two items are one work: a grade of either is written to both, in the list as graded alike
         fun gradeOf(id: String) = items.getItem("test", id).body!!.summary.grade

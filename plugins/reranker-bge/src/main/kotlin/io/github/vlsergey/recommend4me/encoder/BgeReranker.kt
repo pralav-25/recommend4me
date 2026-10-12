@@ -12,8 +12,10 @@ import java.util.stream.IntStream
  * graph in half precision. The two texts go in as one sequence, `<s> first </s></s> second </s>`,
  * and the graph answers one number, the logit of the second answering the first.
  *
- * Each text is cut to [SIDE] tokens: a description of a work says what it is in its first lines,
- * and attention costs the square of the length. The texts are cut once ([prepare]), on every
+ * Each text of a pair of two texts of works is cut to [SIDE] tokens: a description of a work says
+ * what it is in its first lines, and attention costs the square of the length. A line searched for
+ * against texts ([rank]) is short: the text takes what it leaves of the [REACH]. The texts are
+ * cut once ([prepare]), on every
  * core, however many pairs each is in: cut on the card's turn, they kept it waiting. Pairs are
  * SORTED BY LENGTH before batching, as the text encoder's windows are: a batch is padded to its
  * longest pair. On the card the batches are larger ([GPU_BATCH]).
@@ -34,7 +36,7 @@ class BgeReranker(private val onnx: Onnx) : TextReranker {
 
     override fun ready(): Boolean = onnx.has(MODEL) && onnx.has(TOKENIZER)
 
-    /** The pieces of every text, cut to [SIDE]. */
+    /** The pieces of every text, cut to what the reranker reads of one text at most: its reach less the four special pieces. */
     private class Pieces(val of: Array<LongArray>) : PreparedTexts {
         override val size get() = of.size
     }
@@ -49,17 +51,32 @@ class BgeReranker(private val onnx: Onnx) : TextReranker {
             val to = minOf(texts.size, from + share)
             if (from >= to) return@forEach
             tokenizer.batchEncode(texts.subList(from, to), false, false).forEachIndexed { i, e ->
-                out[from + i] = e.ids.let { if (it.size > SIDE) it.copyOf(SIDE) else it }
+                out[from + i] = e.ids.let { if (it.size > TEXT) it.copyOf(TEXT) else it }
             }
         }
         return Pieces(Array(texts.size) { out[it]!! })
     }
 
+    /** Two texts of a work, each cut to [SIDE]: the pair is read as it always was, its kept scores stay the scores of it. */
     override fun score(texts: PreparedTexts, first: IntArray, second: IntArray): FloatArray {
         val pieces = (texts as Pieces).of
-        fun length(k: Int) = pieces[first[k]].size + pieces[second[k]].size + 4
-        val out = FloatArray(first.size)
-        val order = first.indices.sortedBy(::length)
+        return read(first.indices.map { k -> pieces[first[k]].cut(SIDE) to pieces[second[k]].cut(SIDE) })
+    }
+
+    /** The line cut to [SIDE] at most, every text to what the line leaves of the reach. */
+    override fun rank(query: String, texts: List<String>): FloatArray {
+        val pieces = (prepare(listOf(query) + texts) as Pieces).of
+        val line = pieces[0].cut(SIDE)
+        return read(texts.indices.map { k -> line to pieces[k + 1].cut(TEXT - line.size) })
+    }
+
+    private fun LongArray.cut(n: Int) = if (size > n) copyOf(n) else this
+
+    /** The logit of every pair, read in batches of pairs of a length alike. */
+    private fun read(pairs: List<Pair<LongArray, LongArray>>): FloatArray {
+        fun length(k: Int) = pairs[k].first.size + pairs[k].second.size + 4
+        val out = FloatArray(pairs.size)
+        val order = pairs.indices.sortedBy(::length)
         val wantsTypes = TOKEN_TYPES in onnx.inputNames(MODEL)
         for (batch in order.chunked(if (onnx.onGpu(MODEL)) GPU_BATCH else BATCH)) {
             val len = batch.maxOf(::length)
@@ -74,10 +91,10 @@ class BgeReranker(private val onnx: Onnx) : TextReranker {
                     at++
                 }
                 put(bos)
-                pieces[first[k]].forEach(::put)
+                pairs[k].first.forEach(::put)
                 put(eos)
                 put(eos)
-                pieces[second[k]].forEach(::put)
+                pairs[k].second.forEach(::put)
                 put(eos)
             }
             val shape = longArrayOf(batch.size.toLong(), len.toLong())
@@ -100,8 +117,14 @@ class BgeReranker(private val onnx: Onnx) : TextReranker {
         private const val TOKEN_TYPES = "token_type_ids"
         private const val PAD = 1L
 
-        /** The tokens of each text read: two of them and four special ones make at most 512. */
-        private const val SIDE = 254
+        /** The pieces read at once: the reach of XLM-RoBERTa's positions as the model was trained. */
+        private const val REACH = 512
+
+        /** What one text may take of the [REACH]: all of it but the four special pieces of a pair. */
+        private const val TEXT = REACH - 4
+
+        /** The tokens of each text of a pair of two texts: two of them and four special ones make at most [REACH]. */
+        private const val SIDE = TEXT / 2
         private const val BATCH = 8
         private const val GPU_BATCH = 64
     }

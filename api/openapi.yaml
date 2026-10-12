@@ -63,6 +63,52 @@ paths:
               schema:
                 $ref: '#/components/schemas/ItemPage'
 
+  /api/types/{type}/search/judgments:
+    put:
+      tags: [items]
+      operationId: judgeSearch
+      summary: The user's word on whether a work found answers the line searched
+      description: |
+        What the quality of the search is measured by (getSearchQuality); never learnt from by the
+        model of the grades. The line is one query however typed: trimmed, in lower case.
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SearchJudgment'
+      responses:
+        '204':
+          description: Kept, or taken back
+
+  /api/types/{type}/search/quality:
+    get:
+      tags: [items]
+      operationId: getSearchQuality
+      summary: How well the search finds what the user judged, with the reranker and without
+      description: |
+        Every line the user judged works for is searched again, both ways; of each, where the first
+        work judged fitting stands, and how many works judged fitting and not fitting are among the
+        first [top] — the works not judged among them are counted apart, neither.
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - name: top
+          in: query
+          required: true
+          description: How many of the first works found are counted
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: The measure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchQuality'
+
   /api/types/{type}/facets:
     get:
       tags: [items]
@@ -1675,6 +1721,9 @@ components:
             from the fold it was left out of) - how the model would grade it not knowing the user's grade
         searchMatch:
           $ref: '#/components/schemas/SearchMatch'
+        searchRelevant:
+          type: boolean
+          description: The user's word on the work for the line searched (judgeSearch); none when not judged or not searched
         signals:
           type: object
           description: The user's own actions on the site (liked, on a shelf)
@@ -1722,6 +1771,89 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ItemSummary'
+
+    SearchJudgment:
+      type: object
+      required: [query, source, item]
+      properties:
+        query:
+          type: string
+        source:
+          type: string
+        item:
+          type: string
+        relevant:
+          type: boolean
+          description: Whether the work answers the line; left out, the word is taken back
+
+    SearchQuality:
+      type: object
+      required: [top, queries, reranked, plain]
+      properties:
+        top:
+          type: integer
+        queries:
+          type: array
+          items:
+            $ref: '#/components/schemas/QueryQuality'
+        reranked:
+          $ref: '#/components/schemas/SearchQualitySum'
+        plain:
+          $ref: '#/components/schemas/SearchQualitySum'
+
+    QueryQuality:
+      type: object
+      required: [query, relevant, irrelevant, reranked, plain]
+      properties:
+        query:
+          type: string
+        relevant:
+          type: integer
+          description: The works judged to answer the line
+        irrelevant:
+          type: integer
+          description: The works judged not to
+        reranked:
+          $ref: '#/components/schemas/QueryRanks'
+        plain:
+          $ref: '#/components/schemas/QueryRanks'
+
+    QueryRanks:
+      type: object
+      description: Where the works judged stand in what a search found
+      required: [relevantInTop, irrelevantInTop, unjudgedInTop, relevantFound]
+      properties:
+        firstRelevant:
+          type: integer
+          description: The place of the first work judged fitting, from 1; none when none is found
+        relevantInTop:
+          type: integer
+        irrelevantInTop:
+          type: integer
+        unjudgedInTop:
+          type: integer
+        relevantFound:
+          type: integer
+          description: The works judged fitting found at all
+
+    SearchQualitySum:
+      type: object
+      required: [meanReciprocalRank, relevantInTop, irrelevantInTop, unjudgedInTop, relevantFound, relevant]
+      properties:
+        meanReciprocalRank:
+          type: number
+          format: double
+          description: The mean over the lines of 1 / the place of the first work judged fitting, 0 when none is found
+        relevantInTop:
+          type: integer
+        irrelevantInTop:
+          type: integer
+        unjudgedInTop:
+          type: integer
+        relevantFound:
+          type: integer
+        relevant:
+          type: integer
 
     ItemQuery:
       type: object

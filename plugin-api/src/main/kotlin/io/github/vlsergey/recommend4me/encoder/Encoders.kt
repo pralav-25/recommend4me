@@ -49,6 +49,13 @@ interface TextReranker {
     /** The score of every pair of the [texts] prepared, the first of pair k at [first]`[k]`, the second at [second]`[k]`. */
     fun score(texts: PreparedTexts, first: IntArray, second: IntArray): FloatArray
 
+    /**
+     * The score of every text of [texts] answering the [query] — a line searched for against the
+     * texts of works: the line is short, and a text is read as far as what the line leaves of the
+     * reranker's reach, not cut to an equal share of it as a pair of two texts is.
+     */
+    fun rank(query: String, texts: List<String>): FloatArray = score(texts.map { query to it })
+
     /** The score of every pair (first, second) of texts. */
     fun score(pairs: List<Pair<String, String>>): FloatArray {
         val distinct = pairs.flatMap { it.toList() }.distinct()

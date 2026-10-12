@@ -119,6 +119,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
         keys: List<ItemKey>,
         matches: Map<ItemKey, io.github.vlsergey.recommend4me.search.SearchMatch> = emptyMap(),
         clusters: WorkClusters = works.of(type),
+        /** The user's word on the works for the line searched, when searched. */
+        judged: Map<ItemKey, Boolean> = emptyMap(),
     ): List<ItemSummary> {
         val out = HashMap<ItemKey, ItemSummary>()
         val members = keys.flatMap { clusters.members(it) }.distinct()
@@ -176,6 +178,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     searchMatch = matches[key]?.let { m ->
                         SearchMatch(m.field, m.byMeaning, m.text, m.highlights.map { (s, e) -> TextRange(s, e) })
                     },
+                    searchRelevant = judged[key],
                     signals = signals[id]?.takeIf { it.isNotEmpty() },
                 )
             }
