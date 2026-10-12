@@ -147,8 +147,9 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val ratings = store.ratings.all().filter { it.itemId in ids.toSet() }
             val versions = ids.mapNotNull { id -> heads[ItemKey(source, id)]?.first?.let { id to it.version } }.toMap()
             val graded = graded(ratings, versions)
-            val predictions = type.models.predictions(source)
+            val predicted = type.models.predicted(source)
             val heldOut = type.models.heldOut(source)
+            val interest = store.interest.all()
             val signals = store.signals.all()
             ids.forEach { id ->
                 val key = ItemKey(source, id)
@@ -173,8 +174,11 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     grade = g?.grade,
                     previousGrade = g?.previousGrade,
                     previousGradeVersion = g?.previousVersion,
-                    prediction = predictions[id]?.let { Prediction(it) },
+                    prediction = predicted[id]?.let { Prediction(it.score) },
                     heldOut = heldOut[id]?.let { Prediction(it) },
+                    // Its own too: a linked item has the work's mark written to it ([LinkedInterest][io.github.vlsergey.recommend4me.interest.LinkedInterest])
+                    interest = interest[id]?.interesting,
+                    interestChance = predicted[id]?.interest,
                     searchMatch = matches[key]?.let { m ->
                         SearchMatch(m.field, m.byMeaning, m.text, m.highlights.map { (s, e) -> TextRange(s, e) })
                     },

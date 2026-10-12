@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.model
 
 import io.github.vlsergey.recommend4me.correction.Corrected
+import io.github.vlsergey.recommend4me.interest.InterestMark
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.likeness.Likenesses
 import io.github.vlsergey.recommend4me.likeness.TypeLikeness
@@ -49,6 +50,8 @@ class Catalogue(
     val vectors: Map<ItemKey, Map<String, FloatArray>>,
     val likeness: TypeLikeness,
     val works: WorkClusters,
+    /** The user's marks of interest. */
+    val interest: Map<ItemKey, InterestMark> = emptyMap(),
 ) {
     val byKey: Map<ItemKey, CatalogueItem> = items.associateBy { it.key }
 
@@ -70,6 +73,7 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
         val items = ArrayList<CatalogueItem>()
         val vectors = HashMap<ItemKey, HashMap<String, FloatArray>>()
         val ratings = ArrayList<TypedRating>()
+        val interest = HashMap<ItemKey, InterestMark>()
         val centerSum = imageEncoder?.let { DoubleArray(it.dim) }
         var pictures = 0
 
@@ -94,6 +98,7 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
             }
             s.setVectors.forEach(embeddings) { id, key, v -> put(id, key, v) }
             ratings += s.ratings.all().map { TypedRating(ItemKey(s.id, it.itemId), it.version, it.grade, it.ratedAt) }
+            s.interest.all().forEach { (id, mark) -> interest[ItemKey(s.id, id)] = mark }
         }
         val read = System.currentTimeMillis()
         val keys = items.map { it.key }.toSet()
@@ -107,7 +112,7 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
             "{}: catalogue of {} items read in {} ms, likeness in {} ms",
             type.id, items.size, read - started, System.currentTimeMillis() - read,
         )
-        return Catalogue(type, items, ratings.filter { it.key in keys }, vectors, likeness, clusters)
+        return Catalogue(type, items, ratings.filter { it.key in keys }, vectors, likeness, clusters, interest)
     }
 
     /**

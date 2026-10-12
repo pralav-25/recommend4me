@@ -60,6 +60,20 @@ export function applyGrade(queryClient: QueryClient, updated: ItemSummary) {
   });
 }
 
+/**
+ * A mark of interest changed: the item's card is replaced in place and every other card of its
+ * work takes the mark over, as the application writes it to each. The order waits for the model.
+ */
+export function applyInterest(queryClient: QueryClient, updated: ItemSummary) {
+  eachList(queryClient, (data) => ({
+    ...data,
+    pages: data.pages.map((page) => ({
+      ...page,
+      items: page.items.map((s) => (sameItem(s, updated) ? updated : ofWork(s, updated) ? { ...s, interest: updated.interest } : s)),
+    })),
+  }));
+}
+
 /** New details of an item from a correction or a download: the dialog and the lists get them at once. */
 export function applyDetails(queryClient: QueryClient, details: ItemDetails, asked: ItemRef) {
   queryClient.setQueryData(itemKey(asked), details);

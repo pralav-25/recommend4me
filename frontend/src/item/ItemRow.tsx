@@ -6,6 +6,7 @@ import { SearchJudge } from "@/search/SearchJudge";
 import type { ItemViewProps } from "./ItemCard";
 import {
   Cover,
+  InterestButtons,
   LinkedBadges,
   NumberLine,
   PreviousRating,
@@ -58,6 +59,7 @@ export const ItemRow = forwardRef<HTMLElement, ItemViewProps>(function ItemRow({
         {onJudge && summary.searchMatch && <SearchJudge value={summary.searchRelevant} onJudge={onJudge} />}
       </div>
       <ScoreBadge type={type} summary={summary} />
+      <InterestButtons summary={summary} className="shrink-0" />
       <RatingButtons type={type} value={summary.grade as Grade | undefined} onRate={onRate} size="sm" className="w-full shrink-0 md:w-80" />
     </article>
   );

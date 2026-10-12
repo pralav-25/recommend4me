@@ -54,6 +54,37 @@ data class ModelMeta(
     )
 }
 
+/**
+ * The model of interest — whether the user finds a work interesting at all — but its scorer's
+ * state; kept as JSON beside it. Its scores are standardised as on its training rows and made a
+ * chance by the [calibration].
+ */
+data class InterestMeta(
+    val scorer: String,
+    val parameter: Double,
+    val categorical: List<String>,
+    val vectorCenters: Map<String, FloatArray>,
+    val vectorSpreads: Map<String, Float>,
+    val numbers: Map<String, NumberSpread>,
+    val scoreMean: Double,
+    val scoreSd: Double,
+    val calibration: Calibration,
+    val trainedAtMillis: Long,
+    /** How many works it learnt as interesting, and as not. */
+    val interesting: Int,
+    val notInteresting: Int,
+    /** Out-of-fold; the concordance of two kinds is the ROC AUC. */
+    val metrics: RankingMetrics?,
+) {
+    fun layout() = FeatureLayout(
+        categorical,
+        vectorCenters.mapValues { (key, center) -> VectorSpread(center, vectorSpreads.getValue(key)) },
+        numbers,
+    )
+
+    fun chance(raw: Double): Double = calibration.chance((raw - scoreMean) / scoreSd)
+}
+
 /** What the interface shows about the model of a content type. */
 data class ModelSummary(
     val meta: ModelMeta?,

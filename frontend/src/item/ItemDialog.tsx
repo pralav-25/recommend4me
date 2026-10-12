@@ -25,7 +25,7 @@ import { writeItemHash } from "./itemHash";
 import { ItemNumbers } from "./ItemNumbers";
 import { ItemTexts } from "./ItemTexts";
 import { itemKey } from "./lists";
-import { Cover, GRADE_TEXT, KEY_GRADES, LinkedBadges, PreviousRating, RatingButtons, ScoreBadge, SignalBadges } from "./pieces";
+import { Cover, GRADE_TEXT, InterestButtons, KEY_GRADES, LinkedBadges, PreviousRating, RatingButtons, ScoreBadge, SignalBadges } from "./pieces";
 import { RelatedWorks } from "./RelatedWorks";
 import { RemoveItem } from "./RemoveItem";
 import { useHeldOut } from "./useHeldOut";
@@ -248,13 +248,14 @@ function Shell({
           {marking ? "Готово" : "Разметить"}
         </Button>
         <PreviousRating type={type} summary={summary} />
+        <InterestButtons summary={summary} size="lg" labels className="ml-auto" />
         <RatingButtons
           type={type}
           value={summary.grade as Grade | undefined}
           onRate={onRate}
           size="lg"
           labels
-          className="ml-auto w-full sm:w-[40rem]"
+          className="w-full sm:w-[40rem]"
         />
       </div>
     </>

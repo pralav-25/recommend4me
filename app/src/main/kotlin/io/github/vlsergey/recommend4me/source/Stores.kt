@@ -6,6 +6,7 @@ import io.github.vlsergey.recommend4me.correction.CorrectionRepository
 import io.github.vlsergey.recommend4me.correction.TypeLinkRepository
 import io.github.vlsergey.recommend4me.database.Databases
 import io.github.vlsergey.recommend4me.folder.DataFolder
+import io.github.vlsergey.recommend4me.interest.InterestRepository
 import io.github.vlsergey.recommend4me.item.ItemRepository
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.likeness.MarkLikenessRepository
@@ -76,6 +77,7 @@ class SourceStore(val source: Source, contentType: ContentType, val folder: Path
     val corrections = CorrectionRepository(dbs.corrections.dsl)
 
     val ratings = RatingRepository(dbs.ratings.dsl)
+    val interest = InterestRepository(dbs.ratings.dsl)
     val marks = MarkRepository(source.id, dbs.ratings.dsl)
     val signals = SignalRepository(dbs.ratings.dsl)
 

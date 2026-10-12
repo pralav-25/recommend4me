@@ -5,6 +5,7 @@ import io.github.vlsergey.recommend4me.api.model.FacetValueUse
 import io.github.vlsergey.recommend4me.api.model.ItemPage
 import io.github.vlsergey.recommend4me.correction.Corrected
 import io.github.vlsergey.recommend4me.correction.FacetCorrection
+import io.github.vlsergey.recommend4me.interest.Interest
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.model.FeatureNames
@@ -69,8 +70,11 @@ class ItemList(
     /** A facet as the filters of a content type know it: the shared key of its sources' facets, or "<source>.<key>" — as the model does. */
     private fun filterId(store: SourceStore, facet: io.github.vlsergey.recommend4me.source.FacetDef) = FeatureNames.facetId(store.source, facet)
 
-    /** One row of the list before its card is read; [number] is what the list is sorted by when not by the prediction. */
-    private class Row(val key: ItemKey, val updatedAt: Instant, val graded: Boolean, val prediction: Double?, val number: Double?)
+    /**
+     * One row of the list before its card is read; [expected] — the prediction times the chance of
+     * interest — is what the list is sorted by first, [number] what it is sorted by otherwise.
+     */
+    private class Row(val key: ItemKey, val updatedAt: Instant, val graded: Boolean, val prediction: Double?, val expected: Double?, val number: Double?)
 
     fun page(
         typeId: String,
@@ -95,8 +99,10 @@ class ItemList(
         type.sources.filter { sources == null || it.id in sources }.forEach { s ->
             val keys = s.items.keys()
             val versions = keys.associate { it.id to it.version }
-            val grades = cards.graded(s.ratings.all(), versions).mapNotNull { (id, g) -> g.grade?.let { id to it } }.toMap()
-            val predictions = type.models.predictions(s.id)
+            val graded = cards.graded(s.ratings.all(), versions)
+            val grades = graded.mapNotNull { (id, g) -> g.grade?.let { id to it } }.toMap()
+            val predicted = type.models.predicted(s.id)
+            val marks = s.interest.all()
             val numbers = if (order == ItemOrder.NUMBER && sortNumber != null) numberOf(s, sortNumber).orEmpty() else emptyMap()
             // How far the model that had not seen a graded work puts it from where the user's grade
             // stands: beyond the lowest grade's place for a work of it is no surprise, nor beyond the highest's
@@ -121,7 +127,11 @@ class ItemList(
                 if (passes != null && !passes(k.id)) return@forEach
                 // A work without the number is not known to be within the range: not shown
                 if (limits.any { (r, values) -> values[k.id]?.let { it !in r } ?: true }) return@forEach
-                rows += Row(key, k.updatedAt, k.id in grades, predictions[k.id], numbers[k.id] ?: surprises[k.id])
+                val p = predicted[k.id]
+                // What the user said of the work decides its chance; the prediction alone without a model of interest
+                val chance = graded[k.id].let { g -> Interest.chance(marks[k.id]?.interesting, g?.grade ?: g?.previousGrade, p?.interest) }
+                val expected = p?.let { if (chance != null) it.score * chance else it.score }
+                rows += Row(key, k.updatedAt, k.id in grades, p?.score, expected, numbers[k.id] ?: surprises[k.id])
             }
         }
         // An item is graded by its own grade: a linked one has the work's written to it ([LinkedGrades][io.github.vlsergey.recommend4me.rating.LinkedGrades])
@@ -134,7 +144,11 @@ class ItemList(
         }
         val sorted = when {
             relevance != null -> viewed.sortedBy { relevance.getValue(it.key) }
-            order == ItemOrder.SCORE -> viewed.sortedWith(compareByDescending<Row> { it.prediction ?: Double.NEGATIVE_INFINITY }.thenByDescending { it.updatedAt })
+            order == ItemOrder.SCORE -> viewed.sortedWith(
+                compareByDescending<Row> { it.expected ?: Double.NEGATIVE_INFINITY }
+                    .thenByDescending { it.prediction ?: Double.NEGATIVE_INFINITY }
+                    .thenByDescending { it.updatedAt },
+            )
             order == ItemOrder.NUMBER || order == ItemOrder.SURPRISE ->
                 viewed.sortedWith(compareByDescending<Row> { it.number ?: Double.NEGATIVE_INFINITY }.thenByDescending { it.updatedAt })
             else -> viewed.sortedByDescending { it.updatedAt }

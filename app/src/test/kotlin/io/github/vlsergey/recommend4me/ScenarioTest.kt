@@ -13,6 +13,7 @@ import io.github.vlsergey.recommend4me.source.TextDef
 import io.github.vlsergey.recommend4me.api.model.CaptureRequest
 import io.github.vlsergey.recommend4me.api.model.FacetCorrection
 import io.github.vlsergey.recommend4me.api.model.FacetChoice
+import io.github.vlsergey.recommend4me.api.model.InterestRequest
 import io.github.vlsergey.recommend4me.api.model.ItemQuery
 import io.github.vlsergey.recommend4me.api.model.ItemRef
 import io.github.vlsergey.recommend4me.api.model.ItemSort
@@ -172,7 +173,19 @@ class ScenarioTest {
         items.unrateItem("test", "w2", null)
         items.unrateItem("test", "w3", null)
 
+        // Interesting or not, apart from the grade: one mark a work, written to each of its items, taken back of both
+        fun interestOf(id: String) = items.getItem("test", id).body!!.summary.interest
+        items.markInterest("test", "w3", InterestRequest(true))
+        corrections.linkItem("test", "w2", ItemRef("test", "w3"))
+        assertEquals(true, interestOf("w2"))
+        assertEquals(false, items.markInterest("test", "w2", InterestRequest(false)).body!!.interest)
+        assertEquals(false, interestOf("w3"))
+        items.unmarkInterest("test", "w3")
+        assertNull(interestOf("w2"))
+        corrections.unlinkItem("test", "w2", "test", "w3")
+
         // Removed from the library — gone from the site — with its grade and the user's answers
+        items.markInterest("test", "w1", InterestRequest(true))
         corrections.correctFacet("test", "w1", FacetCorrection(facet = "tags", added = true, key = "magic"))
         assertEquals(204, items.removeItem("test", "w1").statusCode.value())
         assertEquals(404, items.getItem("test", "w1").statusCode.value())
@@ -183,6 +196,7 @@ class ScenarioTest {
         capture("w1|Dragons|fantasy,dragons|A boy finds a dragon egg")
         val again = items.getItem("test", "w1").body!!
         assertNull(again.summary.grade)
+        assertNull(again.summary.interest)
         assertTrue(again.allFacets.none { f -> f.propertyValues.any { it.corrected != null } }, "answers ${again.allFacets}")
         assertEquals(3, list().total)
     }

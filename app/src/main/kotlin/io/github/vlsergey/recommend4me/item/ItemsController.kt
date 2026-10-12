@@ -19,6 +19,9 @@ import io.github.vlsergey.recommend4me.api.model.Mark
 import io.github.vlsergey.recommend4me.api.model.MatchFeedbackRequest
 import io.github.vlsergey.recommend4me.api.model.PartText
 import io.github.vlsergey.recommend4me.api.model.RatingRequest
+import io.github.vlsergey.recommend4me.api.model.InterestRequest
+import io.github.vlsergey.recommend4me.interest.InterestChanged
+import io.github.vlsergey.recommend4me.interest.LinkedInterest
 import io.github.vlsergey.recommend4me.mark.MarkKind
 import io.github.vlsergey.recommend4me.mark.MarksChanged
 import io.github.vlsergey.recommend4me.mark.ThingRef
@@ -62,6 +65,7 @@ class ItemsController(
     private val events: ApplicationEventPublisher,
     private val removal: ItemRemoval,
     private val linkedGrades: LinkedGrades,
+    private val linkedInterest: LinkedInterest,
     private val searchQuality: io.github.vlsergey.recommend4me.search.SearchQuality,
 ) : ItemsApi {
 
@@ -180,6 +184,25 @@ class ItemsController(
         events.publishEvent(GradesChanged(store.type, source, item))
         // The grade of the work taken back: of the items linked to it too; an old version's grade is the item's own
         if ((version ?: head.version) == head.version) linkedGrades.takeBack(ItemKey(source, item))
+        return card(ItemKey(source, item))
+    }
+
+    override fun markInterest(source: String, item: String, interestRequest: InterestRequest): ResponseEntity<ItemSummary> {
+        val store = stores.source(source) ?: return ResponseEntity.notFound().build()
+        if (!store.items.exists(item)) return ResponseEntity.notFound().build()
+        store.interest.mark(item, interestRequest.interesting, Instant.now())
+        events.publishEvent(InterestChanged(store.type, source, item))
+        // The items linked to it are the same work: marked the same
+        linkedInterest.share(ItemKey(source, item))
+        return card(ItemKey(source, item))
+    }
+
+    override fun unmarkInterest(source: String, item: String): ResponseEntity<ItemSummary> {
+        val store = stores.source(source) ?: return ResponseEntity.notFound().build()
+        if (!store.items.exists(item)) return ResponseEntity.notFound().build()
+        store.interest.forget(item)
+        events.publishEvent(InterestChanged(store.type, source, item))
+        linkedInterest.takeBack(ItemKey(source, item))
         return card(ItemKey(source, item))
     }
 

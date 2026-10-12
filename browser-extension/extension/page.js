@@ -329,6 +329,7 @@
     root.appendChild(score);
 
     root.appendChild(grades(item));
+    root.appendChild(interest(item));
 
     const parts = explanation && explanation.of === keyOf(item) ? explanation.parts : null;
     if (parts && parts.length) {
@@ -392,6 +393,40 @@
     if (s.grade) line.appendChild(el("span", "r4m-muted", ` ${item.grades[s.grade - 1]}`));
     else if (s.previousGrade) {
       line.appendChild(el("span", "r4m-muted", ` прошлая версия (${s.previousGradeVersion}): ${s.previousGrade}`));
+    }
+    return line;
+  }
+
+  /** The lowest grade that says a work was interesting, as the application takes it (Interest.MIN_GRADE). */
+  const INTERESTING_GRADE = 4;
+
+  /**
+   * Whether the work is interesting to read at all, beside how good it is: the user's mark; without
+   * one, a grade of 4 or 5 that says so, or else the chance the model gives it.
+   */
+  function interest(item) {
+    const s = item.summary;
+    const line = el("r4m-line", "r4m-interest");
+    line.appendChild(el("span", null, "Интерес: "));
+    [[true, "интересно"], [false, "неинтересно"]].forEach(([value, label]) => {
+      const current = s.interest === value;
+      line.appendChild(button(
+        label,
+        current ? "Нажмите ещё раз, чтобы снять" : null,
+        () => current
+          ? api("DELETE", `/api/items/${enc(s.source)}/${enc(s.item)}/interest`)
+          : api("PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/interest`, { interesting: value }),
+        `r4m-mark${current ? " r4m-current" : ""}${saving.has("interest") ? " r4m-saving" : ""}`,
+        (shown) => {
+          shown.summary.interest = current ? null : value;
+        },
+        "interest",
+      ));
+    });
+    const grade = s.grade || s.previousGrade;
+    if (s.interest == null && grade >= INTERESTING_GRADE) line.appendChild(el("span", "r4m-muted", ` интересно — по оценке ${grade}`));
+    else if (s.interest == null && s.interestChance != null) {
+      line.appendChild(el("span", "r4m-muted", ` модель: интересно с вероятностью ${Math.round(s.interestChance * 100)}%`));
     }
     return line;
   }

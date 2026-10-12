@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CheckIcon, StarIcon } from "lucide-react";
+import { CheckIcon, StarIcon, ThumbsDownIcon, ThumbsUpIcon } from "lucide-react";
 import {
   api,
   pictureSrc,
@@ -23,6 +23,7 @@ import { shownChance, unlikely } from "@/facet/FacetValueMarks";
 import { compact, percent, score } from "@/i18n";
 import { useLadder } from "@/model/useModel";
 import { cn } from "@/lib/utils";
+import { useMarkInterest } from "./useMarkInterest";
 
 /** Keys 1..5 give that grade. */
 export const KEY_GRADES: Record<string, Grade> = { "1": 1, "2": 2, "3": 3, "4": 4, "5": 5 };
@@ -111,6 +112,91 @@ export function RatingButtons({
           </TooltipContent>
         </Tooltip>
       ))}
+    </div>
+  );
+}
+
+/** The lowest grade that says a work was interesting, as the application takes it (Interest.MIN_GRADE). */
+const INTERESTING_GRADE = 4;
+
+/**
+ * Whether the work is interesting to read at all — beside how good it is: the user's mark, pressed
+ * again to take it back. Without a mark a grade of 4 or 5 says it was (the 👍 drawn dashed), or
+ * else the model's chance is shown. The list sorted by the prediction multiplies it by the chance.
+ */
+export function InterestButtons({
+  summary,
+  size = "sm",
+  labels = false,
+  className,
+}: {
+  summary: ItemSummary;
+  size?: "sm" | "default" | "lg";
+  /** The words beside the thumbs, where there is room. */
+  labels?: boolean;
+  className?: string;
+}) {
+  const mark = useMarkInterest();
+  const grade = summary.grade ?? summary.previousGrade;
+  const byGrade = summary.interest == null && grade != null && grade >= INTERESTING_GRADE;
+  const chance = summary.interest == null && !byGrade ? summary.interestChance : undefined;
+  const press = (value: boolean) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    mark.mutate({ summary, interesting: summary.interest === value ? null : value });
+  };
+  return (
+    <div className={cn("flex items-center gap-1", className)}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="outline"
+              size={size}
+              aria-pressed={summary.interest === true}
+              className={cn(
+                "min-w-0 px-2",
+                summary.interest === true ? "border-emerald-600! bg-emerald-600! text-white! hover:bg-emerald-600/90!" : "hover:border-emerald-600 hover:text-emerald-600",
+                byGrade && "border-dashed border-emerald-600 text-emerald-600",
+              )}
+              onClick={press(true)}
+            />
+          }
+        >
+          <ThumbsUpIcon />
+          {labels && <span>Интересно</span>}
+        </TooltipTrigger>
+        <TooltipContent>
+          {summary.interest === true ? "Снять отметку «интересно»" : byGrade ? `Интересно — по оценке ${grade}; отметить явно` : "Интересно читать"}
+        </TooltipContent>
+      </Tooltip>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="outline"
+              size={size}
+              aria-pressed={summary.interest === false}
+              className={cn(
+                "min-w-0 px-2",
+                summary.interest === false ? "border-grade-1! bg-grade-1! text-white! hover:bg-grade-1/90!" : "hover:border-grade-1 hover:text-grade-1",
+              )}
+              onClick={press(false)}
+            />
+          }
+        >
+          <ThumbsDownIcon />
+          {labels && <span>Неинтересно</span>}
+        </TooltipTrigger>
+        <TooltipContent>
+          {summary.interest === false ? "Снять отметку «неинтересно»" : "Неинтересно читать, даже если прогноз высок"}
+        </TooltipContent>
+      </Tooltip>
+      {chance != null && (
+        <Tooltip>
+          <TooltipTrigger render={<span className="text-xs text-muted-foreground tabular-nums" />}>{percent(chance)}</TooltipTrigger>
+          <TooltipContent>Модель: интересно с вероятностью {percent(chance)}</TooltipContent>
+        </Tooltip>
+      )}
     </div>
   );
 }

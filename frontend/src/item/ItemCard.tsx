@@ -6,6 +6,7 @@ import { SearchJudge } from "@/search/SearchJudge";
 import {
   Cover,
   FacetBadges,
+  InterestButtons,
   LinkedBadges,
   NumberLine,
   PreviousRating,
@@ -72,7 +73,8 @@ export const ItemCard = forwardRef<HTMLElement, ItemViewProps>(function ItemCard
 
         <LinkedBadges type={type} linked={summary.linked} className="text-xs text-muted-foreground" />
 
-        <RatingButtons type={type} value={summary.grade as Grade | undefined} onRate={onRate} size="sm" className="mt-auto" />
+        <InterestButtons summary={summary} className="mt-auto" />
+        <RatingButtons type={type} value={summary.grade as Grade | undefined} onRate={onRate} size="sm" />
       </div>
     </article>
   );

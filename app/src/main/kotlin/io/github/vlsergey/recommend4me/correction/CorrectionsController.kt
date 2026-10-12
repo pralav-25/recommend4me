@@ -8,6 +8,7 @@ import io.github.vlsergey.recommend4me.item.ItemDetailsReader
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.model.Recommendations
+import io.github.vlsergey.recommend4me.interest.LinkedInterest
 import io.github.vlsergey.recommend4me.rating.LinkedGrades
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
@@ -36,6 +37,7 @@ class CorrectionsController(
     private val suggestions: FacetSuggestions,
     private val events: ApplicationEventPublisher,
     private val linkedGrades: LinkedGrades,
+    private val linkedInterest: LinkedInterest,
 ) : CorrectionsApi {
 
     private fun corrected(store: SourceStore, item: String): ResponseEntity<ItemDetails> {
@@ -129,8 +131,9 @@ class CorrectionsController(
         if (other.id == store.id && itemRef.item == item) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Работу нельзя склеить с ней самой")
         if (other.id == store.id) store.corrections.link(item, itemRef.item, Instant.now())
         else stores.typeOf(source).links.link(ItemKey(source, item), ItemKey(itemRef.source, itemRef.item), Instant.now())
-        // One work, one grade: written to each of its items; a link taken back leaves them it
+        // One work, one grade and one interest mark: written to each of its items; a link taken back leaves them them
         linkedGrades.share(ItemKey(source, item))
+        linkedInterest.share(ItemKey(source, item))
         return corrected(store, item)
     }
 

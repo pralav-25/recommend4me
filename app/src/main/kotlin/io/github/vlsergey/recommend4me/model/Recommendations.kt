@@ -1,5 +1,7 @@
 package io.github.vlsergey.recommend4me.model
 
+import io.github.vlsergey.recommend4me.interest.Interest
+import io.github.vlsergey.recommend4me.interest.InterestChanged
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.likeness.Likenesses
 import io.github.vlsergey.recommend4me.likeness.MarkLikeness
@@ -51,6 +53,14 @@ class TrainedModel(val meta: ModelMeta, val scorer: FittedScorer) {
     fun scores(m: Matrix): FloatArray = scorer.scores(m)
 
     fun score(input: ItemInput): Double = scale.score(scorer.scores(layout.matrix(listOf(input)))[0].toDouble())
+}
+
+/** A trained model of interest as kept, read for one operation. */
+class TrainedInterest(val meta: InterestMeta, val scorer: FittedScorer) {
+    val layout = meta.layout()
+
+    /** The chance of interest of every one of [inputs], 0..1. */
+    fun chances(inputs: List<ItemInput>): List<Double> = scorer.scores(layout.matrix(inputs)).map { meta.chance(it.toDouble()) }
 }
 
 /**
@@ -106,6 +116,9 @@ class Recommendations(
     @EventListener
     fun marksChanged(event: MarksChanged) = scheduleRetrain(event.type)
 
+    @EventListener
+    fun interestChanged(event: InterestChanged) = scheduleRetrain(event.type)
+
     /** The reranker read more works against the graded ones: features of the works. */
     @EventListener
     fun workLikenessChanged(event: WorkLikenessChanged) = scheduleRetrain(event.type)
@@ -136,8 +149,10 @@ class Recommendations(
             val catalogue = reader.read(type)
             val loaded = System.currentTimeMillis()
             val model = retrain(catalogue)
+            // Of no use without the scores it multiplies
+            val interest = if (model != null) retrainInterest(catalogue) else null
             val trained = System.currentTimeMillis()
-            if (model != null) scoreAll(catalogue, model)
+            if (model != null) scoreAll(catalogue, model, interest)
             log.info(
                 "{}: retrained and every item scored in {} ms: read {}, trained {}, scored {}",
                 typeId, System.currentTimeMillis() - started, loaded - started, trained - loaded, System.currentTimeMillis() - trained,
@@ -152,7 +167,7 @@ class Recommendations(
     fun scoreAll(typeId: String) = lock(typeId).withLock {
         val type = type(typeId)
         val model = load(type) ?: return@withLock
-        scoreAll(reader.read(type, withLikeness = false), model)
+        scoreAll(reader.read(type, withLikeness = false), model, loadInterest(type))
     }
 
     /** The current model of a type, read now; null without one, or when it cannot be read. */
@@ -163,6 +178,17 @@ class Recommendations(
         }
     } catch (e: Exception) {
         log.warn("{}: the stored model cannot be read and will be retrained: {}", type.id, e.message)
+        null
+    }
+
+    /** The current model of interest of a type, read now; null without one, or when it cannot be read. */
+    fun loadInterest(type: TypeStore): TrainedInterest? = try {
+        type.models.loadInterest()?.let { stored ->
+            val scorer = plugins.scorers.firstOrNull { it.id == stored.scorer } ?: return null
+            TrainedInterest(json.readValue<InterestMeta>(stored.meta), scorer.unpack(stored.weights))
+        }
+    } catch (e: Exception) {
+        log.warn("{}: the stored model of interest cannot be read and will be retrained: {}", type.id, e.message)
         null
     }
 
@@ -194,15 +220,24 @@ class Recommendations(
         val task = RankingTask(x, grades, works, items)
     }
 
+    /** The rows of the user's grades, a row a grade, each with the grade of an earlier version before it. */
     private fun prepare(catalogue: Catalogue): Prepared? {
-        val likeness = catalogue.likeness
         val previousForRating = CatalogueReader.previousGradesOfRatings(catalogue.ratings)
+        return prepare(catalogue, catalogue.ratings.filter { it.key in catalogue.byKey }, "grades") { previousForRating[it] }
+    }
+
+    /**
+     * The rows of [used] — the user's grades, or the works labelled interesting or not as grades
+     * [INTERESTING] and [NOT_INTERESTING] — each with the grade of an earlier version [previousOf]
+     * gives it, and the rows of the linked items without one.
+     */
+    private fun prepare(catalogue: Catalogue, used: List<TypedRating>, what: String, previousOf: (TypedRating) -> Int?): Prepared? {
+        val likeness = catalogue.likeness
         val previousForCurrent = CatalogueReader.previousGradesOfCurrentVersions(catalogue.ratings, catalogue::versionOf)
         val clusters = catalogue.works
-        val used = catalogue.ratings.filter { it.key in catalogue.byKey }
         val grades = IntArray(used.size) { used[it].grade }
         if (used.size < MIN_RATINGS || grades.distinct().size < 2) {
-            log.info("{}: not enough grades to train: {} of {} values", catalogue.type.id, used.size, grades.distinct().size)
+            log.info("{}: not enough {} to train: {} of {} values", catalogue.type.id, what, used.size, grades.distinct().size)
             return null
         }
         // An item of a linked work the user did not grade has no grade, but it is the same work as
@@ -210,8 +245,8 @@ class Recommendations(
         val gradedKeys = used.map { it.key }.toSet()
         val ungraded = catalogue.items.filter { clusters.linked(it.key) && it.key !in gradedKeys }
         val rows = used.map { r ->
-            CatalogueReader.inputOf(catalogue.byKey.getValue(r.key), catalogue.vectorsOf(r.key), previousForRating[r])
-        } + ungraded.map { CatalogueReader.inputOf(it, catalogue.vectorsOf(it.key), previousForCurrent[it.key]) }
+            CatalogueReader.inputOf(catalogue.byKey.getValue(r.key), catalogue.vectorsOf(r.key), previousOf(r))
+        } +ungraded.map { CatalogueReader.inputOf(it, catalogue.vectorsOf(it.key), previousForCurrent[it.key]) }
         // The current input of every graded item: what the vocabulary and the importances are counted on
         val perItem = used.map { it.key }.distinct().map { key ->
             CatalogueReader.inputOf(catalogue.byKey.getValue(key), catalogue.vectorsOf(key), previousForCurrent[key])
@@ -296,6 +331,60 @@ class Recommendations(
     }
 
     /**
+     * Every work the user said something of as of interest ([Interest.label]): marked, or graded 4
+     * or 5 — at its current version, else at its latest earlier one, as its card shows it. A row a
+     * work, at the time it was said.
+     */
+    private fun interestRows(catalogue: Catalogue): List<TypedRating> {
+        val ratings = catalogue.ratings.groupBy { it.key }
+        return catalogue.items.mapNotNull { item ->
+            val mark = catalogue.interest[item.key]
+            val own = ratings[item.key].orEmpty()
+            val rating = own.filter { it.version == item.version }.maxByOrNull { it.ratedAt } ?: own.maxByOrNull { it.ratedAt }
+            val label = Interest.label(mark?.interesting, rating?.grade) ?: return@mapNotNull null
+            val at = if (mark != null) mark.markedAt else rating!!.ratedAt
+            TypedRating(item.key, item.version, if (label) INTERESTING else NOT_INTERESTING, at)
+        }
+    }
+
+    /**
+     * THE MODEL OF INTEREST: the type's scorer learns to put the works the user found interesting
+     * above the ones not, on the same features as the grades, its parameter chosen by the same
+     * cross-validation over works; Platt's scaling of the out-of-fold scores makes its score a
+     * chance. None — and no chances — while there are too few works of either kind for folds.
+     */
+    private fun retrainInterest(catalogue: Catalogue): TrainedInterest? {
+        val type = catalogue.type
+        val scorer = plugins.scorer(type.id) ?: return null
+        val previous = CatalogueReader.previousGradesOfCurrentVersions(catalogue.ratings, catalogue::versionOf)
+        val p = prepare(catalogue, interestRows(catalogue), "interest marks") { previous[it.key] }
+        val chosen = p?.takeIf { it.perItem.size >= CrossValidation.MIN_WORKS }
+            ?.let { CrossValidation.choose(CrossValidation.measureAll(it.task, scorer, it.xFor)) }
+        val positive = p?.let { BooleanArray(it.grades.size) { i -> it.grades[i] == INTERESTING } }
+        val calibration = chosen?.let { Calibration.fit(it.scores, positive!!) }
+        if (p == null || chosen == null || calibration == null) {
+            log.info("{}: too few works marked of interest for folds: no chances of interest", type.id)
+            type.models.forgetInterest()
+            return null
+        }
+        val fitted = scorer.fit(p.task, p.everyRow, chosen.parameter)
+        val (mean, sd) = CrossValidation.standardisation(fitted.scores(p.x, p.grades.size).map { it.toDouble() })
+        val meta = InterestMeta(
+            scorer = scorer.id, parameter = chosen.parameter, categorical = p.layout.categorical,
+            vectorCenters = p.spreads.mapValues { it.value.center }, vectorSpreads = p.spreads.mapValues { it.value.spread },
+            numbers = p.numbers, scoreMean = mean, scoreSd = sd, calibration = calibration,
+            trainedAtMillis = System.currentTimeMillis(),
+            interesting = positive!!.count { it }, notInteresting = positive.count { !it }, metrics = chosen.metrics,
+        )
+        log.info(
+            "{}: the model of interest learnt {} interesting and {} not, out-of-fold AUC {}, parameter {}",
+            type.id, meta.interesting, meta.notInteresting, "%.3f".format(chosen.metrics.concordance), chosen.parameter,
+        )
+        type.models.saveInterest(scorer.id, Instant.ofEpochMilli(meta.trainedAtMillis), json.writeValueAsString(meta), fitted.pack())
+        return TrainedInterest(meta, fitted)
+    }
+
+    /**
      * The prediction of every graded item by a model that had not seen its work: the score the
      * cross-validation of the chosen parameter gave its latest grade's row from the fold the work
      * was left out of, on the model's scale. None when there were too few works for folds.
@@ -361,16 +450,17 @@ class Recommendations(
     /** Where every grade stands on 0..10 by the current model of the type; null without one. */
     fun gradePlaces(typeId: String): Map<Int, Double>? = load(type(typeId))?.scale?.grades()
 
-    private fun scoreAll(catalogue: Catalogue, model: TrainedModel) {
+    private fun scoreAll(catalogue: Catalogue, model: TrainedModel, interest: TrainedInterest?) {
         val previousForCurrent = CatalogueReader.previousGradesOfCurrentVersions(catalogue.ratings, catalogue::versionOf)
-        val scores = catalogue.items.chunked(SCORE_CHUNK).parallelStream().flatMap { chunk ->
+        val predicted = catalogue.items.chunked(SCORE_CHUNK).parallelStream().flatMap { chunk ->
             val inputs = chunk.map { CatalogueReader.inputOf(it, catalogue.vectorsOf(it.key), previousForCurrent[it.key]) }
             val raw = model.scores(model.layout.matrix(inputs))
-            chunk.indices.map { i -> chunk[i].key to model.scale.score(raw[i].toDouble()) }.stream()
+            val chances = interest?.chances(inputs)
+            chunk.indices.map { i -> chunk[i].key to Predicted(model.scale.score(raw[i].toDouble()), chances?.get(i)) }.stream()
         }.toList()
         val written = System.currentTimeMillis()
-        catalogue.type.models.replacePredictions(scores)
-        log.info("{}: {} predictions written in {} ms", catalogue.type.id, scores.size, System.currentTimeMillis() - written)
+        catalogue.type.models.replacePredictions(predicted)
+        log.info("{}: {} predictions written in {} ms", catalogue.type.id, predicted.size, System.currentTimeMillis() - written)
     }
 
     /** Re-scores one item, after its data changed outside a training. */
@@ -378,7 +468,7 @@ class Recommendations(
         val type = stores.typeOf(key.source)
         val model = load(type) ?: return
         val input = inputOf(type, key, likenesses.stored(type)) ?: return
-        type.models.savePrediction(key, model.score(input))
+        type.models.savePrediction(key, Predicted(model.score(input), loadInterest(type)?.chances(listOf(input))?.single()))
     }
 
     /** The input of one item as the model reads it now. */
@@ -717,6 +807,10 @@ class Recommendations(
     companion object {
         private const val RETRAIN_DELAY_SECONDS = 3L
         private const val MIN_RATINGS = 3
+
+        /** A work of interest and one not, as grades of the model of interest: only their order matters. */
+        private const val INTERESTING = 2
+        private const val NOT_INTERESTING = 1
         private const val REVIEWS_SHOWN = 30
 
         /** The blocks of the pictures: an explanation tells of them together. */
