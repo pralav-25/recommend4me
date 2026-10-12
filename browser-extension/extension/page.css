@@ -196,6 +196,40 @@ r4m-grade-mark {
   font: 700 13px/20px system-ui, sans-serif;
 }
 
+/* Interest on a card of a list: faint until given, so a list of them does not shout */
+[data-r4m].r4m-interest-mark {
+  display: inline-block;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 2px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font: 14px/20px system-ui, sans-serif;
+  cursor: pointer;
+  opacity: 0.45;
+  filter: grayscale(1);
+  vertical-align: middle;
+}
+
+[data-r4m].r4m-interest-mark:hover, [data-r4m].r4m-interest-mark.r4m-implied {
+  opacity: 0.9;
+  filter: none;
+}
+
+[data-r4m].r4m-interest-mark.r4m-implied {
+  border-style: dashed;
+  border-color: #8b949e;
+}
+
+[data-r4m].r4m-interest-mark.r4m-current {
+  opacity: 1;
+  filter: none;
+  border-color: #0b62c4;
+  background: #ddf4ff;
+}
+
 /* --- Values of facets --- */
 
 r4m-chips, r4m-tools, r4m-marks {

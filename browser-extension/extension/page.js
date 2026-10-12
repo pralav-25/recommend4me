@@ -400,9 +400,19 @@
   /** The lowest grade that says a work was interesting, as the application takes it (Interest.MIN_GRADE). */
   const INTERESTING_GRADE = 4;
 
+  /** The highest grade that says a work was not interesting (Interest.MAX_DULL_GRADE). */
+  const DULL_GRADE = 1;
+
+  /** What the grade of a work — its card or its summary — says of interest without a mark: true, false or null. */
+  function interestByGrade(s) {
+    const grade = s.grade || s.previousGrade;
+    if (s.interest != null || !grade) return null;
+    return grade >= INTERESTING_GRADE ? true : grade <= DULL_GRADE ? false : null;
+  }
+
   /**
    * Whether the work is interesting to read at all, beside how good it is: the user's mark; without
-   * one, a grade of 4 or 5 that says so, or else the chance the model gives it.
+   * one, a grade of 4 or 5 or of 1 that says so, or else the chance the model gives it.
    */
   function interest(item) {
     const s = item.summary;
@@ -424,8 +434,8 @@
         "interest",
       ));
     });
-    const grade = s.grade || s.previousGrade;
-    if (s.interest == null && grade >= INTERESTING_GRADE) line.appendChild(el("span", "r4m-muted", ` интересно — по оценке ${grade}`));
+    const byGrade = interestByGrade(s);
+    if (byGrade != null) line.appendChild(el("span", "r4m-muted", ` ${byGrade ? "интересно" : "неинтересно"} — по оценке ${s.grade || s.previousGrade}`));
     else if (s.interest == null && s.interestChance != null) {
       line.appendChild(el("span", "r4m-muted", ` модель: интересно с вероятностью ${Math.round(s.interestChance * 100)}%`));
     }
@@ -991,19 +1001,66 @@
         badge = el("r4m-badge");
         link.insertAdjacentElement("beforebegin", badge);
       }
-      badge.textContent = "";
-      const scored = k.prediction !== undefined && k.prediction !== null;
-      badge.appendChild(scored ? el("r4m-score", scoreClass(k.prediction), k.prediction.toFixed(1)) : el("r4m-score", "r4m-pending-score", "…"));
-      if (k.grade) badge.appendChild(el("r4m-grade-mark", null, `★${k.grade}`));
-      const waiting = !scored && !k.grade;
-      badge.classList.toggle("r4m-pending", waiting);
+      const waiting = fillBadge(badge, k);
       pending = pending || waiting;
-      badge.title = waiting
-        ? "recommend4me: прогноз ещё считается"
-        : "recommend4me: прогноз из 10" + (k.grade ? ", ★ — ваша оценка" : "");
     });
     clearTimeout(pendingTimer);
     if (pending && Date.now() - pendingSince < PENDING_FOR) pendingTimer = setTimeout(cards, PENDING_EVERY);
+  }
+
+  /** The badge of a card filled with what the application knows of the work [k]; true while its prediction is still worked out. */
+  function fillBadge(badge, k) {
+    badge.textContent = "";
+    const scored = k.prediction !== undefined && k.prediction !== null;
+    const score = scored ? el("r4m-score", scoreClass(k.prediction), k.prediction.toFixed(1)) : el("r4m-score", "r4m-pending-score", "…");
+    const waiting = !scored && !k.grade;
+    score.title = waiting ? "recommend4me: прогноз ещё считается" : "recommend4me: прогноз из 10";
+    badge.appendChild(score);
+    if (k.grade) {
+      const grade = el("r4m-grade-mark", null, `★${k.grade}`);
+      grade.title = "Ваша оценка";
+      badge.appendChild(grade);
+    }
+    badge.appendChild(cardInterest(badge, k, true, "🤔"));
+    badge.appendChild(cardInterest(badge, k, false, "🥱"));
+    badge.classList.toggle("r4m-pending", waiting);
+    return waiting;
+  }
+
+  /**
+   * A mark of interest on a card of a list — quicker to give than a grade, so given right there.
+   * Shown marked at once; the badge is filled again with the application's answer, or back as it
+   * was with the error in its title.
+   */
+  function cardInterest(badge, k, value, icon) {
+    const current = k.interest === value;
+    const said = interestByGrade(k);
+    const byGrade = said === value;
+    const word = value ? "Интересно" : "Неинтересно";
+    const b = el("button", `r4m-interest-mark${current ? " r4m-current" : ""}${byGrade ? " r4m-implied" : ""}`, icon);
+    b.type = "button";
+    const chance = said == null && k.interest == null && k.interestChance != null ? ` (модель: интересно на ${Math.round(k.interestChance * 100)}%)` : "";
+    b.title = current
+      ? `${word} — нажмите ещё раз, чтобы снять`
+      : byGrade ? `${word} — по оценке ${k.grade || k.previousGrade}; отметить явно` : `${word}${chance}`;
+    b.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const before = { ...k };
+      const path = `/api/items/${enc(k.source)}/${enc(k.item)}/interest`;
+      k.interest = current ? null : value;
+      fillBadge(badge, k);
+      try {
+        const s = current ? await api("DELETE", path) : await api("PUT", path, { interesting: value });
+        Object.assign(k, { interest: s.interest, interestChance: s.interestChance });
+        fillBadge(badge, k);
+      } catch (error) {
+        Object.assign(k, before);
+        fillBadge(badge, k);
+        badge.title = `recommend4me: отметка не сохранена — ${error.message}`;
+      }
+    });
+    return b;
   }
 
   // Lists that load more cards as the user scrolls

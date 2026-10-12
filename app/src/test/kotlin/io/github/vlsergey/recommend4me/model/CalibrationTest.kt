@@ -40,8 +40,10 @@ class CalibrationTest {
         assertEquals(0.0, Interest.chance(false, 5, 0.9))
         assertEquals(1.0, Interest.chance(true, 1, 0.1))
         assertEquals(1.0, Interest.chance(null, 4, 0.1))
-        // A low grade says nothing of interest
+        assertEquals(0.0, Interest.chance(null, 1, 0.8))
+        // A grade between says nothing of interest
         assertEquals(0.3, Interest.chance(null, 3, 0.3))
+        assertEquals(0.3, Interest.chance(null, 2, 0.3))
         assertNull(Interest.chance(null, null, null))
     }
 }

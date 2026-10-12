@@ -119,10 +119,21 @@ export function RatingButtons({
 /** The lowest grade that says a work was interesting, as the application takes it (Interest.MIN_GRADE). */
 const INTERESTING_GRADE = 4;
 
+/** The highest grade that says a work was not interesting (Interest.MAX_DULL_GRADE). */
+const DULL_GRADE = 1;
+
+/** What the grade says of interest without a mark: interesting, not, or nothing. */
+function interestByGrade(summary: ItemSummary): boolean | null {
+  const grade = summary.grade ?? summary.previousGrade;
+  if (summary.interest != null || grade == null) return null;
+  return grade >= INTERESTING_GRADE ? true : grade <= DULL_GRADE ? false : null;
+}
+
 /**
  * Whether the work is interesting to read at all — beside how good it is: the user's mark, pressed
- * again to take it back. Without a mark a grade of 4 or 5 says it was (the 🤔 drawn dashed), or
- * else the model's chance is shown. The list sorted by the prediction multiplies it by the chance.
+ * again to take it back. Without a mark a grade of 4 or 5 says it was (the 🤔 drawn dashed), a
+ * grade of 1 that it was not (the 🥱 dashed), or else the model's chance is shown. The list sorted
+ * by the prediction multiplies it by the chance.
  */
 export function InterestButtons({
   summary,
@@ -132,14 +143,14 @@ export function InterestButtons({
 }: {
   summary: ItemSummary;
   size?: "sm" | "default" | "lg";
-  /** The words beside the thumbs, where there is room. */
+  /** The words beside the faces, where there is room. */
   labels?: boolean;
   className?: string;
 }) {
   const mark = useMarkInterest();
   const grade = summary.grade ?? summary.previousGrade;
-  const byGrade = summary.interest == null && grade != null && grade >= INTERESTING_GRADE;
-  const chance = summary.interest == null && !byGrade ? summary.interestChance : undefined;
+  const byGrade = interestByGrade(summary);
+  const chance = summary.interest == null && byGrade == null ? summary.interestChance : undefined;
   const press = (value: boolean) => (e: React.MouseEvent) => {
     e.stopPropagation();
     mark.mutate({ summary, interesting: summary.interest === value ? null : value });
@@ -157,7 +168,7 @@ export function InterestButtons({
               className={cn(
                 "min-w-0 px-2",
                 summary.interest === true ? "border-emerald-600! bg-emerald-600! text-white! hover:bg-emerald-600/90!" : "hover:border-emerald-600 hover:text-emerald-600",
-                byGrade && "border-dashed border-emerald-600 text-emerald-600",
+                byGrade === true && "border-dashed border-emerald-600 text-emerald-600",
               )}
               onClick={press(true)}
             />
@@ -168,7 +179,7 @@ export function InterestButtons({
           {labels && <span>Интересно</span>}
         </TooltipTrigger>
         <TooltipContent>
-          {summary.interest === true ? "Снять отметку «интересно»" : byGrade ? `Интересно — по оценке ${grade}; отметить явно` : "Интересно читать"}
+          {summary.interest === true ? "Снять отметку «интересно»" : byGrade === true ? `Интересно — по оценке ${grade}; отметить явно` : "Интересно читать"}
         </TooltipContent>
       </Tooltip>
       <Tooltip>
@@ -182,6 +193,7 @@ export function InterestButtons({
               className={cn(
                 "min-w-0 px-2",
                 summary.interest === false ? "border-grade-1! bg-grade-1! text-white! hover:bg-grade-1/90!" : "hover:border-grade-1 hover:text-grade-1",
+                byGrade === false && "border-dashed border-grade-1 text-grade-1",
               )}
               onClick={press(false)}
             />
@@ -191,7 +203,11 @@ export function InterestButtons({
           {labels && <span>Неинтересно</span>}
         </TooltipTrigger>
         <TooltipContent>
-          {summary.interest === false ? "Снять отметку «неинтересно»" : "Неинтересно читать, даже если прогноз высок"}
+          {summary.interest === false
+            ? "Снять отметку «неинтересно»"
+            : byGrade === false
+              ? `Неинтересно — по оценке ${grade}; отметить явно`
+              : "Неинтересно читать, даже если прогноз высок"}
         </TooltipContent>
       </Tooltip>
       {chance != null && (

@@ -102,7 +102,13 @@ class PagesController(
         val keys = ids.map { it.second }.filter { it in known }.distinct().map { ItemKey(store.id, it) }
         val summaries = cards.cards(stores.typeOf(store.id), keys).associateBy { it.item }
         return ResponseEntity.ok(ids.mapNotNull { (link, id) ->
-            summaries[id]?.let { CardView(link, store.id, id, it.title, it.grade, it.prediction?.score) }
+            summaries[id]?.let { s ->
+                CardView(
+                    link, store.id, id, s.title,
+                    grade = s.grade, previousGrade = s.previousGrade, prediction = s.prediction?.score,
+                    interest = s.interest, interestChance = s.interestChance,
+                )
+            }
         })
     }
 
