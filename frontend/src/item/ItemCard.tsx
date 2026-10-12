@@ -65,7 +65,8 @@ export const ItemCard = forwardRef<HTMLElement, ItemViewProps>(function ItemCard
         </div>
 
         {summary.searchMatch && <SearchMatchLine match={summary.searchMatch} className="line-clamp-3" />}
-        {onJudge && <SearchJudge value={summary.searchRelevant} onJudge={onJudge} />}
+        {/* Judged by what it was found by: not without it */}
+        {onJudge && summary.searchMatch && <SearchJudge value={summary.searchRelevant} onJudge={onJudge} />}
 
         <FacetBadges facets={summary.facets} limit={SHOWN_FACET_VALUES} />
 

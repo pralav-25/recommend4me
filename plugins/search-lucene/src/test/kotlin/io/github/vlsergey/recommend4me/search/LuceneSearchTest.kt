@@ -91,6 +91,27 @@ class LuceneSearchTest {
     }
 
     @Test
+    fun `a work found by a passage of no long phrase is shown with the passage`() {
+        val tags = "exhibitionism, nudity, public"
+        val doc = SearchDocument(
+            ItemKey("test", "8"),
+            listOf(SearchField("title", "Название", 1.0f, listOf("Обнажённая"), naming = true), SearchField("tags", "Теги", 0.9f, listOf(tags))),
+            listOf(SearchPassage("tags", 0, tags.length, floatArrayOf(1f, 0f, 0f))),
+        )
+        val byMeaning = object : SearchContext by context {
+            override fun queryVector(line: String) = floatArrayOf(1f, 0f, 0f)
+            override fun documents(keys: Collection<ItemKey>) = listOf(doc).filter { it.key in keys }.associateBy { it.key }
+        }
+        LuceneSearch(Files.createTempDirectory("search")).use { search ->
+            search.rebuild("books", sequenceOf(doc))
+            val found = search.search("books", "голышом", byMeaning)
+            val shown = search.matches("books", found, found.keys, byMeaning).getValue(ItemKey("test", "8"))
+            assertEquals("Теги", shown.field)
+            assertEquals(tags, shown.text)
+        }
+    }
+
+    @Test
     fun `a work of a thousand chapters is one field of chapters searched`() {
         val chapters = (1..1100).map { SearchField("part:$it", "Глава $it", 0.5f, listOf("Глава о том, как прошёл день номер $it."), group = "parts") }
         val long = SearchDocument(ItemKey("test", "7"), listOf(SearchField("title", "Название", 1.0f, listOf("Долгая сага"), naming = true)) + chapters, emptyList())

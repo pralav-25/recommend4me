@@ -117,7 +117,10 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
             if (words?.third == true) return@forEach
             val passage = state.nearest[key] ?: return@forEach
             val field = doc.fields.firstOrNull { it.key == passage.field } ?: return@forEach
-            val phrases = passage.text(doc)?.let(Phrases::split).orEmpty().filter { it.length >= MIN_PHRASE }
+            val text = passage.text(doc)?.trim().orEmpty()
+            // A passage of no phrase long enough — a list of tags, of titles — is shown as it is: a work
+            // found is never shown without what it was found by
+            val phrases = Phrases.split(text).filter { it.length >= MIN_PHRASE }.ifEmpty { listOfNotNull(text.takeIf { it.isNotEmpty() }) }
             if (phrases.isNotEmpty()) byMeaning[key] = field to phrases
         }
         val q = state.vector ?: return byWords
