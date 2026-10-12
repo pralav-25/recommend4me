@@ -97,7 +97,8 @@ export function useFacets(type: string) {
 export function FacetFilters({ type, value, onChange }: { type: string; value: FacetSelection; onChange: (v: FacetSelection) => void }) {
   const facets = useFacets(type);
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    // On one line with the other filters: the line scrolls, the facets do not wrap
+    <div className="flex items-center gap-1">
       {(facets.data ?? []).map((f) => (
         <FacetDropdown key={f.id} facet={f} value={value} onChange={onChange} />
       ))}
