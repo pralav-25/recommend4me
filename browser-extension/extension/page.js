@@ -593,6 +593,11 @@
       out.push(button("✕", t(v.corrected === "ADDED" ? "value.removeAdded" : "value.unanswer"), () => uncorrect(item, facet, v.key), "r4m-undo", unansweredShown(facet, v.key), on));
       return out;
     }
+    if (v.implied) {
+      // The work has it by a tag under it: no answer of its own, it is the work's while that one is
+      out.push(Object.assign(el("r4m-chance", null, "↑"), { title: t("value.implied") }));
+      return out;
+    }
     if (v.draftedFrom) {
       // Drafted from the site's value through the dictionary: said so, not a chance of the model
       out.push(Object.assign(el("r4m-chance", null, t("value.drafted")), { title: t("value.draftedFrom", { from: v.draftedFrom }) }));

@@ -12,7 +12,8 @@ const HALF = 0.5;
  * absent — and shows none.
  */
 export function shownChance(value: FacetValueInfo): number | undefined {
-  return value.corrected || value.draftedFrom != null || value.chance == null ? undefined : value.chance;
+  // A tag the work has by a tag under it: not the model's word, no chance shown
+  return value.corrected || value.implied || value.draftedFrom != null || value.chance == null ? undefined : value.chance;
 }
 
 /** "by tag" in small print by a value drafted from the site's value through the dictionary, the site's value in its title. */

@@ -745,7 +745,11 @@ class SiteTest {
         tagsApi.relateTags("books", TagRelationRequest(cargo, hulls, TagRelation.CHILD))
         assertEquals(Refusal.TAG_ABOVE, assertThrows<Refused> { tagsApi.relateTags("books", TagRelationRequest(other, cargo, TagRelation.CHILD)) }.refusal)
         tagsApi.relateTags("books", TagRelationRequest(cargo, hulls, TagRelation.NONE))
-        // The parent taken away: the child goes with it, not shown at all
+        // The parent of a child the user confirmed is not taken away: the work has it by the child
+        val implied = assertThrows<Refused> { corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = hulls)) }
+        assertEquals(Refusal.TAG_IMPLIED, implied.refusal)
+        // The answer on the child taken back, the parent taken away: the child goes with it, not shown at all
+        corrections.uncorrectFacet("site", "t2", "tags", other)
         corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = hulls))
         assertTrue(tagsOf("t2").none { it.key == other }, "tags ${tagsOf("t2")}")
         assertEquals(io.github.vlsergey.recommend4me.api.model.FacetValueInfo.Corrected.REMOVED, tagsOf("t2").single { it.key == hulls }.corrected)

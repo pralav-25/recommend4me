@@ -11,7 +11,8 @@ const BUTTON = "size-4 rounded-sm";
  * The user's word on a value of a facet, inside its chip: ✓ the work has it, ✕ it has it not — for
  * a value the user has not answered on, and a suggested one ([corrected] undefined). A value the
  * user confirmed or added says so by its look; the one button it keeps takes the word back, shown
- * when the chip is pointed at. One the user took away is crossed out and ↺ brings it back.
+ * when the chip is pointed at. One the user took away is crossed out and ↺ brings it back. A tag
+ * the work has only by a tag under it ([implied]) takes no answer: it is the work's while that one is.
  */
 export function FacetAnswers({
   facet,
@@ -19,7 +20,7 @@ export function FacetAnswers({
   corrections,
 }: {
   facet: string;
-  value: { key: string; corrected?: FacetValueInfo["corrected"] };
+  value: { key: string; corrected?: FacetValueInfo["corrected"]; implied?: boolean };
   corrections: Corrections;
 }) {
   const { t } = useTranslation("correction");
@@ -39,6 +40,7 @@ export function FacetAnswers({
         icon={<XIcon className="size-3" />}
       />
     );
+  if (value.implied) return null;
 
   return (
     <>

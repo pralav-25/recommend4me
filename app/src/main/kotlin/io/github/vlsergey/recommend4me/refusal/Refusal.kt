@@ -41,6 +41,9 @@ enum class Refusal(val code: String, val params: List<String> = emptyList()) {
     TAG_SELF("tagSelf"),
     TAG_ABOVE("tagAbove"),
     TAG_BELOW("tagBelow"),
+
+    /** A tag the work has by a tag under it the user confirmed, said not to be the work's; [params] "tag" — that tag's name. */
+    TAG_IMPLIED("tagImplied", listOf("tag")),
     NO_SETTING("noSetting", listOf("setting")),
     NO_SCORER("noScorer", listOf("scorer")),
     ACCESS_REFUSED("accessRefused"),

@@ -98,8 +98,8 @@ function FacetLine({ facet: f, item, source, corrections }: { facet: ItemFacet; 
   // A value of this facet alone found by its name, when the facet takes values the user adds
   const own = source?.facets.filter((d) => d.key === f.facet && d.editable) ?? [];
   const addable = source && own.length > 0 ? { ...source, facets: own } : undefined;
-  // The work's values the user has not answered on — not those only offered
-  const open = f.values.filter((v) => !decided(v) && !v.offered);
+  // The work's values the user has not answered on — not those only offered, nor those it has by a tag under them
+  const open = f.values.filter((v) => !decided(v) && !v.offered && !v.implied);
   const confirmAll = async () => {
     for (const v of open) await corrections!.setFacet(f.facet, { key: v.key }, true);
   };

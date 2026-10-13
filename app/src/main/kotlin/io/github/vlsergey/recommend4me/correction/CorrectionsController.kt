@@ -85,6 +85,16 @@ class CorrectionsController(
         val key = c.key?.trim()?.takeIf { it.isNotEmpty() }
             ?: name?.let { FacetValues.keyOf(store, c.facet, it) }
             ?: throw Refusal.NO_VALUE.refuse(HttpStatus.BAD_REQUEST, "Neither a key nor a name of a value of '${c.facet}' given")
+        // A tag the work has by a tag under it the user confirmed is not said to be not the work's: the answer on that one is
+        if (!c.added) store.hierarchies()[c.facet]?.let { hierarchy ->
+            val under = hierarchy.descendants(key)
+            store.corrections.facetsOf(item).firstOrNull { it.facet == c.facet && it.added && it.key in under }?.let { held ->
+                throw Refusal.TAG_IMPLIED.refuse(
+                    HttpStatus.CONFLICT, "$key is above ${held.key}, which the user confirmed of $item",
+                    "tag" to (store.tags.shown(listOf(held.key))[held.key] ?: held.key),
+                )
+            }
+        }
         // The next likeliest values of the facet are offered at once
         return answered(store, item, c.facet) {
             // A name is kept for a value the site does not name: one the user made up
