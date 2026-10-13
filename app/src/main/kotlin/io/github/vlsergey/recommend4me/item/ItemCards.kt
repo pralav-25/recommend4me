@@ -77,7 +77,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val offered = if (!(def.infer && def.editable) || def.key in complete) emptyList() else {
                 val fromSite = siteKeys + def.examplesFrom?.let { from ->
                     val keys = site[from].orEmpty()
-                    store.names(from, keys).let { n -> keys.map { LayerValues.keyOf(n[it] ?: it) } }
+                    val merges = store.tags.merges(def.key)
+                    store.names(from, keys).let { n -> keys.map { LayerValues.keyOf(n[it] ?: it, merges) } }
                 }.orEmpty()
                 ModelValues.offered(
                     own.filterValues { !it.had && it.key !in out }.mapValues { it.value.chance },

@@ -399,17 +399,19 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      */
     private fun examplesVocabulary(store: SourceStore, facet: FacetDef): Vocabulary? {
         val from = store.schema.facets.firstOrNull { it.key == facet.examplesFrom } ?: return null
-        // Every value of the sites' facet, by its name, of every source of the type
+        // Every value of the sites' facet, by its name — or by the tag the user merged it into — of every source of the type
+        val merges = store.tags.merges(facet.key)
         val values = HashMap<String, String>()
         stores.typeOf(store.id).sources.forEach { s ->
             val theirs = s.schema.facets.firstOrNull { it.standard != null && it.standard === from.standard } ?: return@forEach
             val names = s.names(theirs.key)
-            s.items.valueUses(theirs.key).keys.forEach { key -> (names[key] ?: key).let { values.putIfAbsent(LayerValues.keyOf(it), it.trim()) } }
+            s.items.valueUses(theirs.key).keys.forEach { key -> (names[key] ?: key).let { values.putIfAbsent(LayerValues.keyOf(it, merges), it.trim()) } }
         }
-        store.items.nameFacetValues(facet.key, values)
+        // A tag is read by its name as the user and the sites name it ([TagRepository][io.github.vlsergey.recommend4me.tag.TagRepository])
+        store.tags.shown(facet.key, values.keys).forEach { (key, name) -> values[key] = name }
         val names = store.names(from.key)
         val own = HashMap<String, List<String>>()
-        store.items.forEachFacet(from.key) { id, keys -> own[id] = keys.map { LayerValues.keyOf(names[it] ?: it) }.distinct() }
+        store.items.forEachFacet(from.key) { id, keys -> own[id] = keys.map { LayerValues.keyOf(names[it] ?: it, merges) }.distinct() }
         val answered = store.corrections.allFacets().filter { it.facet == facet.key && it.key !in own[it.itemId].orEmpty() }
         val denied = answered.count { !it.added }
         return Vocabulary(

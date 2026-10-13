@@ -1,14 +1,14 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, LinkIcon, Loader2Icon, OrbitIcon, PlusIcon, RefreshCwIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { api, ensureOk, unwrap, type CharacterInfo, type ContentTypeInfo, type FoundUniverse, type UniverseClassInfo, type UniverseInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ago, formatDate, plural } from "@/i18n";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
+import { followLink, navigate, screenHref } from "@/screen/screens";
 
 /** The cache key of the dictionary: ["universes", type]; a universe's characters lie under it. */
 const UNIVERSES = "universes";
@@ -38,26 +38,7 @@ export function charactersQuery(typeId: string, u: { catalogue: string; universe
 const sameUniverse =(a: { catalogue: string; universe: string }, b: { catalogue: string; universe: string }) =>
   a.catalogue === b.catalogue && a.universe === b.universe;
 
-/**
- * The dictionary of universes of a content type whose works may be fan fiction: the universes the
- * user agreed on, each with its characters as the catalogue gave them. The catalogue is asked
- * only by the user's buttons.
- */
-export function UniverseButton({ type }: { type: ContentTypeInfo }) {
-  if (!type.universes) return null;
-  return (
-    <Dialog>
-      <DialogTrigger
-        render={<Button variant="ghost" className="px-2 lg:px-3" aria-label="Вселенные" title="Вселенные фанфиков: словарь и персонажи" />}
-      >
-        <OrbitIcon /> <span className="hidden lg:inline">Вселенные</span>
-      </DialogTrigger>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
-        <UniverseDetails type={type} />
-      </DialogContent>
-    </Dialog>
-  );
-}
+type UniverseRef = { catalogue: string; universe: string };
 
 /**
  * What to ask again after the dictionary changed. The universes are the values of the facet
@@ -76,21 +57,27 @@ function useDictionaryChanged(typeId: string) {
     ]);
 }
 
-function UniverseDetails({ type }: { type: ContentTypeInfo }) {
+/**
+ * THE SCREEN OF THE DICTIONARY OF UNIVERSES of a content type whose works may be fan fiction: the
+ * universes the user agreed on, each with its characters as the catalogue gave them. The catalogue
+ * is asked only by the user's buttons. A universe opened is an address of its own
+ * ("/universes/<catalogue>/<id>"): a link to it opens it, its characters shown.
+ */
+export function UniversesScreen({ type, selected }: { type: ContentTypeInfo; selected?: UniverseRef }) {
   const universes = useUniverses(type.id);
 
   return (
-    <>
-      <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
+    <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-4">
+      <header className="flex flex-col gap-1">
+        <h1 className="flex items-center gap-2 text-xl font-semibold">
           <OrbitIcon className="size-5" /> Вселенные: {type.title.toLowerCase()}
-        </DialogTitle>
-        <DialogDescription>
+        </h1>
+        <p className="text-sm text-muted-foreground">
           Словарь вселенных, по которым пишут фанфики, — с персонажами, какими их дают Викиданные. Связь работы со вселенной
           подтверждается или отклоняется в окне работы, как любое значение признака. Викиданные спрашиваются только по кнопкам
-          этого окна; персонажи хранятся у вас.
-        </DialogDescription>
-      </DialogHeader>
+          этой страницы; персонажи хранятся у вас.
+        </p>
+      </header>
 
       <section className="flex flex-col gap-2 text-sm">
         <h4 className="font-semibold">Добавить из Викиданных</h4>
@@ -110,21 +97,26 @@ function UniverseDetails({ type }: { type: ContentTypeInfo }) {
         {universes.data && universes.data.length > 0 && (
           <ul className="flex flex-col divide-y rounded-lg border">
             {universes.data.map((u) => (
-              <UniverseRow key={u.value} type={type} universe={u} />
+              <UniverseRow key={u.value} type={type} universe={u} expanded={!!selected && sameUniverse(selected, u)} />
             ))}
           </ul>
         )}
       </section>
-    </>
+    </div>
   );
 }
 
-/** A universe of the dictionary: its numbers, its buttons, and its characters when expanded. */
-function UniverseRow({ type, universe: u }: { type: ContentTypeInfo; universe: UniverseInfo }) {
+/** A universe of the dictionary: its numbers, its buttons, and its characters when it is the one opened. */
+function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; universe: UniverseInfo; expanded: boolean }) {
   const changed = useDictionaryChanged(type.id);
-  const [expanded, setExpanded] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const ref = { catalogue: u.catalogue, universe: u.universe };
+  const row = useRef<HTMLLIElement>(null);
+  // Opened by a link: brought into view
+  useEffect(() => {
+    if (expanded) row.current?.scrollIntoView({ block: "nearest" });
+  }, [expanded]);
+  const toggle = () => navigate(expanded ? { kind: "universes" } : { kind: "universes", ...ref });
   // The spinner stays until the list shows what the catalogue gave
   const refresh = useMutation({
     mutationFn: async () => unwrap(await api.POST("/api/types/{type}/universes", { params: { path: { type: type.id } }, body: ref })),
@@ -137,12 +129,12 @@ function UniverseRow({ type, universe: u }: { type: ContentTypeInfo; universe: U
   });
 
   return (
-    <li className="flex flex-col gap-2 px-3 py-2">
+    <li ref={row} className={cn("flex flex-col gap-2 px-3 py-2", expanded && "bg-muted/30")}>
       <div className="flex flex-wrap items-start gap-2">
         <Button
           variant="ghost"
           size="icon-sm"
-          onClick={() => setExpanded(!expanded)}
+          onClick={toggle}
           aria-expanded={expanded}
           aria-label={expanded ? "Скрыть персонажей" : "Показать персонажей"}
           title={expanded ? "Скрыть персонажей" : "Показать персонажей"}
@@ -150,8 +142,16 @@ function UniverseRow({ type, universe: u }: { type: ContentTypeInfo; universe: U
           <ChevronRightIcon className={cn("transition-transform", expanded && "rotate-90")} />
         </Button>
         <div className="min-w-0 flex-1">
-          <a href={u.url} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline" title="Страница в Викиданных">
+          <a
+            href={screenHref({ kind: "universes", ...ref })}
+            onClick={(e) => followLink(e, expanded ? { kind: "universes" } : { kind: "universes", ...ref })}
+            className="font-medium underline-offset-2 hover:underline"
+            title="Персонажи вселенной"
+          >
             {u.name}
+          </a>
+          <a href={u.url} target="_blank" rel="noreferrer" className="ml-1.5 inline-flex align-middle text-muted-foreground hover:text-foreground" title="Страница в Викиданных">
+            <ExternalLinkIcon className="size-3.5" />
           </a>
           {u.description && <div className="text-muted-foreground">{u.description}</div>}
           <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">

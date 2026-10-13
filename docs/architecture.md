@@ -174,6 +174,25 @@ work's values, the user's answers, its texts and chapters). The suggester is fit
 whenever anything it learns from changes, and every work is then worked out again; a work a page
 asks for that never had chances gets them at once, by the weights fitted last.
 
+## The sites' tags merged
+
+A tag of the application's layer ("Теги") is a site's free tag by its name, any case: "Магия" of
+ficbook and "магия" of author.today are one. Tags that mean one thing under other names — "Angst"
+of Archive of Our Own and "Ангст" of ficbook — are merged by the user on the screen of the tags;
+the application only offers the tags alike by the meaning of their names (their names encoded as
+the search encodes short texts, a tag the mean of its names' directions, alike by the cosine), of
+one site or of another, and the user may say two tags are different, which are then not offered
+again. A merge points the member's key at the tag's (`tag_merge`, in the database of the type's
+corrections); the user's answers on the members become answers on the tag, the newest standing of
+a work answered on more than one. A member taken out is a tag of its own again; the answers stay
+with the tag.
+
+A tag is shown by the name the user gave it; else by its name on the sites most used by the works
+the user liked (graded above the middle of the scale), by the works graded, by all its works;
+else by the first by the alphabet. The names are worked out again a few seconds after the works or
+their grades change and kept in `tag_name`; every source reads them from there, as the universes'
+names are read from their dictionary, never from a copy of its own.
+
 ## Universes
 
 A content type may have universes (`ContentType.universes`: books) — works may be fan fiction of
@@ -197,8 +216,9 @@ any facet's:
 - `universe` — the universes of the dictionary the work is fan fiction of, one or several:
   suggested from the work's fandom, tags and texts to a work not known to be original, to be
   confirmed;
-- `characters` — its main characters: of the characters of its confirmed universes and the
-  original characters (ОЖП, ОМП), every name of a character held against the line the site writes
+- `characters` — its main characters: of the characters of its universes — confirmed, or given
+  by the model more likely than not and not rejected, none but the confirmed once the user said
+  there are no others — and the original characters (ОЖП, ОМП), every name of a character held against the line the site writes
   them in (`SourceSchema.universeLine`, shown above), the tags, the description and the chapters;
 - `secondary-characters` — its secondary characters, worked out and learnt as the main ones;
 - `pairings` — pairs of the work's main characters, one whatever their order.

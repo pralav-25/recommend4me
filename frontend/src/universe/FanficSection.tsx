@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { SuggestedChip } from "@/suggestion/Suggestions";
 import { useCandidates, useSuggestions } from "@/suggestion/useSuggestions";
 import { MentionsDialog } from "./MentionsDialog";
-import { CatalogueSearch, charactersQuery, useUniverses } from "./UniverseDialog";
+import { CatalogueSearch, charactersQuery, useUniverses } from "./Universes";
 
 /** The facets the application gives every work of a type with universes (the backend's UniverseFacets). */
 const KIND = "kind";

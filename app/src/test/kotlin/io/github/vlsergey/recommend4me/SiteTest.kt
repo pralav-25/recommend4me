@@ -35,6 +35,12 @@ import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.api.model.Inclusion
 import io.github.vlsergey.recommend4me.api.model.FacetRole as ApiFacetRole
 import io.github.vlsergey.recommend4me.api.model.UniverseRef
+import io.github.vlsergey.recommend4me.api.model.TagDistinctRequest
+import io.github.vlsergey.recommend4me.api.model.TagMergeRequest
+import io.github.vlsergey.recommend4me.api.model.TagNameRequest
+import io.github.vlsergey.recommend4me.api.model.TagNameRule
+import io.github.vlsergey.recommend4me.api.model.TagSplitRequest
+import io.github.vlsergey.recommend4me.tag.TagsController
 import io.github.vlsergey.recommend4me.universe.UniverseCatalogue
 import io.github.vlsergey.recommend4me.universe.UniverseCharacter
 import io.github.vlsergey.recommend4me.universe.UniverseClass
@@ -180,6 +186,7 @@ class SiteTest {
     @Autowired lateinit var universes: UniversesController
     @Autowired lateinit var recommendations: Recommendations
     @Autowired lateinit var comparisons: ScorerComparisons
+    @Autowired lateinit var tagsApi: TagsController
 
     private fun capture(body: String) = captures.capturePage(CaptureRequest("https://site.example/work/${body.substringBefore('|')}", body))
 
@@ -521,5 +528,53 @@ class SiteTest {
         suggestions.refresh(store)
         assertEquals(emptyList(), suggestionsApi.getCandidates("site", "o1", "universe").body!!.map { it.key })
         assertEquals(emptyList(), suggestionsApi.getCandidates("site", "o2", "universe").body!!.map { it.key })
+    }
+
+    @Test
+    fun `the user merges the sites' tags into one, names it, takes one out and tells tags apart`() {
+        capture("t1|Hull one|hulls,cargo|Ships carry cargo between stations|")
+        capture("t2|Hull two|starhulls|Freighters carry cargo between stations|")
+        capture("t3|Hull three|hulls|A hull breach in deep space|")
+        // The user's answer on a tag that will be merged
+        corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = "cargo"))
+        corrections.correctFacet("site", "t3", FacetCorrection(facet = "tags", added = true, key = "starhulls"))
+        items.rateItem("site", "t2", RatingRequest(5))
+        textVectors.refresh(stores.source("site")!!)
+
+        // Offered alike: the other tags of the sites, with how alike their names are
+        val similar = tagsApi.listSimilarTags("books", "hulls", 50).body!!
+        assertTrue(similar.any { it.tag.key == "starhulls" }, "similar ${similar.map { it.tag.key }}")
+        // Nothing is merged by itself
+        assertEquals(emptyList(), tagsApi.getTag("books", "hulls").body!!.members)
+
+        val merged = tagsApi.mergeTags("books", TagMergeRequest(listOf("hulls", "starhulls"))).body!!
+        assertEquals("hulls", merged.key)
+        assertEquals(listOf("starhulls"), merged.members)
+        assertEquals(3, merged.works)
+        // Named by the name of the liked work: t2, graded 5, has "Starhulls"
+        assertEquals("Starhulls", merged.name)
+        assertEquals(TagNameRule.LIKED, merged.rule)
+        // The answer on the member is the tag's now
+        val t3 = stores.source("site")!!.corrections.facetsOf("t3").filter { it.facet == "tags" }
+        assertEquals(listOf("hulls" to true), t3.map { it.key to it.added })
+        // The work's tags show the tag by its name, whichever site's name it has
+        val named = tagsApi.nameTag("books", TagNameRequest("hulls", "Корпуса")).body!!
+        assertEquals("Корпуса", named.name)
+        assertEquals(TagNameRule.EXPLICIT, named.rule)
+        val shown = items.getItem("site", "t3").body!!.allFacets.single { it.facet == "tags" }.propertyValues.single { it.key == "hulls" }
+        assertEquals("Корпуса", shown.name)
+        // The name taken back: the sites' names decide again
+        assertEquals(TagNameRule.LIKED, tagsApi.nameTag("books", TagNameRequest("hulls")).body!!.rule)
+
+        // Taken out, a tag of its own again; the answer stays with the tag
+        assertEquals(204, tagsApi.splitTag("books", TagSplitRequest("starhulls")).statusCode.value())
+        assertEquals(1, tagsApi.getTag("books", "starhulls").body!!.works)
+        assertEquals(emptyList(), tagsApi.getTag("books", "hulls").body!!.members)
+
+        // Told apart: not offered as alike again
+        tagsApi.setTagsDistinct("books", TagDistinctRequest("starhulls", "hulls", true))
+        assertTrue(tagsApi.listSimilarTags("books", "hulls", 50).body!!.none { it.tag.key == "starhulls" })
+        tagsApi.setTagsDistinct("books", TagDistinctRequest("hulls", "starhulls", false))
+        assertTrue(tagsApi.listSimilarTags("books", "hulls", 50).body!!.any { it.tag.key == "starhulls" })
     }
 }

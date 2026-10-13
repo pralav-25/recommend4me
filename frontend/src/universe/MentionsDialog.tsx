@@ -5,7 +5,7 @@ import { api, unwrap, type CharacterInfo, type ContentTypeInfo, type FacetValueI
 import { AsyncButton } from "@/components/AsyncButton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { charactersQuery, classesQuery, keptByClasses, useInclusion, useUniverses } from "./UniverseDialog";
+import { charactersQuery, classesQuery, keptByClasses, useInclusion, useUniverses } from "./Universes";
 
 /** The characters a value is of: a character itself, the two of a pairing ("pair:a|b"). */
 const charactersOf = (value: string) => (value.startsWith("pair:") ? value.slice("pair:".length).split("|") : [value]);

@@ -38,9 +38,10 @@ class LayerCorrections(private val stores: Stores) {
                     return@forEach
                 }
                 val names = s.names(facet)
+                val merges = s.tags.merges(layer.key)
                 list.forEach { c ->
                     val name = names[c.key] ?: c.name ?: c.key
-                    val key = LayerValues.keyOf(name)
+                    val key = LayerValues.keyOf(name, merges)
                     s.corrections.setFacet(c.itemId, layer.key, key, c.added, name.trim(), now)
                     s.corrections.unsetFacet(c.itemId, facet, c.key)
                     moved++

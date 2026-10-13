@@ -22,6 +22,7 @@ tags:
   - name: pages
   - name: suggestions
   - name: universes
+  - name: tags
 
 paths:
   /api/types:
@@ -1049,6 +1050,170 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/CharacterInfo'
+
+  /api/types/{type}/tags:
+    get:
+      tags: [tags]
+      operationId: listTags
+      summary: |
+        The sites' free tags of a content type, every site's together, as the user merged and named them:
+        the most used first
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - name: query
+          in: query
+          description: A piece of a name of the tag on a site, or of the name the user gave it, any case
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: A page of the tags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagPage'
+        '404':
+          description: No such type, or a type without free tags
+
+  /api/types/{type}/tags/one:
+    get:
+      tags: [tags]
+      operationId: getTag
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - name: tag
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The tag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagInfo'
+        '404':
+          description: No such tag
+
+  /api/types/{type}/tags/similar:
+    get:
+      tags: [tags]
+      operationId: listSimilarTags
+      summary: |
+        The tags most alike the tag by the meaning of their names, of one site or another - but the ones the
+        user said are different. Only offered: the user merges
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - name: tag
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        '200':
+          description: The likest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SimilarTag'
+
+  /api/types/{type}/tags/merge:
+    post:
+      tags: [tags]
+      operationId: mergeTags
+      summary: |
+        The tags merged into the first of them, named when a name is given; the user's answers on them become
+        answers on it, the newest standing of a work answered on more than one
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagMergeRequest'
+      responses:
+        '200':
+          description: The tag merged into
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagInfo'
+
+  /api/types/{type}/tags/name:
+    put:
+      tags: [tags]
+      operationId: nameTag
+      summary: The name the user gives the tag; none takes it back, and the tag is named by its sites again
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagNameRequest'
+      responses:
+        '200':
+          description: The tag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagInfo'
+
+  /api/types/{type}/tags/split:
+    post:
+      tags: [tags]
+      operationId: splitTag
+      summary: A tag taken out of the tag it was merged into, a tag of its own again; the answers stay with the tag
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagSplitRequest'
+      responses:
+        '204':
+          description: Taken out
+        '404':
+          description: Not merged into any tag
+
+  /api/types/{type}/tags/distinct:
+    put:
+      tags: [tags]
+      operationId: setTagsDistinct
+      summary: The user's word that two tags are different - not offered as alike again - or its taking back
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagDistinctRequest'
+      responses:
+        '204':
+          description: Saved
 
   /api/types/{type}/model:
     get:
@@ -3089,6 +3254,122 @@ components:
           type: boolean
           nullable: true
           description: The user's word on it within the universe; none when the catalogue decides
+
+    TagPage:
+      type: object
+      required: [total, tags]
+      properties:
+        total:
+          type: integer
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagInfo'
+
+    TagNameRule:
+      type: string
+      description: |
+        What gave a tag its name: EXPLICIT - the user; LIKED - the name most used by the works graded above the
+        middle of the scale; GRADED - by the works graded; ALL - by all its works; ALPHABET - the first by the alphabet
+      enum: [EXPLICIT, LIKED, GRADED, ALL, ALPHABET]
+
+    TagInfo:
+      type: object
+      required: [key, name, rule, works, graded, liked, variants, members]
+      properties:
+        key:
+          type: string
+          description: The tag's key - its first name lowercased; of a merged tag, the key of the tag merged into
+        name:
+          type: string
+        rule:
+          $ref: '#/components/schemas/TagNameRule'
+        explicitName:
+          type: string
+          description: The name the user gave the tag, when given
+        works:
+          type: integer
+        graded:
+          type: integer
+        liked:
+          type: integer
+          description: Works graded above the middle of the scale
+        variants:
+          type: array
+          description: The tag's names as the sites write them, with their works, the most used first
+          items:
+            $ref: '#/components/schemas/TagVariantInfo'
+        members:
+          type: array
+          description: The keys of the tags merged into this one
+          items:
+            type: string
+
+    TagVariantInfo:
+      type: object
+      required: [source, name, works, graded, liked]
+      properties:
+        source:
+          type: string
+        name:
+          type: string
+        works:
+          type: integer
+        graded:
+          type: integer
+        liked:
+          type: integer
+
+    SimilarTag:
+      type: object
+      required: [tag, similarity]
+      properties:
+        tag:
+          $ref: '#/components/schemas/TagInfo'
+        similarity:
+          type: number
+          format: double
+          description: The cosine of the meaning of their names, up to 1
+
+    TagMergeRequest:
+      type: object
+      required: [tags]
+      properties:
+        tags:
+          type: array
+          description: The keys of the tags; the first is the one the others are merged into
+          items:
+            type: string
+        name:
+          type: string
+          description: The name of the tag merged into; none - as its sites name it
+
+    TagNameRequest:
+      type: object
+      required: [tag]
+      properties:
+        tag:
+          type: string
+        name:
+          type: string
+
+    TagSplitRequest:
+      type: object
+      required: [member]
+      properties:
+        member:
+          type: string
+
+    TagDistinctRequest:
+      type: object
+      required: [first, other, different]
+      properties:
+        first:
+          type: string
+        other:
+          type: string
+        different:
+          type: boolean
 
     Inclusion:
       type: object

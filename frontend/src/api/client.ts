@@ -60,6 +60,9 @@ export type UniverseInfo = Schemas["UniverseInfo"];
 export type FoundUniverse = Schemas["FoundUniverse"];
 export type CharacterInfo = Schemas["CharacterInfo"];
 export type UniverseClassInfo = Schemas["UniverseClassInfo"];
+export type TagInfo = Schemas["TagInfo"];
+export type TagNameRule = Schemas["TagNameRule"];
+export type SimilarTag = Schemas["SimilarTag"];
 
 /**
  * The failure of a call as the user should read it: the backend answers an error as

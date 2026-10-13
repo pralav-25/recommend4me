@@ -41,7 +41,10 @@ import { SearchQualityDialog } from "@/search/SearchQualityDialog";
 import { SourceFilter } from "@/source/SourceFilter";
 import { WorkProgress } from "@/status/WorkProgress";
 import { ThemeToggle } from "@/theme/ThemeToggle";
-import { UniverseButton } from "@/universe/UniverseDialog";
+import { ScreenNav } from "@/screen/ScreenNav";
+import { useScreen } from "@/screen/screens";
+import { TagsScreen } from "@/tag/TagsScreen";
+import { UniversesScreen } from "@/universe/Universes";
 
 const VIEWS: { view: ItemView; label: string }[] = [
   { view: "UNRATED", label: "Без оценки" },
@@ -111,6 +114,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
   const [total, setTotal] = useState<number | undefined>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const jobs = useJobs();
+  const screen = useScreen();
 
   // The list asks for the shown sources by name, and for none when all are shown
   const sources = useMemo(() => {
@@ -185,6 +189,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
               </TabsList>
             </Tabs>
           )}
+          <ScreenNav type={type} screen={screen} />
           {/* On a phone the progress takes what the icons leave; on a wide screen it sits in the middle */}
           <div className="mx-1 min-w-0 flex-1 sm:mx-auto sm:flex-none">
             <ErrorBoundary compact resetKey={type.id} title="Задания не показываются">
@@ -197,9 +202,6 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
           <ErrorBoundary compact resetKey={type.id} title="Модель">
             <ModelButton type={type} />
           </ErrorBoundary>
-          <ErrorBoundary compact resetKey={type.id} title="Вселенные">
-            <UniverseButton type={type} />
-          </ErrorBoundary>
           <ErrorBoundary compact title="Расширение">
             <CaptureButton />
           </ErrorBoundary>
@@ -211,6 +213,17 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
         </div>
       </header>
 
+      {screen.kind === "universes" && type.universes && (
+        <ErrorBoundary resetKey={type.id} title="Вселенные не показываются">
+          <UniversesScreen type={type} selected={screen.catalogue && screen.universe ? { catalogue: screen.catalogue, universe: screen.universe } : undefined} />
+        </ErrorBoundary>
+      )}
+      {screen.kind === "tags" && (
+        <ErrorBoundary resetKey={type.id} title="Теги не показываются">
+          <TagsScreen type={type} selected={screen.tag} />
+        </ErrorBoundary>
+      )}
+      {(screen.kind === "works" || (screen.kind === "universes" && !type.universes)) && (
       <div className="mx-auto max-w-[1800px] px-4">
         <div className="flex flex-wrap items-center gap-2 py-4">
           <Tabs value={view} onValueChange={(v) => setView(v as ItemView)}>
@@ -378,6 +391,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
           </ErrorBoundary>
         </main>
       </div>
+      )}
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <HashItemDialog />

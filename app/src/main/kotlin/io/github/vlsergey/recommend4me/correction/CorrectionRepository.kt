@@ -51,6 +51,31 @@ class CorrectionRepository(private val db: DSLContext) {
         return out
     }
 
+    /**
+     * The user's answers on the values [from] of a facet made answers on [to] — the values merged
+     * into it: of an item answered on more than one of them, the newest answer stands. Returns the
+     * items whose answers moved.
+     */
+    fun moveFacetValues(facet: String, from: Collection<String>, to: String): Set<String> {
+        val moved = HashSet<String>()
+        db.transaction { c ->
+            val tx = DSL.using(c)
+            val f = FACET_CORRECTION
+            val answers = tx.selectFrom(f).where(f.FACET.eq(facet), f.VALUE_KEY.`in`(from + to)).fetch()
+            answers.groupBy { it.itemId!! }.forEach { (item, own) ->
+                if (own.all { it.valueKey == to }) return@forEach
+                val newest = own.maxBy { it.correctedAt!! }
+                tx.deleteFrom(f).where(f.ITEM_ID.eq(item), f.FACET.eq(facet), f.VALUE_KEY.`in`(from + to)).execute()
+                tx.insertInto(f)
+                    .set(f.ITEM_ID, item).set(f.FACET, facet).set(f.VALUE_KEY, to.take(500))
+                    .set(f.ADDED, newest.added).set(f.NAME, newest.name).set(f.CORRECTED_AT, newest.correctedAt)
+                    .execute()
+                moved += item
+            }
+        }
+        return moved
+    }
+
     /** Every facet correction: they are few, the user makes them by hand. */
     fun allFacets(): List<FacetCorrection> =
         db.selectFrom(FACET_CORRECTION).fetch { FacetCorrection(it.itemId!!, it.facet!!, it.valueKey!!, it.added!!, it.name) }
