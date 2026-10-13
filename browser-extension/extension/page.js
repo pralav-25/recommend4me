@@ -735,14 +735,12 @@
   /**
    * "No other universes", "no other pairings": the user's word that the work's values of the
    * facet are all named — the others are not offered and count as rejected for the model; pressed
-   * again, taken back. Shown once the work has a value of it, as in the application.
+   * again, taken back. Shown with no value too, as in the application: "none" is an answer as well.
    */
   function completeButton(item, facet) {
     const keys = ALL_NAMED[facet.facet];
     if (!keys || facet.editable === false) return null;
     const names = { others: t(keys.others), what: t(keys.what) };
-    const own = (facet.values || []).filter((v) => v.corrected !== "REMOVED" && !v.offered);
-    if (!own.length) return null;
     const s = item.summary;
     const complete = facet.complete === true;
     const about = `complete|${facet.facet}`;
@@ -974,8 +972,8 @@
     // A facet of the site is its word: shown, never answered on
     const editable = facet.editable !== false;
     const values = facet.values || [];
-    // The work's values the user has not answered on — not those only offered
-    const open = values.filter((v) => !v.corrected && !v.offered);
+    // The work's values the user has not answered on — not those only offered, nor those it has by a tag under them
+    const open = values.filter((v) => !v.corrected && !v.offered && !v.implied);
     if (editable && open.length > 1) {
       label.appendChild(button(t("facet.confirmAll", { count: open.length }), t("facet.confirmAllTitle"), async () => {
         for (const v of open) await correct(item, facet.facet, { key: v.key }, true);
