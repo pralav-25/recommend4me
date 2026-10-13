@@ -19,10 +19,6 @@ private val log = LoggerFactory.getLogger(TagNormalization::class.java)
  * to the normalized tag the site's tags of its name are bound to — "Магия" of one site and "магия"
  * of another one tag — when there is exactly one such; else to a new normalized tag of its own.
  * From then on the user binds it: merges tags, takes one out.
- *
- * Once, on the first start with the normalized tags, what the tables before them said — the tags
- * merged into others by their names, the names given, the graph, the pairs told apart, the user's
- * answers on the works' tags by name — is moved to them.
  */
 @Component
 class TagNormalization(private val stores: Stores) {
@@ -88,62 +84,16 @@ class TagNormalization(private val stores: Stores) {
         return made
     }
 
-    /** Before anything reads the tags: what the tables before the normalized tags said moved to them, once. */
+    /** Before anything reads the tags: every site's tag not bound yet bound. */
     @Order(-10)
     @EventListener(ApplicationReadyEvent::class)
     fun start() {
         stores.types.forEach { type ->
-            val facet = facetOf(type) ?: return@forEach
             try {
-                if (type.tags.ids().isEmpty()) migrate(type, facet)
                 bindNew(type)
             } catch (e: Exception) {
                 log.error("{}: the tags were not normalized", type.id, e)
             }
         }
-    }
-
-    /**
-     * The tags as the tables before the normalized tags kept them — a tag a site's tag by its name
-     * lowercased, merged into another by a row of its own — made normalized tags: one of every tag
-     * the merges left, every site's tag bound to it, the user's names, the graph, the pairs and the
-     * user's answers on the works' tags moved from the names to the ids.
-     */
-    private fun migrate(type: TypeStore, facet: String) {
-        val now = Instant.now()
-        val merges = type.tags.legacyMerges()
-        fun anchor(name: String) = merges[name] ?: name
-        val ids = HashMap<String, Long>()
-        fun idOf(legacy: String) = ids.getOrPut(anchor(legacy)) { type.tags.create() }
-        var sites = 0
-        type.sources.forEach { s ->
-            val f = siteFacetOf(s, facet) ?: return@forEach
-            val names = s.names(f)
-            s.items.valueUses(f).keys.forEach { key ->
-                val written = (names[key] ?: key).trim()
-                val id = idOf(LayerValues.keyOf(written))
-                type.tags.bind(SiteTagRef(s.id, key), id, now)
-                type.tags.showAs(id, ShownName(written, NameRule.ALL))
-                sites++
-            }
-        }
-        // The user's answers on the works' tags, by the name they were kept by, to the id of its tag —
-        // through a key of their own first: a tag named by a number ("1984") is no id of another
-        var answers = 0
-        type.sources.forEach { s ->
-            val legacy = s.corrections.allFacets().filter { it.facet == facet }.map { it.key }.distinct()
-            legacy.forEach { s.corrections.moveFacetValues(facet, listOf(it), MOVING + it) }
-            legacy.forEach { answers += s.corrections.moveFacetValues(facet, listOf(MOVING + it), TagRepository.key(idOf(it))).size }
-        }
-        type.tags.legacyNames().forEach { (tag, name) -> type.tags.name(idOf(tag), name) }
-        type.tags.legacyParents().forEach { (child, parent) -> if (idOf(child) != idOf(parent)) type.tags.setParent(idOf(child), idOf(parent), true, now) }
-        type.tags.legacyDistinct().forEach { (a, b) -> if (idOf(a) != idOf(b)) type.tags.setDistinct(idOf(a), idOf(b), true, now) }
-        type.tags.clearLegacy()
-        log.info("{}: {} normalized tags made of {} tags of the sites; the answers of {} works moved to them", type.id, ids.size, sites, answers)
-    }
-
-    companion object {
-        /** The key an answer is kept by while it is moved from a name to an id: no name nor id begins so. */
-        private const val MOVING = "\u0000moving:"
     }
 }

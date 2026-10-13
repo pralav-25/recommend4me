@@ -4,6 +4,7 @@ import { ArrowLeftIcon, CombineIcon, Loader2Icon, SearchIcon, TagsIcon, XIcon } 
 import { api, unwrap, type ContentTypeInfo, type TagInfo, type TagNameRule, type TagRef, type TagRelation, type TagVariantInfo } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
 import { plural } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -458,7 +459,9 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
       {error && <p className="text-destructive">Не сохранилось: {error}</p>}
       {visible && visible.length > 0 && (
         <ul className={cn("flex flex-col divide-y rounded-lg border", locked && "pointer-events-none")} aria-busy={locked}>
-          {visible.map(({ tag: s, similarity, relation: read, site }) => {
+          {visible.map(({ tag: s, similarity, relation: read, site: given }) => {
+            // A row of a tag comes with no site's tag: null, not left out
+            const site = given ?? undefined;
             const row = rowKey(s.key, site);
             // Pressed as the user said it, before the table is read anew
             const relation = said[row] ?? read;
@@ -498,7 +501,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                 {" · "}
                 <span title="Сходство смысла названий">{Math.round(similarity * 100)}%</span>
               </span>
-              <div className="flex w-full gap-1 sm:w-auto">
+              <ButtonGroup className="w-full sm:w-fit">
                 {RELATIONS.map((r) => {
                   const pressed = relation === r.relation;
                   // A site's tag is bound to a tag or not: under, above, different are said of the tag it is taken out to
@@ -526,7 +529,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                     </Button>
                   );
                 })}
-              </div>
+              </ButtonGroup>
             </li>
             );
           })}

@@ -5,10 +5,6 @@ import io.github.vlsergey.recommend4me.database.typecorrections.tables.reference
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_DISTINCT
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_PARENT
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.SITE_TAG
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_DISTINCT
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_MERGE
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_NAME
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_PARENT
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import java.time.Instant
@@ -153,27 +149,6 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
         val d = NORMALIZED_TAG_DISTINCT
         if (different) db.insertInto(d).set(d.FIRST_TAG, x).set(d.OTHER_TAG, y).set(d.SAID_AT, now).onDuplicateKeyIgnore().execute()
         else db.deleteFrom(d).where(d.FIRST_TAG.eq(x), d.OTHER_TAG.eq(y)).execute()
-    }
-
-    // --- The tables before the normalized tags: read once to move what they say, then emptied ---
-
-    /** Whether anything is left of the tables before the normalized tags. */
-    fun legacyLeft(): Boolean =
-        db.fetchExists(TAG_MERGE) || db.fetchExists(TAG_NAME) || db.fetchExists(TAG_PARENT) || db.fetchExists(TAG_DISTINCT)
-
-    /** A tag's name lowercased to the one it was merged into. */
-    fun legacyMerges(): Map<String, String> = db.select(TAG_MERGE.MEMBER, TAG_MERGE.TAG).from(TAG_MERGE).fetchMap({ it.value1()!! }, { it.value2()!! })
-
-    fun legacyNames(): Map<String, String> =
-        db.select(TAG_NAME.TAG, TAG_NAME.NAME).from(TAG_NAME).where(TAG_NAME.NAME.isNotNull).fetchMap({ it.value1()!! }, { it.value2()!! })
-
-    fun legacyParents(): List<Pair<String, String>> = db.select(TAG_PARENT.CHILD, TAG_PARENT.PARENT).from(TAG_PARENT).fetch { it.value1()!! to it.value2()!! }
-
-    fun legacyDistinct(): List<Pair<String, String>> = db.select(TAG_DISTINCT.FIRST_TAG, TAG_DISTINCT.OTHER_TAG).from(TAG_DISTINCT).fetch { it.value1()!! to it.value2()!! }
-
-    fun clearLegacy() = db.transaction { c ->
-        val tx = DSL.using(c)
-        listOf(TAG_MERGE, TAG_NAME, TAG_PARENT, TAG_DISTINCT).forEach { tx.deleteFrom(it).execute() }
     }
 
     companion object {
