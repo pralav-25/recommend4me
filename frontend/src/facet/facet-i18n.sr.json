@@ -1,4 +1,6 @@
 {
+  "ChanceMark.drafted": "po tagu",
+  "ChanceMark.draftedFrom": "Popunjeno po tagu sajta „{{from}}“ preko rečnika univerzuma; potvrdite ili uklonite",
   "ChanceMark.unlikely": "Model smatra da delo verovatnije nema ovo",
   "FacetDropdown.all": "Sve",
   "FacetDropdown.findPlaceholder": "Pronađi…",

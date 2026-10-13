@@ -41,8 +41,9 @@ class Weights(val rank: Int, val a: FloatArray, val b: FloatArray, val e: FloatA
  * the weight of every pair of them, the pairs' own features, and the fold every item is held out in.
  *
  * A pair's label: whether the item has the value — the site's or the user's word. Its weight: 1 for
- * a value the item has and for one the user rejected; [SuggestionTask.lackWeight] for a value the
- * item merely lacks; nought for a value the item may not have at all ([SuggestionTask.allowed]: a
+ * a value the item has and for one the user rejected; [SuggestionTask.draftWeight] for a value the
+ * application drafted ([SuggestionTask.drafts]) the user has not confirmed;
+ * [SuggestionTask.lackWeight] for a value the item merely lacks; nought for a value the item may not have at all ([SuggestionTask.allowed]: a
  * character of another universe), for every value an item without any value of the facet lacks —
  * such an item is unknown, not denied.
  */
@@ -118,6 +119,13 @@ internal class Problem(val task: SuggestionTask, val design: Design, val folds: 
             }
             task.rejected[i].forEach { row[it] = 1f }
             has.forEach { row[it] = 1f; labels[it] = 1f }
+            // A drafted value the item still has, the user not confirming it: likely, no one's word
+            val drafted = task.drafts[i]
+            if (drafted.isNotEmpty()) {
+                val confirmed = task.confirmed[i].toHashSet()
+                val weight = task.draftWeight.toFloat()
+                drafted.forEach { if (labels[it] > 0f && it !in confirmed) row[it] = weight }
+            }
             val at = (0 until m).filter { row[it] != 0f }.toIntArray()
             active[i] = at
             activeWeight[i] = FloatArray(at.size) { row[at[it]] }

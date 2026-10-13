@@ -260,6 +260,31 @@ universes, the characters of either kind and the pairings can each be said to be
 work keeps its own and is offered no other.
 Taking a universe out of the dictionary takes its links with it.
 
+### Statements of the catalogue and drafts
+
+A source plugin names the catalogue's statements it wants of the universes and their characters
+(`Source.catalogueProperties`: Archive of Our Own asks Wikidata for P8419, the entity's tag on
+AO3). They are asked with every universe added or refreshed — of the universe, of the works,
+series and franchises within it, and of every character — and kept in the dictionary
+(`universe_property`, `universe_character_property`); a universe asked for other statements than
+the plugins want now is asked again on start.
+
+From them a source drafts values of the layer (`Source.draft`): AO3 matches its fandoms to
+universes and the names of its relationship tags ("A/B", "A & B") to characters by the tag, a
+romantic pair of two matched characters to a pairing; the application adds the universe of every
+drafted character the dictionary has in one universe alone (`LayerDrafts`). A name matching
+nothing, or several entries, drafts nothing. Every matched character is a main one: the user moves
+it to the secondary ones.
+
+The drafts are derived data, kept in the type's model database (`layer_draft`), neither the
+site's nor the user's. They are made again when a work is captured or refreshed — before the model
+reads it — and of every work of the type when the dictionary changes and on start; the works whose
+drafts changed are read again. A draft is a value the work has (`Chance.draftedFrom`): shown with
+the site's value it came from instead of a chance, found by the search, read by the model as a
+value of the work. The user's answers come first — a draft taken away stays taken away, whatever
+it is made of again. The model learns from a draft the user has not confirmed with less weight
+(`FacetData.DRAFT_WEIGHT`, `SuggestionTask.draftWeight`): it is likely, but no one's word.
+
 ## Languages of the interface
 
 The web interface speaks English, Russian and Serbian (Latin script), through i18next and

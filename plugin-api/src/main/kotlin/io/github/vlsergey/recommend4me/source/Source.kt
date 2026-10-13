@@ -1,5 +1,7 @@
 package io.github.vlsergey.recommend4me.source
 
+import io.github.vlsergey.recommend4me.universe.CatalogueLookup
+import io.github.vlsergey.recommend4me.universe.LayerDraft
 import java.time.Instant
 
 /** How a source gets its items. */
@@ -80,6 +82,14 @@ interface Source {
      * The characters of every universe are asked for with them ([UniverseCharacter.properties][io.github.vlsergey.recommend4me.universe.UniverseCharacter.properties]).
      */
     val catalogueProperties: Map<String, Set<String>> get() = emptyMap()
+
+    /**
+     * The values of the application's layer the source drafts of a work from its own values on the
+     * site ([facets]: the site's facet to its values, keys and names as written) through the
+     * dictionary ([lookup]): the characters its tags name, their pairings, its universes. Only what
+     * matches exactly one value of the dictionary; none of a source that drafts nothing.
+     */
+    fun draft(facets: Map<String, List<FacetValue>>, lookup: CatalogueLookup): List<LayerDraft> = emptyList()
 
     /** How the extension marks the site's pages up; null — it does not. */
     val pageDecor: PageDecor? get() = null

@@ -4,6 +4,8 @@ import io.github.vlsergey.recommend4me.database.model.tables.references.FACET_SU
 import io.github.vlsergey.recommend4me.database.model.tables.references.FACET_SUGGESTION
 import io.github.vlsergey.recommend4me.database.model.tables.references.FACET_SUGGESTION_BASIS
 import io.github.vlsergey.recommend4me.database.source.tables.references.FACET_VALUE_VECTOR
+import io.github.vlsergey.recommend4me.draft.DraftRepository
+import io.github.vlsergey.recommend4me.universe.LayerDraft
 import io.github.vlsergey.recommend4me.vector.Vectors
 import org.jooq.DSLContext
 import java.time.Instant
@@ -15,16 +17,24 @@ class StoredSuggester(val suggester: String, val fittedAt: Instant, val basis: L
 
 /**
  * The chance of a value of an item's facet: one the item had when worked out ([had]), or one it
- * lacked; and how many times the item's texts name it, when they were counted.
+ * lacked; and how many times the item's texts name it, when they were counted. [draftedFrom]: the
+ * value is a draft of the layer ([LayerDraft][io.github.vlsergey.recommend4me.universe.LayerDraft]),
+ * read from this value of the site — the work is given it whatever the model's chance (1 when the
+ * model has none).
  */
-data class Chance(val itemId: String, val facet: String, val key: String, val had: Boolean, val chance: Double, val mentions: Int? = null)
+data class Chance(
+    val itemId: String, val facet: String, val key: String, val had: Boolean, val chance: Double, val mentions: Int? = null,
+    val draftedFrom: String? = null,
+) {
+    val drafted: Boolean get() = draftedFrom != null
+}
 
 /**
  * What the model says of the values of one source's facets, in the model database of its content
  * type: the fitted suggesters, what every item's chances were made of, and the chances — of every
  * value an item has, and of every value it lacks that it more likely has than not.
  */
-class SuggestionRepository(private val db: DSLContext, private val source: String) {
+class SuggestionRepository(private val db: DSLContext, private val source: String, private val drafts: DraftRepository) {
 
     /** Held while the chances of items are written: for milliseconds, not for a fitting. */
     private val writing = ReentrantLock()
@@ -107,8 +117,12 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
         db.deleteFrom(FACET_SUGGESTION_BASIS).where(FACET_SUGGESTION_BASIS.SOURCE.eq(source), FACET_SUGGESTION_BASIS.ITEM_ID.eq(itemId)).execute()
     }
 
-    /** The chances of the items [ids]: item to facet to value to chance. */
-    fun ofItems(ids: Collection<String>): Map<String, Map<String, Map<String, Chance>>> {
+    /**
+     * The chances of the items [ids]: item to facet to value to chance — with the drafts of the
+     * layer among them ([Chance.draftedFrom]) unless [withDrafts] is false: what the model made
+     * alone, as the model compares it with what it makes anew.
+     */
+    fun ofItems(ids: Collection<String>, withDrafts: Boolean = true): Map<String, Map<String, Map<String, Chance>>> {
         val out = HashMap<String, HashMap<String, HashMap<String, Chance>>>()
         ids.distinct().chunked(BATCH).forEach { chunk ->
             db.select(FACET_SUGGESTION.ITEM_ID, FACET_SUGGESTION.FACET, FACET_SUGGESTION.VALUE_KEY, FACET_SUGGESTION.KIND, FACET_SUGGESTION.CHANCE, FACET_SUGGESTION.MENTIONS)
@@ -116,11 +130,12 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
                 .where(FACET_SUGGESTION.SOURCE.eq(source), FACET_SUGGESTION.ITEM_ID.`in`(chunk))
                 .fetch { r -> put(out, Chance(r.value1()!!, r.value2()!!, r.value3()!!, r.value4() == HAD, r.value5()!!, r.value6())) }
         }
+        if (withDrafts) drafted(out, drafts.ofItems(ids))
         return out
     }
 
-    /** The chances of every item of the [facets]: item to facet to value to chance, streamed in one pass. */
-    fun ofFacets(facets: Collection<String>): Map<String, Map<String, Map<String, Chance>>> {
+    /** The chances of every item of the [facets]: item to facet to value to chance, streamed in one pass; the drafts among them ([ofItems]). */
+    fun ofFacets(facets: Collection<String>, withDrafts: Boolean = true): Map<String, Map<String, Map<String, Chance>>> {
         val out = HashMap<String, HashMap<String, HashMap<String, Chance>>>()
         if (facets.isEmpty()) return out
         db.select(FACET_SUGGESTION.ITEM_ID, FACET_SUGGESTION.FACET, FACET_SUGGESTION.VALUE_KEY, FACET_SUGGESTION.KIND, FACET_SUGGESTION.CHANCE, FACET_SUGGESTION.MENTIONS)
@@ -129,7 +144,18 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
             .fetchSize(5000).fetchLazy().use { cursor ->
                 cursor.forEach { r -> put(out, Chance(r.value1()!!, r.value2()!!, r.value3()!!, r.value4() == HAD, r.value5()!!, r.value6())) }
             }
+        if (withDrafts) drafted(out, drafts.ofFacets(facets))
         return out
+    }
+
+    /** Every draft a value of its item's chances, marked so: the model's chance of it kept, 1 when the model has none. */
+    private fun drafted(out: HashMap<String, HashMap<String, HashMap<String, Chance>>>, drafts: Map<String, List<LayerDraft>>) {
+        drafts.forEach { (id, list) ->
+            list.forEach { d ->
+                val byValue = out.getOrPut(id) { HashMap() }.getOrPut(d.facet) { HashMap() }
+                byValue[d.key] = byValue[d.key]?.copy(draftedFrom = d.from) ?: Chance(id, d.facet, d.key, had = false, chance = 1.0, draftedFrom = d.from)
+            }
+        }
     }
 
     private fun put(out: HashMap<String, HashMap<String, HashMap<String, Chance>>>, c: Chance) {

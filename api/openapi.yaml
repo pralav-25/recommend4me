@@ -1839,6 +1839,12 @@ components:
         inferred:
           type: boolean
           description: The model gave the value, the site did not
+        draftedFrom:
+          type: string
+          description: |
+            Given by the application, the user not having answered on it: the site's value it was drafted
+            from through the dictionary - a fandom or a pairing of Archive of Our Own matched to a character
+            or a universe by its tag there (Source.draft). Shown instead of the chance
         offered:
           type: boolean
           description: |

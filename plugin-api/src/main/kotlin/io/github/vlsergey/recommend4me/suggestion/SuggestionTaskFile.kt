@@ -15,8 +15,8 @@ import java.util.zip.GZIPOutputStream
  * of the model tried on it — as often as needed, without waiting for the data to change.
  */
 object SuggestionTaskFile {
-    /** 3: the names' texts a matrix, their arrays of values once each; 2 and 1 read too. */
-    private const val FORMAT = 3
+    /** 4: the drafts and their weight at the end; 3: the names' texts a matrix, their arrays of values once each; 2 and 1 read too. */
+    private const val FORMAT = 4
 
     fun write(task: SuggestionTask, file: Path) {
         Files.createDirectories(file.parent)
@@ -62,6 +62,8 @@ object SuggestionTaskFile {
                 out.writeInt(among.getValue(h.among))
             }
             matrix(out, task.hintTexts)
+            lists(out, task.drafts)
+            out.writeDouble(task.draftWeight)
         }
     }
 
@@ -85,7 +87,7 @@ object SuggestionTaskFile {
         val allowed = List(input.readInt()) { if (input.readBoolean()) ints(input) else null }
         val groupings = List(input.readInt()) { ValueGrouping(input.readUTF(), strings(input), lists(input)) }
         val lackWeight = input.readDouble()
-        val (hints, hintTexts) = if (format == FORMAT) {
+        val (hints, hintTexts) = if (format >= 3) {
             val among = List(input.readInt()) { ints(input) }
             List(input.readInt()) { NameHint(input.readInt(), among[input.readInt()]) } to matrix(input)
         } else {
@@ -101,7 +103,13 @@ object SuggestionTaskFile {
             read.forEachIndexed { k, (vector, _) -> texts.held.put(vector, 0, texts.row(k), texts.cols) }
             read.map { it.second } to texts
         }
-        SuggestionTask(itemIds, inputs, values, valueKeys, assigned, confirmed, rejected, context, contextKeys, mentions, allowed, groupings, lackWeight, examples, hints, hintTexts)
+        // The formats before 4 had no drafts
+        val drafts = if (format >= 4) lists(input) else List(itemIds.size) { IntArray(0) }
+        val draftWeight = if (format >= 4) input.readDouble() else 1.0
+        SuggestionTask(
+            itemIds, inputs, values, valueKeys, assigned, confirmed, rejected, context, contextKeys, mentions, allowed, groupings, lackWeight, examples, hints, hintTexts,
+            drafts, draftWeight,
+        )
     }
 
     private fun strings(out: DataOutputStream, list: List<String>) {

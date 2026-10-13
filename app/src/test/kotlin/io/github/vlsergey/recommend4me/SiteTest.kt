@@ -46,11 +46,14 @@ import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
 import io.github.vlsergey.recommend4me.tag.SiteTagRef
 import io.github.vlsergey.recommend4me.tag.TagRepository
 import io.github.vlsergey.recommend4me.tag.TagsController
+import io.github.vlsergey.recommend4me.universe.CatalogueLookup
+import io.github.vlsergey.recommend4me.universe.LayerDraft
 import io.github.vlsergey.recommend4me.universe.UniverseCatalogue
 import io.github.vlsergey.recommend4me.universe.UniverseCharacter
 import io.github.vlsergey.recommend4me.universe.UniverseClass
 import io.github.vlsergey.recommend4me.universe.UniverseEntry
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
+import io.github.vlsergey.recommend4me.universe.UniverseFacets
 import io.github.vlsergey.recommend4me.universe.UniversesController
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -106,11 +109,11 @@ class SiteTest {
         )
 
         override fun findUniverses(name: String, languages: List<String>) = if ("space" in name.lowercase()) entries(languages).take(1) else emptyList()
-        override fun universe(id: String, languages: List<String>) = entries(languages).firstOrNull { it.id == id }
+        override fun universe(id: String, languages: List<String>, properties: Set<String>) = entries(languages).firstOrNull { it.id == id }
         override fun characters(id: String, languages: List<String>, properties: Set<String>) = listOf(
             UniverseCharacter(
                 "C1", en("Pilot"), mapOf("en" to listOf("The Pilot")), emptyMap(), "https://fake.example/C1", languages, listOf("K1"),
-                properties = if ("P1" in properties) mapOf("P1" to listOf("pilot (space)")) else emptyMap(),
+                properties = if ("P1" in properties) mapOf("P1" to listOf("Space Pilot")) else emptyMap(),
             ),
             UniverseCharacter("C2", en("Captain"), emptyMap(), en("Of the fleet"), "https://fake.example/C2", languages, listOf("K1")),
             UniverseCharacter("S1", en("Station"), emptyMap(), en("Where ships dock"), "https://fake.example/S1", languages, listOf("K2")),
@@ -164,6 +167,12 @@ class SiteTest {
             context.items.setTexts(id, mapOf("annotation" to annotation, "pairings" to pairings))
             return listOf(id)
         }
+
+        /** Of a line of friends ("Space Pilot & Captain"), every name the catalogue states as its tag of one character alone: a main character. */
+        override fun draft(facets: Map<String, List<FacetValue>>, lookup: CatalogueLookup): List<LayerDraft> =
+            facets["pairing"].orEmpty().mapNotNull { it.name }.filter { " & " in it }.flatMap { line ->
+                line.split(" & ").mapNotNull { name -> lookup.characters("fake", "P1", name).singleOrNull()?.let { LayerDraft(UniverseFacets.CHARACTERS, it, name) } }
+            }
     }
 
     /** Texts as bags of their words, hashed into a few dimensions: alike words, alike vectors. */
@@ -399,7 +408,7 @@ class SiteTest {
         assertEquals(listOf("Pilot", "The Pilot"), universes.listCharacters("books", "fake", "U1").body!!.single { it.character == "C1" }.names)
         // The statements the site asked of the catalogue came with the characters, and are kept
         val pilot = stores.type("books")!!.universes.characters("fake", "U1").single { it.id == "C1" }
-        assertEquals(mapOf("P1" to listOf("pilot (space)")), pilot.properties)
+        assertEquals(mapOf("P1" to listOf("Space Pilot")), pilot.properties)
         assertEquals(setOf("P1"), stores.type("books")!!.universes.find("fake", "U1")!!.properties)
 
         // The station is said to be in the universe, but a place: shown, not kept as a character
@@ -584,6 +593,53 @@ class SiteTest {
         this.universes.nameUniverseEntry("books", "fake", "U2", LocalName(""))
         assertEquals("Pilot", characterName())
         assertNull(this.universes.listUniverses("books").body!!.single { it.universe == "U2" }.localName)
+    }
+
+    @Test
+    fun `a work's characters and universe are drafted from the site's tags through the dictionary, the user's word over them`() {
+        // The dictionary without the universe: nothing to draft from
+        val dictionary = { universes.listUniverses("books").body!!.map { it.universe } }
+        dictionary().forEach { universes.removeUniverse("books", "fake", it) }
+        capture("g1|Wingmen|space|Two friends fly a starship|Space Pilot & Captain")
+        fun facetsOf(id: String) = items.getItem("site", id).body!!.allFacets
+        fun valueOf(id: String, facet: String, key: String) = facetsOf(id).find { it.facet == facet }?.propertyValues?.find { it.key == key }
+        assertNull(valueOf("g1", "characters", "fake:C1"))
+
+        // The universe added: its pilot is stated to be the site's "Space Pilot" — drafted a main character
+        // of the work captured before, and of one captured now; the universe with it, the pilot's alone
+        universes.addUniverse("books", UniverseRef("fake", "U2"))
+        capture("g2|Wingmen again|space|The friends fly once more|Space Pilot & Captain")
+        listOf("g1", "g2").forEach { id ->
+            val pilot = assertNotNull(valueOf(id, "characters", "fake:C1"), "characters of $id: ${facetsOf(id)}")
+            assertEquals("Space Pilot", pilot.draftedFrom)
+            assertNull(pilot.inferred)
+            assertEquals("Space Pilot", valueOf(id, "universe", "fake:U2")?.draftedFrom, "universe of $id")
+        }
+        // The captain has no tag of the site in the catalogue: not drafted
+        assertNull(valueOf("g1", "characters", "fake:C2")?.draftedFrom)
+        // Drafted of the layer, not of the site: kept in the model's database
+        assertEquals(
+            setOf(UniverseFacets.CHARACTERS to "fake:C1", UniverseFacets.UNIVERSE to "fake:U2"),
+            stores.source("site")!!.drafts.ofItems(listOf("g1")).getValue("g1").map { it.facet to it.key }.toSet(),
+        )
+
+        // The user takes the pilot away: taken away it stays, whatever the dictionary does
+        corrections.correctFacet("site", "g1", FacetCorrection(facet = "characters", added = false, key = "fake:C1"))
+        universes.addUniverse("books", UniverseRef("fake", "U2"))
+        val removed = assertNotNull(valueOf("g1", "characters", "fake:C1"))
+        assertEquals(FacetValueInfo.Corrected.REMOVED, removed.corrected)
+        assertNull(removed.draftedFrom)
+
+        // The user's yes is the user's word: shown as confirmed, no more a draft
+        corrections.correctFacet("site", "g2", FacetCorrection(facet = "characters", added = true, key = "fake:C1"))
+        val confirmed = assertNotNull(valueOf("g2", "characters", "fake:C1"))
+        assertEquals(FacetValueInfo.Corrected.CONFIRMED, confirmed.corrected)
+        assertNull(confirmed.draftedFrom)
+
+        // The universe gone, the drafts of it go too — what the model learnt of it is the model's to work out again
+        universes.removeUniverse("books", "fake", "U2")
+        assertNull(valueOf("g2", "universe", "fake:U2")?.draftedFrom)
+        assertTrue(stores.source("site")!!.drafts.ofItems(listOf("g1", "g2")).values.all { it.isEmpty() })
     }
 
     @Test

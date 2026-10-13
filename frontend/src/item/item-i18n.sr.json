@@ -2,6 +2,7 @@
   "FacetBadges.added": "dodali ste",
   "FacetBadges.chance": "model: {{chance}}",
   "FacetBadges.confirmed": "potvrdili ste",
+  "FacetBadges.drafted": "po tagu sajta „{{from}}“",
   "FacetBadges.implied": "postoji podređeni tag ovog taga",
   "FacetBadges.inferred": "izvedeno iz opisa, poglavlja i drugih tagova",
   "FacetBadges.removed": "uklonili ste",

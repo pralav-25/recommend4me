@@ -593,7 +593,10 @@
       out.push(button("✕", t(v.corrected === "ADDED" ? "value.removeAdded" : "value.unanswer"), () => uncorrect(item, facet, v.key), "r4m-undo", unansweredShown(facet, v.key), on));
       return out;
     }
-    if (v.chance !== undefined && v.chance !== null) {
+    if (v.draftedFrom) {
+      // Drafted from the site's value through the dictionary: said so, not a chance of the model
+      out.push(Object.assign(el("r4m-chance", null, t("value.drafted")), { title: t("value.draftedFrom", { from: v.draftedFrom }) }));
+    } else if (v.chance !== undefined && v.chance !== null) {
       const unlikely = v.chance < 0.5;
       out.push(Object.assign(el("r4m-chance", unlikely ? "r4m-unlikely" : null, percent(v.chance)), {
         title: t(unlikely ? "value.unlikely" : "value.confidence"),

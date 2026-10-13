@@ -41,6 +41,13 @@ class WikidataCatalogueTest {
     }
 
     @Test
+    fun `a universe comes with the statements of the works within it`() {
+        // The series Harry Potter and its books: their fandoms on Archive of Our Own
+        val series = catalogue.universe("Q8337", languages, setOf("P8419"))!!
+        assertTrue(series.properties["P8419"].orEmpty().any { "Harry Potter" in it }, series.properties.toString())
+    }
+
+    @Test
     fun `the classes tell the characters from the places and the spells`() {
         val characters = catalogue.characters("Q8337", languages)
         val neville = characters.first { it.id == "Q190366" }

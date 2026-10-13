@@ -45,7 +45,7 @@ object ModelValues {
         return out
     }
 
-    /** The values the model gives an item of a facet it works out, the likeliest first. */
+    /** The values the model gives an item of a facet it works out — and every draft of the layer ([Chance.drafted]) — the likeliest first. */
     fun given(chances: Map<String, Chance>): List<String> =
-        chances.values.filter { !it.had && it.chance > LIKELY }.sortedByDescending { it.chance }.map { it.key }
+        chances.values.filter { !it.had && (it.drafted || it.chance > LIKELY) }.sortedByDescending { it.chance }.map { it.key }
 }

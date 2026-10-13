@@ -46,7 +46,16 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue {
         return entries((byName + byText).distinct(), languages)
     }
 
-    override fun universe(id: String, languages: List<String>): UniverseEntry? = entries(listOf(id), languages).firstOrNull()
+    override fun universe(id: String, languages: List<String>, properties: Set<String>): UniverseEntry? {
+        val entry = entries(listOf(id), languages).firstOrNull() ?: return null
+        // The statements of the universe and of every work, series and franchise within it or set in it
+        // (P1434 "takes place in fictional universe": the series of a universe of its own) — but its
+        // characters', which are said to be in it the same way
+        val stated = statements("?c (wdt:P179|wdt:P361|wdt:P8345|wdt:P1434)* wd:$id . FILTER NOT EXISTS { ?c wdt:P31/wdt:P279* wd:$CHARACTER }", properties)
+        val merged = HashMap<String, MutableList<String>>()
+        stated.values.forEach { byProperty -> byProperty.forEach { (p, values) -> merged.getOrPut(p) { ArrayList() } += values } }
+        return UniverseEntry(entry.id, entry.labels, entry.descriptions, entry.url, entry.languages, merged.mapValues { it.value.distinct() })
+    }
 
     override fun characters(id: String, languages: List<String>, properties: Set<String>): List<UniverseCharacter> {
         require(ITEM.matches(id)) { "Not an item of Wikidata: $id" }

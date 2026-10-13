@@ -7,6 +7,7 @@ import io.github.vlsergey.recommend4me.source.CardDecor
 import io.github.vlsergey.recommend4me.source.FacetDecor
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.FacetRole
+import io.github.vlsergey.recommend4me.source.FacetValue
 import io.github.vlsergey.recommend4me.source.NumberDef
 import io.github.vlsergey.recommend4me.source.NumberScale
 import io.github.vlsergey.recommend4me.source.PageDecor
@@ -18,6 +19,8 @@ import io.github.vlsergey.recommend4me.source.SourceMode
 import io.github.vlsergey.recommend4me.source.SourceSchema
 import io.github.vlsergey.recommend4me.source.TextDef
 import io.github.vlsergey.recommend4me.source.TextRole
+import io.github.vlsergey.recommend4me.universe.CatalogueLookup
+import io.github.vlsergey.recommend4me.universe.LayerDraft
 import io.github.vlsergey.recommend4me.universe.UniverseFacets
 import java.net.URI
 import java.net.http.HttpClient
@@ -84,6 +87,32 @@ class Ao3 : Source {
 
     /** A character's tag on the site (P8419 "Archive of Our Own tag"): what its works name the character by. */
     override val catalogueProperties = mapOf(WIKIDATA to setOf(AO3_TAG))
+
+    /**
+     * The work's characters, pairings and universes drafted from its tags, by their tags on the site
+     * (P8419): every character a tag names — alone, of a romantic relationship "A/B", of a platonic
+     * one "A & B" — among the main characters; a romantic relationship of two, a pairing; a fandom,
+     * its universe.
+     */
+    override fun draft(facets: Map<String, List<FacetValue>>, lookup: CatalogueLookup): List<LayerDraft> {
+        fun one(found: Set<String>) = found.singleOrNull()
+        val out = ArrayList<LayerDraft>()
+        facets[FANDOM].orEmpty().forEach { f ->
+            val written = f.name ?: f.key
+            one(lookup.universes(WIKIDATA, AO3_TAG, written))?.let { out += LayerDraft(UniverseFacets.UNIVERSE, it, written) }
+        }
+        facets[PAIRING].orEmpty().forEach { p ->
+            val written = p.name ?: p.key
+            val romantic = '/' in written
+            val names = written.split(if (romantic) "/" else " & ").map { it.trim() }.filter { it.isNotEmpty() }
+            val characters = names.map { one(lookup.characters(WIKIDATA, AO3_TAG, it)) }
+            characters.filterNotNull().forEach { out += LayerDraft(UniverseFacets.CHARACTERS, it, written) }
+            if (romantic && characters.size == 2 && characters.all { it != null } && characters[0] != characters[1]) {
+                out += LayerDraft(UniverseFacets.PAIRINGS, UniverseFacets.pairing(characters[0]!!, characters[1]!!), written)
+            }
+        }
+        return out.distinctBy { it.facet to it.key }
+    }
 
     override val signals = listOf(
         // Kudos is the site's "I liked it"

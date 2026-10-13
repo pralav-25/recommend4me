@@ -8,6 +8,7 @@ import io.github.vlsergey.recommend4me.database.typecorrections.tables.reference
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CLASS
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CLASS_CHOICE
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_LOCAL_NAME
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_PROPERTY
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import java.time.Instant
@@ -126,6 +127,14 @@ class UniverseRepository(
                 .set(UNIVERSE.PROPERTIES, askedProperties)
                 .set(UNIVERSE.URL, entry.url.take(2000)).set(UNIVERSE.REFRESHED_AT, now)
                 .execute()
+            t.deleteFrom(UNIVERSE_PROPERTY).where(UNIVERSE_PROPERTY.CATALOGUE.eq(catalogue), UNIVERSE_PROPERTY.UNIVERSE_ID.eq(entry.id)).execute()
+            entry.properties.flatMap { (p, values) -> values.distinct().map { p to it } }.chunked(BATCH).forEach { chunk ->
+                t.batch(chunk.map { (property, value) ->
+                    t.insertInto(UNIVERSE_PROPERTY)
+                        .set(UNIVERSE_PROPERTY.CATALOGUE, catalogue).set(UNIVERSE_PROPERTY.UNIVERSE_ID, entry.id)
+                        .set(UNIVERSE_PROPERTY.PROPERTY, property).set(UNIVERSE_PROPERTY.PROPERTY_VALUE, value.take(2000))
+                }).execute()
+            }
             t.deleteFrom(UNIVERSE_CHARACTER).where(UNIVERSE_CHARACTER.CATALOGUE.eq(catalogue), UNIVERSE_CHARACTER.UNIVERSE_ID.eq(entry.id)).execute()
             characters.chunked(BATCH).forEach { chunk ->
                 t.batch(chunk.map { c ->
@@ -165,6 +174,24 @@ class UniverseRepository(
             }
         }
     }
+
+    /** Every statement the dictionary keeps of its universes and the works within them: universe value, property, value. */
+    fun universeStatements(): List<Triple<String, String, String>> =
+        db.select(UNIVERSE_PROPERTY.CATALOGUE, UNIVERSE_PROPERTY.UNIVERSE_ID, UNIVERSE_PROPERTY.PROPERTY, UNIVERSE_PROPERTY.PROPERTY_VALUE).from(UNIVERSE_PROPERTY)
+            .fetch { Triple(UniverseFacet.valueOf(it.value1()!!, it.value2()!!), it.value3()!!, it.value4()!!) }
+
+    /** Every statement the dictionary keeps of the characters of its universes: character value, property, value. */
+    fun characterStatements(): List<Triple<String, String, String>> =
+        db.selectDistinct(
+            UNIVERSE_CHARACTER_PROPERTY.CATALOGUE, UNIVERSE_CHARACTER_PROPERTY.CHARACTER_ID, UNIVERSE_CHARACTER_PROPERTY.PROPERTY, UNIVERSE_CHARACTER_PROPERTY.PROPERTY_VALUE,
+        ).from(UNIVERSE_CHARACTER_PROPERTY)
+            .fetch { Triple(UniverseFacet.valueOf(it.value1()!!, it.value2()!!), it.value3()!!, it.value4()!!) }
+
+    /** The universes every entry of the dictionary is in: character value to universe values. */
+    fun characterUniverses(): Map<String, Set<String>> =
+        db.select(UNIVERSE_CHARACTER.CATALOGUE, UNIVERSE_CHARACTER.CHARACTER_ID, UNIVERSE_CHARACTER.UNIVERSE_ID).from(UNIVERSE_CHARACTER).fetch()
+            .groupBy({ UniverseFacet.valueOf(it.value1()!!, it.value2()!!) }, { UniverseFacet.valueOf(it.value1()!!, it.value3()!!) })
+            .mapValues { it.value.toSet() }
 
     fun remove(catalogue: String, id: String) {
         db.deleteFrom(UNIVERSE).where(UNIVERSE.CATALOGUE.eq(catalogue), UNIVERSE.UNIVERSE_ID.eq(id)).execute()

@@ -51,7 +51,7 @@ class BilinearBench {
         val assigned = task.assigned.toMutableList().also { it[item] = it[item] + value }
         val changed = SuggestionTask(
             task.itemIds, task.inputs, task.values, task.valueKeys, assigned, task.confirmed, task.rejected, task.context, task.contextKeys,
-            task.mentions, task.allowed, task.groupings, task.lackWeight, task.examples, task.hints, task.hintTexts,
+            task.mentions, task.allowed, task.groupings, task.lackWeight, task.examples, task.hints, task.hintTexts, task.drafts, task.draftWeight,
         )
         started = System.nanoTime()
         suggester.fit(changed, suggester.unpack(scratch.pack(), changed))

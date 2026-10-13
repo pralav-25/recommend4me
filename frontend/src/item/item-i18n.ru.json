@@ -2,6 +2,7 @@
   "FacetBadges.added": "добавлено вами",
   "FacetBadges.chance": "модель: {{chance}}",
   "FacetBadges.confirmed": "подтверждено вами",
+  "FacetBadges.drafted": "по тегу сайта «{{from}}»",
   "FacetBadges.implied": "есть подтег этого тега",
   "FacetBadges.inferred": "вычислено по описанию, главам и другим тегам",
   "FacetBadges.removed": "убрано вами",

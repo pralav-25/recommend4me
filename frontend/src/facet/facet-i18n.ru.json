@@ -1,4 +1,6 @@
 {
+  "ChanceMark.drafted": "по тегу",
+  "ChanceMark.draftedFrom": "Заполнено по тегу сайта «{{from}}» через словарь вселенных; подтвердите или уберите",
   "ChanceMark.unlikely": "Модель считает, что скорее этого у работы нет",
   "FacetDropdown.all": "Всё",
   "FacetDropdown.findPlaceholder": "Найти…",

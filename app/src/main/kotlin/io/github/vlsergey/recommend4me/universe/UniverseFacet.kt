@@ -147,7 +147,7 @@ object UniverseFacet {
     }
 
     /** A pairing of two characters: one whatever their order. */
-    fun pairing(a: String, b: String): String = listOf(a, b).sorted().let { (x, y) -> "pair:$x|$y" }
+    fun pairing(a: String, b: String): String = UniverseFacets.pairing(a, b)
 
     /** The two characters of a pairing; null when the value is not one. */
     fun members(pairing: String): Pair<String, String>? =

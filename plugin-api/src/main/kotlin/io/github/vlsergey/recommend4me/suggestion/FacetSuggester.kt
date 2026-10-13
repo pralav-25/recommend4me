@@ -105,6 +105,15 @@ class SuggestionTask(
      * thousands of numbers, read into the memory a suggester reads them from.
      */
     val hintTexts: Matrix = Matrix(0, 0),
+    /**
+     * The values the application drafted of each item from the site's tags through the dictionary
+     * ([LayerDraft][io.github.vlsergey.recommend4me.universe.LayerDraft]) — among the [assigned] unless
+     * the user took them away. Likely, but no one's word: one the user has not [confirmed] weighs
+     * [draftWeight] in what is learnt, not 1.
+     */
+    val drafts: List<IntArray> = List(assigned.size) { IntArray(0) },
+    /** How much a drafted value the user has not confirmed weighs, against 1 of a value the site or the user gives. */
+    val draftWeight: Double = 1.0,
 ) {
     val itemCount: Int get() = assigned.size
     val valueCount: Int get() = values.rows
@@ -124,6 +133,8 @@ class SuggestionTask(
         require(groupings.all { g -> g.of.size == valueCount && g.of.all { groups -> groups.all { it in g.groups.indices } } }) { "A grouping not of the $valueCount values" }
         require(lackWeight > 0 && lackWeight <= 1) { "A lacking value weighs $lackWeight" }
         require(examples.size == itemCount) { "$itemCount items, ${examples.size} lists of examples" }
+        require(drafts.size == itemCount) { "$itemCount items, ${drafts.size} lists of drafts" }
+        require(draftWeight > 0 && draftWeight <= 1) { "A drafted value weighs $draftWeight" }
         require(hintTexts.rows == hints.size) { "${hints.size} names, ${hintTexts.rows} texts of them" }
         // Every array of values checked once, however many names share it
         val among = hints.mapTo(Collections.newSetFromMap(IdentityHashMap())) { it.among }

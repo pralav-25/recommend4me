@@ -53,6 +53,9 @@ object UniverseFacets {
     const val SECONDARY_CHARACTERS = "secondary-characters"
     const val PAIRINGS = "pairings"
 
+    /** The value of a pairing of the characters [a] and [b] (values of [CHARACTERS]): one whatever their order. */
+    fun pairing(a: String, b: String): String = listOf(a, b).sorted().let { (x, y) -> "pair:$x|$y" }
+
     /** The fandoms as a site writes them: the site's word of what the universes of the work are, shown above them. */
     val FANDOM_FACET = StandardFacet(
         "fandom", role = FacetRole.ORIGINAL, filter = true, onCard = true, searchWeight = 0.9f,

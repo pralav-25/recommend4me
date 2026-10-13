@@ -52,8 +52,8 @@ class Universes(
     fun add(typeId: String, catalogueId: String, id: String): StoredUniverse {
         val type = type(typeId)
         val catalogue = catalogue(catalogueId)
-        val entry = catalogue.universe(id, languages) ?: throw NoSuchElementException("$catalogueId has no $id")
         val properties = wantedProperties(catalogueId)
+        val entry = catalogue.universe(id, languages, properties) ?: throw NoSuchElementException("$catalogueId has no $id")
         val characters = catalogue.characters(id, languages, properties)
         val classes = catalogue.classes(characters.flatMap { it.classes }.toSet(), languages)
         type.universes.save(catalogueId, entry, characters, classes, properties, Instant.now())

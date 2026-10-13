@@ -21,6 +21,12 @@ class UniverseEntry(
     /** The entry's page for the user to look at. */
     val url: String,
     val languages: List<String>,
+    /**
+     * The catalogue's statements the plugins asked for of the entry and of every work, series and
+     * franchise within it ([UniverseCatalogue.universe]), by property: the fandoms of Archive of Our
+     * Own (P8419) of every book of a series.
+     */
+    val properties: Map<String, List<String>> = emptyMap(),
 ) {
     val name: String get() = labels.first(languages) ?: id
     val description: String? get() = descriptions.first(languages)
@@ -88,7 +94,8 @@ interface UniverseCatalogue {
     /** The entries a name of a fandom may stand for, the likeliest first. */
     fun findUniverses(name: String, languages: List<String>): List<UniverseEntry>
 
-    fun universe(id: String, languages: List<String>): UniverseEntry?
+    /** The entry [id], with its statements of [properties] and of the works within it ([UniverseEntry.properties]). */
+    fun universe(id: String, languages: List<String>, properties: Set<String> = emptySet()): UniverseEntry?
 
     /**
      * Every entry said to be in the universe [id] and in the works, series and franchises within

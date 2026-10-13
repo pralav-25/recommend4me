@@ -98,16 +98,21 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             if (!empty && keys.isEmpty() && removed.isEmpty() && offered.isEmpty() && original == null) return@mapNotNull null
             // The value's own name — a tag's as the user and the sites name it — the name the answer was given with only of a value nothing else names
             fun name(key: String) = names[def.key]?.get(key) ?: added[key] ?: key
-            fun info(key: String, corrected: FacetValueInfo.Corrected?, offer: Boolean = false) = FacetValueInfo(
-                key = key,
-                name = name(key),
-                nameKey = store.nameKey(def.key, key),
-                corrected = corrected,
-                chance = own[key]?.chance,
-                inferred = (key in had && key !in siteKeys).takeIf { it },
-                offered = offer.takeIf { it },
-                implied = (key in implied).takeIf { it },
-            )
+            fun info(key: String, corrected: FacetValueInfo.Corrected?, offer: Boolean = false): FacetValueInfo {
+                // Drafted, unanswered: the site's value it was drafted from, not the model's word
+                val draftedFrom = chances?.get(def.key)?.get(key)?.draftedFrom?.takeIf { corrected == null && !offer }
+                return FacetValueInfo(
+                    key = key,
+                    name = name(key),
+                    nameKey = store.nameKey(def.key, key),
+                    corrected = corrected,
+                    chance = own[key]?.chance,
+                    inferred = (key in had && key !in siteKeys && draftedFrom == null).takeIf { it },
+                    draftedFrom = draftedFrom,
+                    offered = offer.takeIf { it },
+                    implied = (key in implied).takeIf { it },
+                )
+            }
             ItemFacet(
                 facet = def.key,
                 labelKey = I18nKeys.facetLabel(store.id, def),

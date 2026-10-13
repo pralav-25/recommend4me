@@ -2,6 +2,7 @@
   "FacetBadges.added": "added by you",
   "FacetBadges.chance": "model: {{chance}}",
   "FacetBadges.confirmed": "confirmed by you",
+  "FacetBadges.drafted": "by the site's tag «{{from}}»",
   "FacetBadges.implied": "a child tag of this tag is present",
   "FacetBadges.inferred": "inferred from the description, chapters and other tags",
   "FacetBadges.removed": "removed by you",

@@ -1,4 +1,6 @@
 {
+  "ChanceMark.drafted": "by tag",
+  "ChanceMark.draftedFrom": "Filled in by the site's tag «{{from}}» through the universes dictionary; confirm or remove it",
   "ChanceMark.unlikely": "The model thinks the work more likely lacks this",
   "FacetDropdown.all": "All",
   "FacetDropdown.findPlaceholder": "Find…",

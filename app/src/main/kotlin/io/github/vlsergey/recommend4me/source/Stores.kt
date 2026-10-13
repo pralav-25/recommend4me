@@ -5,6 +5,7 @@ import io.github.vlsergey.recommend4me.contenttype.ContentType
 import io.github.vlsergey.recommend4me.correction.CorrectionRepository
 import io.github.vlsergey.recommend4me.correction.TypeLinkRepository
 import io.github.vlsergey.recommend4me.database.Databases
+import io.github.vlsergey.recommend4me.draft.DraftRepository
 import io.github.vlsergey.recommend4me.folder.DataFolder
 import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.interest.InterestRepository
@@ -90,7 +91,10 @@ class SourceStore(
     val signals = SignalRepository(dbs.ratings.dsl)
 
     /** What is worked out of the source's facets, in the model database of its content type. */
-    val suggestions = SuggestionRepository(databases.model(source.contentType), source.id)
+    /** The drafts of the layer of the source's works ([LayerDrafts][io.github.vlsergey.recommend4me.draft.LayerDrafts]), in the model database of its content type. */
+    val drafts = DraftRepository(databases.model(source.contentType), source.id)
+
+    val suggestions = SuggestionRepository(databases.model(source.contentType), source.id, drafts)
 
     /** The names of the layer of universes: the dictionary's of the content type, whatever the source; none for a type without universes. */
     private val dictionaryNames = if (contentType.universes) UniverseNames(UniverseRepository(databases.typeCorrections(contentType.id), languages)) else null

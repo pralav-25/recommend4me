@@ -18,6 +18,7 @@ import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
 import io.github.vlsergey.recommend4me.universe.CharacterSex
+import io.github.vlsergey.recommend4me.universe.LayerDraft
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
 import io.github.vlsergey.recommend4me.universe.UniverseFacets
 import io.github.vlsergey.recommend4me.universe.Mentions
@@ -280,7 +281,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
         if (rows.isEmpty()) return
         val scores = fitted.on(data.task)
-        val before = if (facet.infer) store.suggestions.ofItems(rows.map { data.ids[it] }) else emptyMap()
+        // What the model made alone before: the drafts are not of its making
+        val before = if (facet.infer) store.suggestions.ofItems(rows.map { data.ids[it] }, withDrafts = false) else emptyMap()
         val changedIds = ArrayList<String>()
         var scored = 0L
         rows.chunked(CHUNK).forEach { chunk ->
@@ -778,7 +780,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val encoder = plugins.textEncoder() ?: return
         val fingerprint = FacetData.fingerprint(
             site, corrections, store.textVectors.hashes(encoder.id, itemId).values, store.parts.windowCount(itemId, encoder.id),
-            store.corrections.completeOf(itemId),
+            store.corrections.completeOf(itemId), store.drafts.ofItems(listOf(itemId))[itemId].orEmpty(),
         )
         val known = facets.associateWith { store.suggestions.fingerprint(itemId, it.key) }
         val stale = facets.filter { known[it] != fingerprint }
@@ -831,18 +833,27 @@ internal class FacetData(
         private const val KEPT = 3
 
         /**
+         * How much a drafted value the user has not confirmed weighs in what the model learns, against
+         * 1 of a value the site or the user gives ([SuggestionTask.draftWeight]): a draft is the
+         * dictionary matched to the site's tags — likely, but no one's word.
+         */
+        const val DRAFT_WEIGHT = 0.5
+
+        /**
          * What an item's chances are made of: every value of it, the user's answers — the facets said
          * to be all named ([complete]) among them — its texts' hashes, its chapters.
          */
         fun fingerprint(
             site: Map<String, List<String>>, corrections: List<FacetCorrection>, textHashes: Collection<String>, windows: Int, complete: Collection<String>,
+            drafts: Collection<LayerDraft>,
         ): Long =
             Vectors.keyOf(
                 site.entries.sortedBy { it.key }.joinToString("\u0001") { (f, keys) -> "$f=" + keys.sorted().joinToString(",") } + "\u0002" +
                     corrections.sortedWith(compareBy({ it.facet }, { it.key })).joinToString("\u0001") { "${it.facet}:${it.key}=${it.added}" } + "\u0002" +
                     textHashes.sorted().joinToString("\u0001") + "\u0002" + windows +
-                    // Only when said: the fingerprints of the items without stay as they were
-                    (if (complete.isEmpty()) "" else "\u0002complete=" + complete.sorted().joinToString(",")),
+                    // Only when said, only when made: the fingerprints of the items without stay as they were
+                    (if (complete.isEmpty()) "" else "\u0002complete=" + complete.sorted().joinToString(",")) +
+                    (if (drafts.isEmpty()) "" else "\u0002drafts=" + drafts.map { "${it.facet}:${it.key}" }.sorted().joinToString(",")),
             )
 
         /**
@@ -876,9 +887,13 @@ internal class FacetData(
             val complete = store.corrections.allComplete()
             // The examples are the facet's values as far as the model learns, the user's answers over
             // them — the facet the user corrects; the site's facet they come from is among the item's inputs
-            val learnt = if (examples == null) site else HashMap(site).also { all ->
+            // And the drafts of the layer ([LayerDrafts][io.github.vlsergey.recommend4me.draft.LayerDrafts]): values the item
+            // has unless the user said otherwise, learnt from with less weight ([DRAFT_WEIGHT]) — they are no one's word
+            val drafts = store.drafts.all()
+            val drafted = drafts.mapValues { (_, list) -> list.filter { it.facet == facet.key }.map { it.key } }.filterValues { it.isNotEmpty() }
+            val learnt = if (examples == null && drafted.isEmpty()) site else HashMap(site).also { all ->
                 ids.forEach { id ->
-                    val own = examples(id)
+                    val own = examples?.invoke(id).orEmpty() + drafted[id].orEmpty()
                     if (own.isNotEmpty()) all[id] = HashMap(site[id].orEmpty()).apply { this[facet.key] = (this[facet.key].orEmpty() + own).distinct().toMutableList() }
                 }
             }
@@ -943,6 +958,8 @@ internal class FacetData(
                 groupings = grouped,
                 lackWeight = lackWeight,
                 examples = ids.map { id -> examples?.invoke(id)?.let(::indices) ?: IntArray(0) },
+                drafts = ids.map { id -> indices(drafted[id].orEmpty()) },
+                draftWeight = DRAFT_WEIGHT,
                 hints = run {
                     // Every collection of values the names are judged among made indices once, one array
                     // shared by all its names: of a universe's characters thousands of names, each of
@@ -963,7 +980,7 @@ internal class FacetData(
             val windowCounts = store.parts.windowCounts(encoder.id)
             val fingerprints = LongArray(ids.size) { i ->
                 val id = ids[i]
-                fingerprint(site[id].orEmpty(), corrections[id].orEmpty(), hashes[id].orEmpty(), windowCounts[id] ?: 0, complete[id].orEmpty())
+                fingerprint(site[id].orEmpty(), corrections[id].orEmpty(), hashes[id].orEmpty(), windowCounts[id] ?: 0, complete[id].orEmpty(), drafts[id].orEmpty())
             }
             // The values chosen from and their groups are part of what is learnt: a universe added or
             // removed, a sex learnt of a character, fits again
@@ -981,7 +998,8 @@ internal class FacetData(
                             ids.indices.sortedBy { ids[it] }.joinToString(",") { i -> ids[i] + ":" + context[i].sorted().joinToString("+") },
                     ),
             )
-            val held = if (examples == null) task.assigned else ids.map { id ->
+            // The item's own values: neither the site's examples nor the drafts
+            val held = if (examples == null && drafted.isEmpty()) task.assigned else ids.map { id ->
                 indices(TagHierarchy.corrected(site[id].orEmpty(), corrections[id].orEmpty(), within)[facet.key].orEmpty())
             }
             return FacetData(ids, values, task, held, allNamed, fingerprints, basis)
