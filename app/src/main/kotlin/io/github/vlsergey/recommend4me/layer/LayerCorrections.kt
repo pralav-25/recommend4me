@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.layer
 
 import io.github.vlsergey.recommend4me.source.Stores
+import io.github.vlsergey.recommend4me.tag.TagRepository
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
@@ -14,7 +15,7 @@ private val log = LoggerFactory.getLogger(LayerCorrections::class.java)
  * THE USER CORRECTS THE APPLICATION'S LAYER, NOT THE SITE. Corrections made of a site's facet before
  * the layer had its own — a site's tag confirmed or taken away — are the user's word of the layer's
  * facet learnt from that one ([FacetDef.examplesFrom][io.github.vlsergey.recommend4me.source.FacetDef.examplesFrom]):
- * moved there on start, by the value's name. Any other correction of a site's facet is left as it
+ * moved there on start, to the normalized tag the site's tag is bound to. Any other correction of a site's facet is left as it
  * is and named in the log, for the user to decide on: no new one can be made.
  */
 @Component
@@ -38,11 +39,12 @@ class LayerCorrections(private val stores: Stores) {
                     return@forEach
                 }
                 val names = s.names(facet)
-                val merges = s.tags.merges(layer.key)
+                val bound = s.tags.bindingsOf(s.id)
                 list.forEach { c ->
                     val name = names[c.key] ?: c.name ?: c.key
-                    val key = LayerValues.keyOf(name, merges)
-                    s.corrections.setFacet(c.itemId, layer.key, key, c.added, name.trim(), now)
+                    // The normalized tag the site's tag is bound to; one the user made up, a new normalized tag of its name
+                    val id = bound[c.key] ?: s.tags.create(name.trim())
+                    s.corrections.setFacet(c.itemId, layer.key, TagRepository.key(id), c.added, name.trim(), now)
                     s.corrections.unsetFacet(c.itemId, facet, c.key)
                     moved++
                 }

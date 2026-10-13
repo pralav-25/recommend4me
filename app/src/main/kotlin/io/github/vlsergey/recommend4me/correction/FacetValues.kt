@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.correction
 
 import io.github.vlsergey.recommend4me.source.SourceStore
+import io.github.vlsergey.recommend4me.tag.TagRepository
 
 /** A value of a facet with its name and how many items have it, the user's corrections counted. */
 data class FacetValueUse(val key: String, val name: String, val items: Int)
@@ -26,10 +27,15 @@ object FacetValues {
 
     /**
      * The key of a value the user names: a value of the facet with that name or key, any case — or
-     * a new one, its name in lower case.
+     * a new one, its name in lower case. Of a facet of tags, a tag of that name, any case — or a
+     * new normalized tag of that name.
      */
     fun keyOf(store: SourceStore, facet: String, name: String): String {
         val wanted = name.trim().lowercase()
+        if (facet in store.tagFacets) {
+            return store.names(facet).entries.firstOrNull { it.value.trim().lowercase() == wanted }?.key
+                ?: TagRepository.key(store.tags.create(name.trim()))
+        }
         return of(store, facet).firstOrNull { it.name.lowercase() == wanted || it.key.lowercase() == wanted }?.key ?: wanted
     }
 }

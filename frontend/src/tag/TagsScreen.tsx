@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftIcon, CombineIcon, Loader2Icon, SearchIcon, SplitIcon, TagsIcon, XIcon } from "lucide-react";
-import { api, ensureOk, unwrap, type ContentTypeInfo, type TagInfo, type TagNameRule, type TagRef, type TagRelation } from "@/api/client";
+import { ArrowLeftIcon, CombineIcon, Loader2Icon, SearchIcon, TagsIcon, XIcon } from "lucide-react";
+import { api, unwrap, type ContentTypeInfo, type TagInfo, type TagNameRule, type TagRef, type TagRelation, type TagVariantInfo } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,10 +39,11 @@ function sitesOf(tag: TagInfo): string[] {
 }
 
 /**
- * THE SCREEN OF THE TAGS: the sites' free tags of a content type, every site's together. A tag of
- * the application is a site's tag by its name, any case; the user merges tags that are one —
- * "Angst" and "Ангст" — names a tag, takes a tag out of one, tells two apart. The application only
- * offers tags alike by the meaning of their names; it merges nothing by itself.
+ * THE SCREEN OF THE TAGS: the normalized tags of a content type's free tags. Every site's tag is
+ * bound to a normalized tag — at first to the one of its name, any case; the user merges tags that
+ * are one — "Angst" and "Ангст" — names a tag, takes a site's tag out of one, puts tags under
+ * others, tells two apart. The application only offers tags alike by the meaning of their names; it
+ * merges nothing by itself.
  */
 export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected?: string }) {
   return (
@@ -58,9 +59,10 @@ export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected
             <TagsIcon className="size-5" /> Теги: {type.title.toLowerCase()}
           </h1>
           <p>
-            Свободные теги всех сайтов вместе. Тег приложения — тег сайта по его названию без учёта регистра: «Магия» одного
-            сайта и «магия» другого — один тег. Одинаковые по смыслу теги («Angst» и «Ангст», «Enemies to Lovers» и «От врагов к
-            возлюбленным») объединяете вы: выберите тег слева — справа будут похожие по смыслу названия, с любого сайта.
+            Нормализованные теги: каждый тег каждого сайта привязан к одному из них — сначала к тегу своего названия без учёта
+            регистра: «Магия» одного сайта и «магия» другого — один тег. Одинаковые по смыслу теги («Angst» и «Ангст», «Enemies to
+            Lovers» и «От врагов к возлюбленным») объединяете вы: выберите тег слева — справа будут похожие по смыслу, с любого
+            сайта, и теги сайтов, привязанные к нему.
           </p>
           <p>
             Название объединённого тега — заданное вами, иначе самое частое у понравившихся вам работ, у оценённых, у всех, иначе
@@ -113,9 +115,9 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
               <span className="min-w-0 flex-1 truncate" title={t.variants.map((v) => v.name).join(" · ")}>
                 {t.name}
               </span>
-              {t.members.length > 0 && (
-                <Badge variant="secondary" title={`Объединены: ${t.members.join(", ")}`}>
-                  <CombineIcon /> {t.members.length + 1}
+              {t.variants.length > 1 && (
+                <Badge variant="secondary" title={`Теги сайтов: ${t.variants.map((v) => v.name).join(", ")}`}>
+                  <CombineIcon /> {t.variants.length}
                 </Badge>
               )}
               <span className="text-xs text-muted-foreground">{sitesOf(t).map((s) => sourceTitle(type, s)).join(", ")}</span>
@@ -174,7 +176,6 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
           <TagName type={type} tag={t} />
           <Related tag={t} />
           <Variants type={type} tag={t} />
-          {t.members.length > 0 && <Members type={type} tag={t} />}
           <Similar type={type} tag={t} />
         </>
       )}
@@ -246,29 +247,29 @@ function TagName({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   );
 }
 
-/** The tag's names as the sites write them, with their works. */
+/** The sites' tags bound to the tag, as the sites write them, with their works. */
 function Variants({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   return (
     <section className="flex flex-col gap-1.5 text-sm">
-      <h2 className="font-semibold">Как пишут сайты</h2>
+      <h2 className="font-semibold">Теги сайтов</h2>
       <table className="w-full">
         <thead className="text-xs text-muted-foreground">
           <tr className="text-left">
             <th className="font-normal">Сайт</th>
             <th className="font-normal">Название</th>
-            <th className="text-right font-normal">Работ</th>
-            <th className="text-right font-normal">Оценено</th>
-            <th className="text-right font-normal">Понравилось</th>
+            <th className="pl-3 text-right font-normal">Работ</th>
+            <th className="hidden pl-3 text-right font-normal sm:table-cell" title="Оценено">Оцен.</th>
+            <th className="hidden pl-3 text-right font-normal sm:table-cell" title="Понравилось">Понр.</th>
           </tr>
         </thead>
         <tbody>
           {tag.variants.map((v) => (
-            <tr key={`${v.source}/${v.name}`} className="border-t">
+            <tr key={`${v.source}/${v.tag}`} className="border-t">
               <td className="py-1 pr-2 text-muted-foreground">{sourceTitle(type, v.source)}</td>
               <td className="py-1 pr-2">{v.name}</td>
-              <td className="py-1 text-right tabular-nums">{v.works}</td>
-              <td className="py-1 text-right tabular-nums">{v.graded}</td>
-              <td className="py-1 text-right tabular-nums">{v.liked}</td>
+              <td className="py-1 pl-3 text-right tabular-nums">{v.works}</td>
+              <td className="hidden py-1 pl-3 text-right tabular-nums sm:table-cell">{v.graded}</td>
+              <td className="hidden py-1 pl-3 text-right tabular-nums sm:table-cell">{v.liked}</td>
             </tr>
           ))}
         </tbody>
@@ -277,45 +278,11 @@ function Variants({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   );
 }
 
-/** The tags merged into this one, each to take out again. */
-function Members({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
-  const changed = useTagsChanged(type.id);
-  const split = useMutation({
-    mutationFn: async (member: string) => ensureOk(await api.POST("/api/types/{type}/tags/split", { params: { path: { type: type.id } }, body: { member } })),
-    onSuccess: () => changed(),
-  });
-  return (
-    <section className="flex flex-col gap-1.5 text-sm">
-      <h2 className="font-semibold">Объединены в этот тег</h2>
-      <ul className="flex flex-wrap gap-1.5">
-        {tag.members.map((m) => (
-          <li key={m}>
-            <Badge variant="outline" className="gap-1 pr-0.5">
-              {m}
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => split.mutate(m)}
-                disabled={split.isPending}
-                title="Вынуть: снова отдельный тег; ваши ответы остаются у этого"
-                aria-label={`Вынуть ${m}`}
-              >
-                <SplitIcon />
-              </Button>
-            </Badge>
-          </li>
-        ))}
-      </ul>
-      {split.isError && <p className="text-destructive">Не получилось: {split.error.message}</p>}
-    </section>
-  );
-}
-
 type Said = Exclude<TagRelation, "NONE">;
 
 /** What the user may say another tag is to this one: a button of every row, and a filter of the rows said so. */
 const RELATIONS: { relation: Said; label: string; title: string; filter: string }[] = [
-  { relation: "MERGED", label: "Объединить", title: "Это тот же тег: его названия на сайтах — названия этого", filter: "объединённые" },
+  { relation: "MERGED", label: "Объединить", title: "Это тот же тег: его теги сайтов — теги этого", filter: "объединённые" },
   { relation: "CHILD", label: "Подтег", title: "Это подтег: работа с ним получает и этот тег; «нет» этого тега — «нет» и ему", filter: "подтеги" },
   { relation: "PARENT", label: "Надтег", title: "Это надтег: работа с этим тегом получает и его; «нет» ему — «нет» и этому", filter: "надтеги" },
   { relation: "DIFFERENT", label: "Разные", title: "Это другой тег, просто похоже назван", filter: "разные" },
@@ -328,11 +295,18 @@ const REFRESH_AFTER_MS = 2000;
 const MOVE_MS = 1000;
 const SETTLE_MS = 1000;
 
+/** The key of a row: a normalized tag's, or a site's tag's bound to this one. */
+function rowKey(tag: string, site?: TagVariantInfo): string {
+  return site ? `site:${site.source}/${site.tag}` : tag;
+}
+
 /**
  * The tags alike this one by the meaning of their names, of one site or another — offered only —
- * and every tag the user said something of to this one. Every row has the user's four words on it:
- * the same tag (merged), a tag under it, a tag above it, a different one; pressed again, taken back.
- * A word said keeps the row in its place among the others; the filters above hide the rows said so.
+ * every tag the user said something of to this one, and every site's tag bound to it. Every row of a
+ * tag has the user's four words on it: the same tag (merged), a tag under it, a tag above it, a
+ * different one; pressed again, taken back. A row of a site's tag is merged: unpressed, the site's
+ * tag is taken out to a tag of its own. A word said keeps the row in its place among the others; the
+ * filters above hide the rows said so.
  *
  * AN ANSWER IS SAVED AT ONCE, THE TABLE READ ANEW AFTER A QUIET: a press is sent at once — the
  * answers one after another, in the order pressed — and shown pressed at once; the table, whose
@@ -404,17 +378,27 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     ]);
   };
 
-  const answer = (other: string, relation: TagRelation) => {
-    setSaid((s) => ({ ...s, [other]: relation }));
+  /** The user's word on a row: of a tag, what it is to this one; of a site's tag, bound to this one or taken out to one of its own. */
+  const answer = (other: string, relation: TagRelation, site?: TagVariantInfo) => {
+    const row = rowKey(other, site);
+    setSaid((s) => ({ ...s, [row]: relation }));
     setError(null);
     const asked = ++presses.current;
+    const path = { params: { path: { type: type.id } } };
     sending.current = sending.current.then(async () => {
       try {
-        unwrap(await api.PUT("/api/types/{type}/tags/relation", { params: { path: { type: type.id } }, body: { tag: tag.key, other, relation } }));
+        if (site)
+          unwrap(
+            await api.PUT("/api/types/{type}/tags/binding", {
+              ...path,
+              body: { source: site.source, siteTag: site.tag, tag: relation === "MERGED" ? tag.key : undefined },
+            }),
+          );
+        else unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: tag.key, other, relation } }));
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         // Not saved: the row shows what the table says again
-        setSaid((s) => Object.fromEntries(Object.entries(s).filter(([k]) => k !== other)));
+        setSaid((s) => Object.fromEntries(Object.entries(s).filter(([k]) => k !== row)));
       }
     });
     clearTimeout(refreshTimer.current);
@@ -474,45 +458,69 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
       {error && <p className="text-destructive">Не сохранилось: {error}</p>}
       {visible && visible.length > 0 && (
         <ul className={cn("flex flex-col divide-y rounded-lg border", locked && "pointer-events-none")} aria-busy={locked}>
-          {visible.map(({ tag: s, similarity, relation: read }) => {
+          {visible.map(({ tag: s, similarity, relation: read, site }) => {
+            const row = rowKey(s.key, site);
             // Pressed as the user said it, before the table is read anew
-            const relation = said[s.key] ?? read;
+            const relation = said[row] ?? read;
+            // The only site's tag of this one is not taken out: the tag would be left with none
+            const only = site !== undefined && tag.variants.length === 1;
             return (
             <li
-              key={s.key}
+              key={row}
               ref={(el) => {
-                if (el) rows.current.set(s.key, el);
-                else rows.current.delete(s.key);
+                if (el) rows.current.set(row, el);
+                else rows.current.delete(row);
               }}
-              className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 bg-background px-3 py-1.5", relation !== "NONE" && "bg-muted/40")}
+              className={cn("flex flex-wrap items-center gap-x-3 gap-y-1.5 bg-background px-3 py-2", relation !== "NONE" && "bg-muted/40")}
             >
-              <a
-                href={screenHref({ kind: "tags", tag: s.key })}
-                onClick={(e) => followLink(e, { kind: "tags", tag: s.key })}
-                className="min-w-0 flex-1 truncate underline-offset-2 hover:underline"
-                title={s.variants.map((v) => `${sourceTitle(type, v.source)}: ${v.name}`).join(" · ")}
-              >
-                {s.name}
-              </a>
-              <span className="text-xs text-muted-foreground">{sitesOf(s).map((x) => sourceTitle(type, x)).join(", ")}</span>
-              <span className="w-10 text-right text-xs tabular-nums text-muted-foreground" title="Работ с тегом">
-                {s.works}
+              {/* The name in full and the sites under it; on a narrow screen the buttons take a line of their own */}
+              <div className="flex min-w-0 flex-1 basis-48 flex-col">
+                {site ? (
+                  <span className="break-words" title="Тег сайта, привязанный к этому тегу">
+                    {site.name}
+                  </span>
+                ) : (
+                  <a
+                    href={screenHref({ kind: "tags", tag: s.key })}
+                    onClick={(e) => followLink(e, { kind: "tags", tag: s.key })}
+                    className="break-words underline-offset-2 hover:underline"
+                    title={s.variants.map((v) => `${sourceTitle(type, v.source)}: ${v.name}`).join(" · ")}
+                  >
+                    {s.name}
+                  </a>
+                )}
+                <span className="truncate text-xs text-muted-foreground">
+                  {site ? `тег сайта ${sourceTitle(type, site.source)}` : sitesOf(s).map((x) => sourceTitle(type, x)).join(", ")}
+                </span>
+              </div>
+              <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                <span title="Работ с тегом">{site ? site.works : s.works}</span>
+                {" · "}
+                <span title="Сходство смысла названий">{Math.round(similarity * 100)}%</span>
               </span>
-              <span className="w-12 text-right text-xs tabular-nums text-muted-foreground" title="Сходство смысла названий">
-                {Math.round(similarity * 100)}%
-              </span>
-              <div className="flex gap-1">
+              <div className="flex w-full gap-1 sm:w-auto">
                 {RELATIONS.map((r) => {
                   const pressed = relation === r.relation;
+                  // A site's tag is bound to a tag or not: under, above, different are said of the tag it is taken out to
+                  const ofTags = site !== undefined && r.relation !== "MERGED";
                   return (
                     <Button
                       key={r.relation}
                       variant={pressed ? "default" : "outline"}
                       size="xs"
+                      className="flex-1 sm:flex-none"
                       aria-pressed={pressed}
-                      disabled={locked}
-                      onClick={() => answer(s.key, pressed ? "NONE" : r.relation)}
-                      title={pressed ? `${r.title}. Нажмите ещё раз, чтобы снять` : r.title}
+                      disabled={locked || ofTags || (only && pressed)}
+                      onClick={() => answer(s.key, pressed ? "NONE" : r.relation, site)}
+                      title={
+                        ofTags
+                          ? "Тег сайта: сначала выньте его в отдельный тег (отожмите «Объединить»)"
+                          : only && pressed
+                            ? "Единственный тег сайта у этого тега"
+                            : pressed
+                              ? `${r.title}. Нажмите ещё раз, чтобы снять`
+                              : r.title
+                      }
                     >
                       {r.label}
                     </Button>

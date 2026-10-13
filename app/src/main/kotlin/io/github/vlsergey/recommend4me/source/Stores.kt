@@ -102,7 +102,7 @@ class SourceStore(
         if (keys.isEmpty()) return emptyMap()
         if (facet in tagFacets) {
             // The tags as the user and every site name them ([TagRepository]); one the user made up, by the source
-            val shown = tags.shown(facet, keys)
+            val shown = tags.shown(keys)
             val rest = keys.filter { it !in shown }
             return (if (rest.isEmpty()) emptyMap() else items.facetNames(facet, rest)) + shown
         }
@@ -111,18 +111,18 @@ class SourceStore(
 
     /** The name of every value of a facet the source or the dictionary names. */
     fun names(facet: String): Map<String, String> {
-        if (facet in tagFacets) return items.facetNames(facet) + tags.shown(facet, null)
+        if (facet in tagFacets) return items.facetNames(facet) + tags.shown(null)
         return dictionaryNames?.of(facet, null) { if (it == null) items.facetNames(facet) else items.facetNames(facet, it) } ?: items.facetNames(facet)
     }
 
     /** The user's word on the sites' free tags of the content type: merged, named, told apart — every source's alike. */
-    val tags = TagRepository(databases.typeCorrections(contentType.id))
+    val tags = TagRepository(databases.typeCorrections(contentType.id), databases.model(contentType.id))
 
     /** The facets of the layer learnt from the sites' tags by their names: the tags the user merges and names. */
     val tagFacets = schema.facets.filter { it.editable && it.examplesFrom != null }.map { it.key }.toSet()
 
     /** The tags under other tags of every facet of tags that has any, read now: facet to its hierarchy. */
-    fun hierarchies(): Map<String, TagHierarchy> = tagFacets.associateWith { TagHierarchy(tags.parents(it)) }.filterValues { !it.empty }
+    fun hierarchies(): Map<String, TagHierarchy> = tagFacets.associateWith { TagHierarchy(tags.parents()) }.filterValues { !it.empty }
 
     /** The source database, for the source's own tables. */
     val sourceDsl = dbs.source.dsl
@@ -135,7 +135,7 @@ class TypeStore(val type: ContentType, val sources: List<SourceStore>, databases
     val links = TypeLinkRepository(databases.typeCorrections(type.id))
     val universes = UniverseRepository(databases.typeCorrections(type.id), languages)
     val searchJudgments = SearchJudgmentRepository(databases.typeCorrections(type.id))
-    val tags = TagRepository(databases.typeCorrections(type.id))
+    val tags = TagRepository(databases.typeCorrections(type.id), databases.model(type.id))
     val models = ModelRepository(databases.model(type.id))
     val embeddings = SetEmbeddingRepository(databases.model(type.id))
     val likeness = MarkLikenessRepository(databases.model(type.id))

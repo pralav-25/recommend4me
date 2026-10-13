@@ -1,5 +1,10 @@
 package io.github.vlsergey.recommend4me.tag
 
+import io.github.vlsergey.recommend4me.database.model.tables.references.TAG_SHOWN_NAME
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_DISTINCT
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_PARENT
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.SITE_TAG
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_DISTINCT
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_MERGE
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_NAME
@@ -14,128 +19,173 @@ enum class NameRule { EXPLICIT, LIKED, GRADED, ALL, ALPHABET }
 /** A tag's name worked out, with the rule that gave it. */
 data class ShownName(val name: String, val rule: NameRule)
 
+/** A tag of a site: its source and the site's own key of it. */
+data class SiteTagRef(val source: String, val tag: String)
+
 /**
- * The user's word on the sites' free tags of a content type, in its database of corrections: the tags merged into
- * others, the names given, the pairs told apart — and the names worked out, kept beside them.
+ * THE NORMALIZED TAGS OF A CONTENT TYPE, in its database of the user's word ([db]): every normalized
+ * tag — an id and the name the user gave it, if any — every site's tag bound to one of them, the
+ * graph of them, the pairs told apart. The names worked out of the sites' are kept apart, in the
+ * type's model database ([model]): they are made again from the rest.
+ *
+ * A tag is known to the application — as a value of the works' tags, in the user's answers — by its
+ * id, written as a text ([key]).
  */
-class TagRepository(private val db: DSLContext) {
+class TagRepository(private val db: DSLContext, private val model: DSLContext) {
 
-    /** Every tag merged into another: member to the tag it is. */
-    fun merges(facet: String): Map<String, String> =
-        db.select(TAG_MERGE.MEMBER, TAG_MERGE.TAG).from(TAG_MERGE).where(TAG_MERGE.FACET.eq(facet)).fetchMap({ it.value1()!! }, { it.value2()!! })
+    // --- The normalized tags and the sites' tags bound to them ---
 
-    /**
-     * [members] merged into [tag], with the tags merged into them before: every one of them points
-     * at [tag] now. [tag] itself is merged into nothing.
-     */
-    fun merge(facet: String, tag: String, members: Collection<String>, now: Instant) = db.transaction { c ->
-        val tx = DSL.using(c)
-        val m = TAG_MERGE
-        val all = members.filter { it != tag }.toSet()
-        tx.deleteFrom(m).where(m.FACET.eq(facet), m.MEMBER.eq(tag)).execute()
-        if (all.isEmpty()) return@transaction
-        // What was merged into a member is merged into the tag now
-        tx.update(m).set(m.TAG, tag).where(m.FACET.eq(facet), m.TAG.`in`(all)).execute()
-        all.forEach { member ->
-            tx.insertInto(m).set(m.FACET, facet).set(m.MEMBER, member).set(m.TAG, tag).set(m.MERGED_AT, now)
-                .onDuplicateKeyUpdate().set(m.TAG, tag).set(m.MERGED_AT, now)
-                .execute()
-        }
-        // A member's own name is no tag's any more
-        tx.deleteFrom(TAG_NAME).where(TAG_NAME.FACET.eq(facet), TAG_NAME.TAG.`in`(all)).execute()
-        // A member's parents and children are the tag's: a link between the tag and a member goes
-        fun of(key: String) = if (key in all) tag else key
-        val p = TAG_PARENT
-        val links = tx.selectFrom(p).where(p.FACET.eq(facet), p.CHILD.`in`(all).or(p.PARENT.`in`(all))).fetch()
-        tx.deleteFrom(p).where(p.FACET.eq(facet), p.CHILD.`in`(all).or(p.PARENT.`in`(all))).execute()
-        links.map { of(it.child!!) to of(it.parent!!) }.filter { (c, par) -> c != par }.distinct().forEach { (c, par) ->
-            tx.insertInto(p).set(p.FACET, facet).set(p.CHILD, c).set(p.PARENT, par).set(p.LINKED_AT, now).onDuplicateKeyIgnore().execute()
-        }
-        val d = TAG_DISTINCT
-        val told = tx.selectFrom(d).where(d.FACET.eq(facet), d.FIRST_TAG.`in`(all).or(d.OTHER_TAG.`in`(all))).fetch()
-        tx.deleteFrom(d).where(d.FACET.eq(facet), d.FIRST_TAG.`in`(all).or(d.OTHER_TAG.`in`(all))).execute()
-        told.map { pair(of(it.firstTag!!), of(it.otherTag!!)) }.filter { (a, b) -> a != b }.distinct().forEach { (a, b) ->
-            tx.insertInto(d).set(d.FACET, facet).set(d.FIRST_TAG, a).set(d.OTHER_TAG, b).set(d.SAID_AT, now).onDuplicateKeyIgnore().execute()
-        }
-    }
+    /** Every site's tag and the normalized tag it is bound to. */
+    fun bindings(): Map<SiteTagRef, Long> =
+        db.select(SITE_TAG.SOURCE, SITE_TAG.TAG, SITE_TAG.NORMALIZED).from(SITE_TAG).fetch()
+            .associate { SiteTagRef(it.value1()!!, it.value2()!!) to it.value3()!! }
 
-    /** Every tag's parents: child to its parents. */
-    fun parents(facet: String): Map<String, Set<String>> =
-        db.select(TAG_PARENT.CHILD, TAG_PARENT.PARENT).from(TAG_PARENT).where(TAG_PARENT.FACET.eq(facet)).fetch()
-            .groupBy({ it.value1()!! }, { it.value2()!! }).mapValues { it.value.toSet() }
+    /** The site's tags of one [source] and the normalized tags they are bound to: site's key to id. */
+    fun bindingsOf(source: String): Map<String, Long> =
+        db.select(SITE_TAG.TAG, SITE_TAG.NORMALIZED).from(SITE_TAG).where(SITE_TAG.SOURCE.eq(source)).fetchMap({ it.value1()!! }, { it.value2()!! })
 
-    /** [child] put under [parent] — or, [linked] false, taken from under it. */
-    fun setParent(facet: String, child: String, parent: String, linked: Boolean, now: Instant) {
-        val p = TAG_PARENT
-        if (linked) {
-            db.insertInto(p).set(p.FACET, facet).set(p.CHILD, child).set(p.PARENT, parent).set(p.LINKED_AT, now).onDuplicateKeyIgnore().execute()
-        } else {
-            db.deleteFrom(p).where(p.FACET.eq(facet), p.CHILD.eq(child), p.PARENT.eq(parent)).execute()
-        }
-    }
+    /** A new normalized tag, named by the user when [name] is given; its id. */
+    fun create(name: String? = null): Long =
+        db.insertInto(NORMALIZED_TAG).set(NORMALIZED_TAG.NAME, name?.take(1000)).returningResult(NORMALIZED_TAG.ID).fetchOne()!!.value1()!!
 
-    /** [member] taken out of the tag it was merged into: a tag of its own again. */
-    fun split(facet: String, member: String): Boolean =
-        db.deleteFrom(TAG_MERGE).where(TAG_MERGE.FACET.eq(facet), TAG_MERGE.MEMBER.eq(member)).execute() > 0
+    fun exists(id: Long): Boolean = db.fetchExists(NORMALIZED_TAG, NORMALIZED_TAG.ID.eq(id))
 
-    /** The name the user gave [tag]; null takes it back. */
-    fun name(facet: String, tag: String, name: String?) {
-        val n = TAG_NAME
-        db.insertInto(n).set(n.FACET, facet).set(n.TAG, tag).set(n.NAME, name?.take(1000))
-            .onDuplicateKeyUpdate().set(n.NAME, name?.take(1000))
+    /** Every normalized tag. */
+    fun ids(): Set<Long> = db.select(NORMALIZED_TAG.ID).from(NORMALIZED_TAG).fetchSet { it.value1()!! }
+
+    /** [site] bound to the normalized tag [id], whatever it was bound to before. */
+    fun bind(site: SiteTagRef, id: Long, now: Instant) {
+        db.insertInto(SITE_TAG).set(SITE_TAG.SOURCE, site.source).set(SITE_TAG.TAG, site.tag.take(500)).set(SITE_TAG.NORMALIZED, id).set(SITE_TAG.BOUND_AT, now)
+            .onDuplicateKeyUpdate().set(SITE_TAG.NORMALIZED, id).set(SITE_TAG.BOUND_AT, now)
             .execute()
     }
 
-    /** The names the user gave, by tag. */
-    fun explicitNames(facet: String): Map<String, String> =
-        db.select(TAG_NAME.TAG, TAG_NAME.NAME).from(TAG_NAME).where(TAG_NAME.FACET.eq(facet), TAG_NAME.NAME.isNotNull)
-            .fetchMap({ it.value1()!! }, { it.value2()!! })
-
-    /** What the [tags] are shown by: the user's name, else the one worked out last; every tag's when null. */
-    fun shown(facet: String, tags: Collection<String>?): Map<String, String> {
-        val n = TAG_NAME
-        fun read(only: Collection<String>?) = db.select(n.TAG, n.NAME, n.SHOWN).from(n)
-            .where(n.FACET.eq(facet), only?.let { n.TAG.`in`(it) } ?: DSL.noCondition()).fetch()
-        val rows = if (tags == null) read(null) else tags.distinct().chunked(BATCH).flatMap(::read)
-        return rows.mapNotNull { r -> (r.value2() ?: r.value3())?.let { r.value1()!! to it } }.toMap()
-    }
-
-    /** The names worked out of every tag replaced by [named]: a tag no longer named loses its worked-out name, keeps the user's. */
-    fun replaceShown(facet: String, named: Map<String, ShownName>) = db.transaction { c ->
+    /**
+     * The normalized tag [from] merged into [into]: every site's tag of it bound to [into], its links
+     * of the graph and its pairs told apart moved to [into] — none of [into] with itself — and [from]
+     * gone. The user's answers on it are moved by the caller: they are in the sources' databases.
+     */
+    fun merge(from: Long, into: Long, now: Instant) = db.transaction { c ->
         val tx = DSL.using(c)
-        val n = TAG_NAME
-        tx.update(n).setNull(n.SHOWN).setNull(n.RULE).where(n.FACET.eq(facet)).execute()
-        tx.deleteFrom(n).where(n.FACET.eq(facet), n.NAME.isNull).execute()
-        named.entries.chunked(BATCH).forEach { chunk ->
-            chunk.forEach { (tag, s) ->
-                tx.insertInto(n).set(n.FACET, facet).set(n.TAG, tag).set(n.SHOWN, s.name.take(1000)).set(n.RULE, s.rule.name)
-                    .onDuplicateKeyUpdate().set(n.SHOWN, s.name.take(1000)).set(n.RULE, s.rule.name)
-                    .execute()
-            }
+        tx.update(SITE_TAG).set(SITE_TAG.NORMALIZED, into).set(SITE_TAG.BOUND_AT, now).where(SITE_TAG.NORMALIZED.eq(from)).execute()
+        val p = NORMALIZED_TAG_PARENT
+        val links = tx.selectFrom(p).where(p.CHILD.eq(from).or(p.PARENT.eq(from))).fetch()
+            .map { (if (it.child == from) into else it.child!!) to (if (it.parent == from) into else it.parent!!) }
+        val d = NORMALIZED_TAG_DISTINCT
+        val told = tx.selectFrom(d).where(d.FIRST_TAG.eq(from).or(d.OTHER_TAG.eq(from))).fetch()
+            .map { pair(if (it.firstTag == from) into else it.firstTag!!, if (it.otherTag == from) into else it.otherTag!!) }
+        // [from]'s links and pairs go with it, as it goes; the ones moved to [into] come back
+        tx.deleteFrom(NORMALIZED_TAG).where(NORMALIZED_TAG.ID.eq(from)).execute()
+        links.filter { (child, parent) -> child != parent }.distinct().forEach { (child, parent) ->
+            tx.insertInto(p).set(p.CHILD, child).set(p.PARENT, parent).set(p.LINKED_AT, now).onDuplicateKeyIgnore().execute()
+        }
+        told.filter { (a, b) -> a != b }.distinct().forEach { (a, b) ->
+            tx.insertInto(d).set(d.FIRST_TAG, a).set(d.OTHER_TAG, b).set(d.SAID_AT, now).onDuplicateKeyIgnore().execute()
         }
     }
 
-    /** Every pair of tags the user said are different, in the order of their keys. */
-    fun distinct(facet: String): Set<Pair<String, String>> =
-        db.select(TAG_DISTINCT.FIRST_TAG, TAG_DISTINCT.OTHER_TAG).from(TAG_DISTINCT).where(TAG_DISTINCT.FACET.eq(facet))
+    // --- Names ---
+
+    /** The name the user gives the normalized tag [id]; null takes it back. */
+    fun name(id: Long, name: String?) {
+        db.update(NORMALIZED_TAG).set(NORMALIZED_TAG.NAME, name?.take(1000)).where(NORMALIZED_TAG.ID.eq(id)).execute()
+    }
+
+    /** The names the user gave, by id. */
+    fun explicitNames(): Map<Long, String> =
+        db.select(NORMALIZED_TAG.ID, NORMALIZED_TAG.NAME).from(NORMALIZED_TAG).where(NORMALIZED_TAG.NAME.isNotNull)
+            .fetchMap({ it.value1()!! }, { it.value2()!! })
+
+    /** What the tags of [keys] are shown by — the user's name, else the one worked out last — of every tag when null; by key. */
+    fun shown(keys: Collection<String>?): Map<String, String> {
+        val ids = keys?.mapNotNull(::idOf)
+        if (ids != null && ids.isEmpty()) return emptyMap()
+        val out = HashMap<String, String>()
+        fun worked(only: List<Long>?) = model.select(TAG_SHOWN_NAME.TAG, TAG_SHOWN_NAME.NAME).from(TAG_SHOWN_NAME)
+            .where(only?.let { TAG_SHOWN_NAME.TAG.`in`(it) } ?: DSL.noCondition()).fetch()
+        fun given(only: List<Long>?) = db.select(NORMALIZED_TAG.ID, NORMALIZED_TAG.NAME).from(NORMALIZED_TAG)
+            .where(NORMALIZED_TAG.NAME.isNotNull, only?.let { NORMALIZED_TAG.ID.`in`(it) } ?: DSL.noCondition()).fetch()
+        val chunks = ids?.distinct()?.chunked(BATCH) ?: listOf(null)
+        chunks.forEach { chunk -> worked(chunk).forEach { out[key(it.value1()!!)] = it.value2()!! } }
+        chunks.forEach { chunk -> given(chunk).forEach { out[key(it.value1()!!)] = it.value2()!! } }
+        return out
+    }
+
+    /** The name a new tag is shown by until the names are worked out again: of the site's tag it is made for. */
+    fun showAs(id: Long, name: ShownName) {
+        model.insertInto(TAG_SHOWN_NAME).set(TAG_SHOWN_NAME.TAG, id).set(TAG_SHOWN_NAME.NAME, name.name.take(1000)).set(TAG_SHOWN_NAME.RULE, name.rule.name)
+            .onDuplicateKeyIgnore().execute()
+    }
+
+    /** The names worked out of every tag replaced by [named]: kept in the model database, made again from the rest. */
+    fun replaceShown(named: Map<Long, ShownName>) = model.transaction { c ->
+        val tx = DSL.using(c)
+        tx.deleteFrom(TAG_SHOWN_NAME).execute()
+        named.entries.chunked(BATCH).forEach { chunk ->
+            val batch = tx.batch(tx.insertInto(TAG_SHOWN_NAME, TAG_SHOWN_NAME.TAG, TAG_SHOWN_NAME.NAME, TAG_SHOWN_NAME.RULE).values(null as Long?, null as String?, null as String?))
+            chunk.forEach { (id, s) -> batch.bind(id, s.name.take(1000), s.rule.name) }
+            batch.execute()
+        }
+    }
+
+    // --- The graph and the pairs told apart ---
+
+    /** Every tag's parents: child to its parents, by key. */
+    fun parents(): Map<String, Set<String>> =
+        db.select(NORMALIZED_TAG_PARENT.CHILD, NORMALIZED_TAG_PARENT.PARENT).from(NORMALIZED_TAG_PARENT).fetch()
+            .groupBy({ key(it.value1()!!) }, { key(it.value2()!!) }).mapValues { it.value.toSet() }
+
+    /** [child] put under [parent] — or, [linked] false, taken from under it. */
+    fun setParent(child: Long, parent: Long, linked: Boolean, now: Instant) {
+        val p = NORMALIZED_TAG_PARENT
+        if (linked) db.insertInto(p).set(p.CHILD, child).set(p.PARENT, parent).set(p.LINKED_AT, now).onDuplicateKeyIgnore().execute()
+        else db.deleteFrom(p).where(p.CHILD.eq(child), p.PARENT.eq(parent)).execute()
+    }
+
+    /** Every pair of tags the user said are different, the smaller id first. */
+    fun distinct(): Set<Pair<Long, Long>> =
+        db.select(NORMALIZED_TAG_DISTINCT.FIRST_TAG, NORMALIZED_TAG_DISTINCT.OTHER_TAG).from(NORMALIZED_TAG_DISTINCT)
             .fetch { it.value1()!! to it.value2()!! }.toSet()
 
     /** The user's word that [a] and [b] are different tags — or, [different] false, its taking back. */
-    fun setDistinct(facet: String, a: String, b: String, different: Boolean, now: Instant) {
+    fun setDistinct(a: Long, b: Long, different: Boolean, now: Instant) {
         val (x, y) = pair(a, b)
-        val d = TAG_DISTINCT
-        if (different) {
-            db.insertInto(d).set(d.FACET, facet).set(d.FIRST_TAG, x).set(d.OTHER_TAG, y).set(d.SAID_AT, now)
-                .onDuplicateKeyIgnore().execute()
-        } else {
-            db.deleteFrom(d).where(d.FACET.eq(facet), d.FIRST_TAG.eq(x), d.OTHER_TAG.eq(y)).execute()
-        }
+        val d = NORMALIZED_TAG_DISTINCT
+        if (different) db.insertInto(d).set(d.FIRST_TAG, x).set(d.OTHER_TAG, y).set(d.SAID_AT, now).onDuplicateKeyIgnore().execute()
+        else db.deleteFrom(d).where(d.FIRST_TAG.eq(x), d.OTHER_TAG.eq(y)).execute()
+    }
+
+    // --- The tables before the normalized tags: read once to move what they say, then emptied ---
+
+    /** Whether anything is left of the tables before the normalized tags. */
+    fun legacyLeft(): Boolean =
+        db.fetchExists(TAG_MERGE) || db.fetchExists(TAG_NAME) || db.fetchExists(TAG_PARENT) || db.fetchExists(TAG_DISTINCT)
+
+    /** A tag's name lowercased to the one it was merged into. */
+    fun legacyMerges(): Map<String, String> = db.select(TAG_MERGE.MEMBER, TAG_MERGE.TAG).from(TAG_MERGE).fetchMap({ it.value1()!! }, { it.value2()!! })
+
+    fun legacyNames(): Map<String, String> =
+        db.select(TAG_NAME.TAG, TAG_NAME.NAME).from(TAG_NAME).where(TAG_NAME.NAME.isNotNull).fetchMap({ it.value1()!! }, { it.value2()!! })
+
+    fun legacyParents(): List<Pair<String, String>> = db.select(TAG_PARENT.CHILD, TAG_PARENT.PARENT).from(TAG_PARENT).fetch { it.value1()!! to it.value2()!! }
+
+    fun legacyDistinct(): List<Pair<String, String>> = db.select(TAG_DISTINCT.FIRST_TAG, TAG_DISTINCT.OTHER_TAG).from(TAG_DISTINCT).fetch { it.value1()!! to it.value2()!! }
+
+    fun clearLegacy() = db.transaction { c ->
+        val tx = DSL.using(c)
+        listOf(TAG_MERGE, TAG_NAME, TAG_PARENT, TAG_DISTINCT).forEach { tx.deleteFrom(it).execute() }
     }
 
     companion object {
         private const val BATCH = 1000
 
-        /** A pair of tags in the order of their keys. */
-        fun pair(a: String, b: String): Pair<String, String> = if (a <= b) a to b else b to a
+        /** A normalized tag as a value of the works' tags: its id written out. */
+        fun key(id: Long): String = id.toString()
+
+        /** The id of a value of the works' tags; null for one that is no normalized tag. */
+        fun idOf(key: String): Long? = key.toLongOrNull()
+
+        /** A pair of tags, the smaller id first. */
+        fun pair(a: Long, b: Long): Pair<Long, Long> = if (a <= b) a to b else b to a
     }
 }

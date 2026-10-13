@@ -181,33 +181,42 @@ work's values, the user's answers, its texts and chapters). The suggester is fit
 whenever anything it learns from changes, and every work is then worked out again; a work a page
 asks for that never had chances gets them at once, by the weights fitted last.
 
-## The sites' tags merged
+## The normalized tags
 
-A tag of the application's layer ("Теги") is a site's free tag by its name, any case: "Магия" of
-ficbook and "магия" of author.today are one. Tags that mean one thing under other names — "Angst"
-of Archive of Our Own and "Ангст" of ficbook — are merged by the user on the screen of the tags;
-the application only offers the tags alike by the meaning of their names (their names encoded as
-the search encodes short texts, a tag the mean of its names' directions, alike by the cosine), of
-one site or of another, and the user may say two tags are different, which are then not offered
-again. A merge points the member's key at the tag's (`tag_merge`, in the database of the type's
-corrections); the user's answers on the members become answers on the tag, the newest standing of
-a work answered on more than one. A member taken out is a tag of its own again; the answers stay
-with the tag.
+The application's layer of tags ("Теги") is of normalized tags, kept in the database of the type's
+corrections: a normalized tag is an id and the name the user gave it, if any (`normalized_tag`);
+every tag of every site — its source and the site's own key of it — is bound to exactly one
+(`site_tag`, keyed by the two). A work's values of the layer are the ids, written out. A site's tag
+seen first is bound to the normalized tag the sites' tags of its name are bound to, any case —
+"Магия" of ficbook and "магия" of author.today one tag — when there is exactly one such, else to a
+new normalized tag of its own (`TagNormalization`, as the works are captured).
 
-The user also puts a tag of the application under another (`tag_parent`; the graph is of the tags
-of the application, never of the sites' tags): a work with the child has the parent — shown on its
-card as given by the child — and a work the user said has not the parent has not the child either,
-which is then not shown; the "has not" of a tag above wins over a "has" of one under it. The model
-of the grades reads the works' tags so, and the suggester of the tags learns from the answers so
+Tags that mean one thing under other names — "Angst" of Archive of Our Own and "Ангст" of ficbook —
+are merged by the user on the screen of the tags; the application only offers the tags alike by
+the meaning of their names (the sites' tags' names encoded as the search encodes short texts, a
+tag the mean of its sites' tags' directions, alike by the cosine), of one site or of another, and
+the user may say two tags are different (`normalized_tag_distinct`). Merging is binding: the
+sites' tags of one normalized tag are bound to the other, the user's answers on it become answers
+on the other — the newest standing of a work answered on both — its links go with it, and it is
+gone. A site's tag taken out is bound to a new normalized tag of its own; the answers stay with the
+tag they were given on.
+
+The graph is of normalized tags, in a table of its own (`normalized_tag_parent`), and a tag may
+have several parents: a work with the child has every parent — shown on its card as given by the
+child — and a work the user said has not a parent has not its children either, which are then not
+shown; the "has not" of a tag above wins over a "has" of one under it. The model of the grades
+reads the works' tags so, and the suggester of the tags learns from the answers so
 (`TagHierarchy`). No tag is put under one of its own descendants. On a tag's page every alike tag,
 and every tag the user said something of to it, has four words to press and press again: the same
-tag (merged), a tag under it, a tag above it, a different one.
+tag (merged), a tag under it, a tag above it, a different one; every site's tag bound to it is a
+row of its own, merged, unpressed to take it out.
 
-A tag is shown by the name the user gave it; else by its name on the sites most used by the works
+A tag is shown by the name the user gave it; else by its sites' tags' name most used by the works
 the user liked (graded above the middle of the scale), by the works graded, by all its works;
 else by the first by the alphabet. The names are worked out again a few seconds after the works or
-their grades change and kept in `tag_name`; every source reads them from there, as the universes'
-names are read from their dictionary, never from a copy of its own.
+their grades change and kept in the type's model database (`tag_shown_name`): made of the rest, not
+the user's word. Every source reads them from there, as the universes' names are read from their
+dictionary, never from a copy of its own.
 
 ## Universes
 

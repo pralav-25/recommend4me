@@ -10,8 +10,8 @@ import io.github.vlsergey.recommend4me.api.model.TextRange
 import io.github.vlsergey.recommend4me.correction.Corrected
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
 import io.github.vlsergey.recommend4me.correction.FacetCorrection
-import io.github.vlsergey.recommend4me.layer.LayerValues
 import io.github.vlsergey.recommend4me.rating.Rating
+import io.github.vlsergey.recommend4me.tag.TagRepository
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
@@ -85,8 +85,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val offered = if (!(def.infer && def.editable) || def.key in complete) emptyList() else {
                 val fromSite = siteKeys + def.examplesFrom?.let { from ->
                     val keys = site[from].orEmpty()
-                    val merges = store.tags.merges(def.key)
-                    store.names(from, keys).let { n -> keys.map { LayerValues.keyOf(n[it] ?: it, merges) } }
+                    val bound = store.tags.bindingsOf(store.id)
+                    keys.mapNotNull { bound[it]?.let(TagRepository::key) }
                 }.orEmpty()
                 ModelValues.offered(
                     own.filterValues { !it.had && it.key !in out && it.key !in negated }.mapValues { it.value.chance },

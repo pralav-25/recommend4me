@@ -36,13 +36,13 @@ import io.github.vlsergey.recommend4me.api.model.Inclusion
 import io.github.vlsergey.recommend4me.api.model.LocalName
 import io.github.vlsergey.recommend4me.api.model.FacetRole as ApiFacetRole
 import io.github.vlsergey.recommend4me.api.model.UniverseRef
-import io.github.vlsergey.recommend4me.api.model.TagDistinctRequest
-import io.github.vlsergey.recommend4me.api.model.TagMergeRequest
+import io.github.vlsergey.recommend4me.api.model.TagBindingRequest
 import io.github.vlsergey.recommend4me.api.model.TagNameRequest
 import io.github.vlsergey.recommend4me.api.model.TagNameRule
 import io.github.vlsergey.recommend4me.api.model.TagRelation
 import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
-import io.github.vlsergey.recommend4me.api.model.TagSplitRequest
+import io.github.vlsergey.recommend4me.tag.SiteTagRef
+import io.github.vlsergey.recommend4me.tag.TagRepository
 import io.github.vlsergey.recommend4me.tag.TagsController
 import io.github.vlsergey.recommend4me.universe.UniverseCatalogue
 import io.github.vlsergey.recommend4me.universe.UniverseCharacter
@@ -222,13 +222,16 @@ class SiteTest {
         // The user's tags of some works the site left untagged: where the work's tags part from the
         // site's, the model learns what the texts say of them
         listOf(5, 10, 15).forEach { k ->
-            listOf("space", "ships").forEach { corrections.correctFacet("site", "s$k", FacetCorrection(facet = "tags", added = true, key = it)) }
-            listOf("dragons", "magic").forEach { corrections.correctFacet("site", "d$k", FacetCorrection(facet = "tags", added = true, key = it)) }
+            listOf("space", "ships").forEach { corrections.correctFacet("site", "s$k", FacetCorrection(facet = "tags", added = true, key = tag(it))) }
+            listOf("dragons", "magic").forEach { corrections.correctFacet("site", "d$k", FacetCorrection(facet = "tags", added = true, key = tag(it))) }
         }
         val store = stores.source("site")!!
         textVectors.refresh(store)
         suggestions.refresh(store)
     }
+
+    /** The key of the normalized tag the site's tag [site] is bound to. */
+    private fun tag(site: String) = TagRepository.key(stores.type("books")!!.tags.bindings().getValue(SiteTagRef("site", site)))
 
     @Test
     fun `a work's page and a list show what the application knows, and the work's tags are corrected on them`() {
@@ -245,8 +248,8 @@ class SiteTest {
 
         // The work's tags are worked out from the site's: the untagged work is given those of its kind
         val given = item.facets.single { it.facet == "tags" }.propertyValues
-        assertTrue(given.any { it.key == "space" && it.inferred == true }, "given $given")
-        assertTrue(given.none { it.key == "dragons" && it.offered != true }, "given $given")
+        assertTrue(given.any { it.key == tag("space") && it.inferred == true }, "given $given")
+        assertTrue(given.none { it.key == tag("dragons") && it.offered != true }, "given $given")
         // Beside what it is given, the likeliest others are offered: three the site does not give, at least
         assertEquals(3, given.count { it.corrected == null }, "given $given")
         // Asked for more: every other value of the facet, the likeliest first — the offered ones
@@ -271,32 +274,35 @@ class SiteTest {
         assertEquals(true, worked.editable)
         // A value not given at all is less likely than not
         fun chanceOf(key: String) = worked.propertyValues.find { it.key == key }?.chance ?: 0.0
-        assertTrue(chanceOf("space") > 0.5 && chanceOf("ships") > 0.5, "the work's tags ${worked.propertyValues}")
-        assertTrue(chanceOf("magic") < chanceOf("space") && chanceOf("magic") < chanceOf("ships"), "magic on a space work: ${worked.propertyValues}")
+        assertTrue(chanceOf(tag("space")) > 0.5 && chanceOf(tag("ships")) > 0.5, "the work's tags ${worked.propertyValues}")
+        assertTrue(
+            chanceOf(tag("magic")) < chanceOf(tag("space")) && chanceOf(tag("magic")) < chanceOf(tag("ships")),
+            "magic on a space work: ${worked.propertyValues}",
+        )
 
         // The site's word is not corrected
         val refused = assertThrows<ResponseStatusException> { corrections.correctFacet("site", "x1", FacetCorrection(facet = "tag", added = true, key = "space")) }
         assertTrue(refused.reason!!.contains("слово сайта"), refused.reason)
 
         // The work's tags are: a value given and confirmed is the user's, one taken away is shown so
-        corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, key = "space"))
-        corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = false, key = "ships"))
+        corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, key = tag("space")))
+        corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = false, key = tag("ships")))
         val facets = pages.getPage("https://site.example/work/x1").body!!.item!!.facets.single { it.facet == "tags" }.propertyValues
-        assertEquals(FacetValueInfo.Corrected.CONFIRMED, facets.single { it.key == "space" }.corrected)
+        assertEquals(FacetValueInfo.Corrected.CONFIRMED, facets.single { it.key == tag("space") }.corrected)
         // A value taken away is still shown, crossed out, with the model's chance to keep its place by
-        val ships = facets.single { it.key == "ships" }
+        val ships = facets.single { it.key == tag("ships") }
         assertEquals(FacetValueInfo.Corrected.REMOVED, ships.corrected, "ships taken away: $facets")
         assertTrue(ships.chance != null, "ships keeps its chance: $ships")
 
-        // A value added by its name finds the key of the sites' value, any case; a new one gets its name in lower case
+        // A tag added by its name finds the tag of that name, any case; a new one is a new normalized tag of that name
         corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, name = "MAGIC"))
         corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, name = "Космос"))
         val values = items.getItem("site", "x1").body!!.allFacets.single { it.facet == "tags" }.propertyValues
         // Added — or confirmed, where the model gave it too
         val answeredYes = setOf(FacetValueInfo.Corrected.ADDED, FacetValueInfo.Corrected.CONFIRMED)
-        assertEquals(setOf("space", "magic", "космос"), values.filter { it.corrected in answeredYes }.map { it.key }.toSet())
-        assertEquals("Космос", values.single { it.key == "космос" }.name)
-        assertEquals(listOf("magic"), items.listFacetValues("site", "tags", "mag", 10).body!!.map { it.key })
+        val space = values.single { it.name == "Космос" }.key
+        assertEquals(setOf(tag("space"), tag("magic"), space), values.filter { it.corrected in answeredYes }.map { it.key }.toSet())
+        assertEquals(listOf(tag("magic")), items.listFacetValues("site", "tags", "mag", 10).body!!.map { it.key })
 
         // The prediction is told part by part, each part with its features; a page of the site gets the parts alone
         (3..8).forEach { k ->
@@ -335,7 +341,7 @@ class SiteTest {
         corrections.correctFacet("site", "s4", FacetCorrection(facet = "tags", added = true, name = "Совсем новый тег"))
         corrections.correctFacet("site", "s3", FacetCorrection(facet = "tags", added = true, name = "Совсем новый тег"))
         val graded = pages.getPage("https://site.example/work/s3").body!!.item!!
-        assertTrue(graded.facets.single { it.facet == "tags" }.propertyValues.any { it.key == "совсем новый тег" }, "s3 ${graded.facets}")
+        assertTrue(graded.facets.single { it.facet == "tags" }.propertyValues.any { it.name == "Совсем новый тег" }, "s3 ${graded.facets}")
 
         // The other works of the series, with the user's grades
         capture("s1|Space 1|space|Starships cross the galaxy 1|Pilot/Captain|Галактика")
@@ -548,83 +554,102 @@ class SiteTest {
     }
 
     @Test
-    fun `the user merges the sites' tags into one, names it, takes one out and tells tags apart`() {
+    fun `every site's tag is bound to a normalized tag, the user merges them, names one, takes a site's tag out and links them`() {
         capture("t1|Hull one|hulls,cargo|Ships carry cargo between stations|")
         capture("t2|Hull two|starhulls|Freighters carry cargo between stations|")
         capture("t3|Hull three|hulls|A hull breach in deep space|")
-        // The user's answer on a tag that will be merged
-        corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = "cargo"))
-        // Named as the tag is named: the answer moved on a merge keeps its name, and is no member of the tag for it
-        corrections.correctFacet("site", "t3", FacetCorrection(facet = "tags", added = true, key = "starhulls", name = "Starhulls"))
+        val type = stores.type("books")!!
+        // Every site's tag bound as it is captured, each to a normalized tag of its own name
+        fun tagOf(site: String) = TagRepository.key(type.tags.bindings().getValue(SiteTagRef("site", site)))
+        val hulls = tagOf("hulls")
+        val starhulls = tagOf("starhulls")
+        val cargo = tagOf("cargo")
+        assertEquals(3, setOf(hulls, starhulls, cargo).size)
+        // The user's answer on a tag that will be merged into another
+        corrections.correctFacet("site", "t3", FacetCorrection(facet = "tags", added = true, key = starhulls))
         items.rateItem("site", "t2", RatingRequest(5))
         textVectors.refresh(stores.source("site")!!)
 
-        // Offered alike: the other tags of the sites, with how alike their names are
-        val similar = tagsApi.listSimilarTags("books", "hulls", 50).body!!
-        assertTrue(similar.any { it.tag.key == "starhulls" }, "similar ${similar.map { it.tag.key }}")
+        // Offered alike: the other tags of the sites, with how alike their names are; the site's own tag of it, merged
+        val similar = tagsApi.listSimilarTags("books", hulls, 50).body!!
+        assertTrue(similar.any { it.tag.key == starhulls && it.site == null }, "similar ${similar.map { it.tag.key }}")
+        assertEquals(listOf("hulls"), similar.filter { it.site != null }.map { it.site!!.tag })
         // Nothing is merged by itself
-        assertEquals(emptyList(), tagsApi.getTag("books", "hulls").body!!.members)
+        assertEquals(listOf("hulls"), tagsApi.getTag("books", hulls).body!!.variants.map { it.tag })
 
-        val merged = tagsApi.mergeTags("books", TagMergeRequest(listOf("hulls", "starhulls"))).body!!
-        assertEquals("hulls", merged.key)
-        assertEquals(listOf("starhulls"), merged.members)
+        // Merged: the site's tags of the other bound to this one, the other no more
+        val merged = tagsApi.relateTags("books", TagRelationRequest(hulls, starhulls, TagRelation.MERGED)).body!!
+        assertEquals(hulls, merged.key)
+        assertEquals(setOf("hulls", "starhulls"), merged.variants.map { it.tag }.toSet())
         assertEquals(3, merged.works)
+        assertEquals(hulls, tagOf("starhulls"))
+        assertEquals(404, tagsApi.getTag("books", starhulls).statusCode.value())
         // Named by the name of the liked work: t2, graded 5, has "Starhulls"
         assertEquals("Starhulls", merged.name)
         assertEquals(TagNameRule.LIKED, merged.rule)
-        // The answer on the member is the tag's now
+        // The answer on the tag merged is the tag's now
         val t3 = stores.source("site")!!.corrections.facetsOf("t3").filter { it.facet == "tags" }
-        assertEquals(listOf("hulls" to true), t3.map { it.key to it.added })
+        assertEquals(listOf(hulls to true), t3.map { it.key to it.added })
         // The work's tags show the tag by its name, whichever site's name it has
-        val named = tagsApi.nameTag("books", TagNameRequest("hulls", "Корпуса")).body!!
+        val named = tagsApi.nameTag("books", TagNameRequest(hulls, "Корпуса")).body!!
         assertEquals("Корпуса", named.name)
         assertEquals(TagNameRule.EXPLICIT, named.rule)
-        val shown = items.getItem("site", "t3").body!!.allFacets.single { it.facet == "tags" }.propertyValues.single { it.key == "hulls" }
+        val shown = items.getItem("site", "t3").body!!.allFacets.single { it.facet == "tags" }.propertyValues.single { it.key == hulls }
         assertEquals("Корпуса", shown.name)
         // The name taken back: the sites' names decide again
-        assertEquals(TagNameRule.LIKED, tagsApi.nameTag("books", TagNameRequest("hulls")).body!!.rule)
+        assertEquals(TagNameRule.LIKED, tagsApi.nameTag("books", TagNameRequest(hulls)).body!!.rule)
 
-        // Taken out, a tag of its own again; the answer stays with the tag
-        assertEquals(204, tagsApi.splitTag("books", TagSplitRequest("starhulls")).statusCode.value())
-        assertEquals(1, tagsApi.getTag("books", "starhulls").body!!.works)
-        assertEquals(emptyList(), tagsApi.getTag("books", "hulls").body!!.members)
-        // One row of it among the alike, not merged — though the answer moved keeps its name
-        assertEquals(listOf(TagRelation.NONE), tagsApi.listSimilarTags("books", "hulls", 50).body!!.filter { it.tag.key == "starhulls" }.map { it.relation })
+        // Both site's tags merged rows of it; one taken out, to a new tag of its own; the answer stays with the tag
+        fun rows() = tagsApi.listSimilarTags("books", hulls, 50).body!!
+        assertEquals(setOf("hulls", "starhulls"), rows().filter { it.site != null }.onEach { assertEquals(TagRelation.MERGED, it.relation) }.map { it.site!!.tag }.toSet())
+        val out = tagsApi.bindSiteTag("books", TagBindingRequest("site", "starhulls")).body!!
+        assertTrue(out.key != hulls && out.key != starhulls, "a new tag ${out.key}")
+        assertEquals(1, out.works)
+        assertEquals(listOf("hulls"), tagsApi.getTag("books", hulls).body!!.variants.map { it.tag })
+        assertEquals(listOf(hulls to true), stores.source("site")!!.corrections.facetsOf("t3").filter { it.facet == "tags" }.map { it.key to it.added })
+        val other = out.key
+        // One row of it among the alike, not merged
+        assertEquals(listOf(TagRelation.NONE), rows().filter { it.tag.key == other && it.site == null }.map { it.relation })
 
         // Told apart: stays among the alike, marked, whatever its likeness
-        tagsApi.setTagsDistinct("books", TagDistinctRequest("starhulls", "hulls", true))
-        fun relationOf(other: String) = tagsApi.listSimilarTags("books", "hulls", 1).body!!.singleOrNull { it.tag.key == other }?.relation
-        assertEquals(TagRelation.DIFFERENT, relationOf("starhulls"))
-        tagsApi.setTagsDistinct("books", TagDistinctRequest("hulls", "starhulls", false))
-        assertEquals(TagRelation.NONE, tagsApi.listSimilarTags("books", "hulls", 50).body!!.single { it.tag.key == "starhulls" }.relation)
-
-        // Merged by the relation, then taken out by it again; a member stays among the alike, marked
-        tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.MERGED))
-        assertEquals(TagRelation.MERGED, relationOf("starhulls"))
-        tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.NONE))
-        assertEquals(emptyList(), tagsApi.getTag("books", "hulls").body!!.members)
+        fun relationOf(key: String) = tagsApi.listSimilarTags("books", hulls, 1).body!!.singleOrNull { it.tag.key == key && it.site == null }?.relation
+        tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.DIFFERENT))
+        assertEquals(TagRelation.DIFFERENT, relationOf(other))
+        tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.NONE))
+        assertEquals(TagRelation.NONE, rows().single { it.tag.key == other && it.site == null }.relation)
 
         // Under a tag: a work with the child has the parent, shown as given by it
-        val hull = tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.CHILD)).body!!
-        assertEquals(listOf("starhulls"), hull.children.map { it.key })
-        assertEquals(TagRelation.CHILD, relationOf("starhulls"))
+        val hull = tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.CHILD)).body!!
+        assertEquals(listOf(other), hull.children.map { it.key })
+        assertEquals(TagRelation.CHILD, relationOf(other))
         fun tagsOf(id: String) = items.getItem("site", id).body!!.allFacets.single { it.facet == "tags" }.propertyValues
         // The child confirmed: the parent given by it — unless the model gives it the work by itself
-        corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = true, key = "starhulls"))
-        val parent = tagsOf("t2").single { it.key == "hulls" }
+        corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = true, key = other))
+        val parent = tagsOf("t2").single { it.key == hulls }
         assertTrue(parent.implied == true || (parent.chance ?: 0.0) > 0.5, "hulls of t2 $parent")
         assertTrue(parent.offered != true, "hulls of t2 $parent")
-        // A tag never under its own descendant: starhulls under hulls under cargo, and cargo not under starhulls
-        tagsApi.relateTags("books", TagRelationRequest("cargo", "hulls", TagRelation.CHILD))
-        assertThrows<ResponseStatusException> { tagsApi.relateTags("books", TagRelationRequest("starhulls", "cargo", TagRelation.CHILD)) }
-        tagsApi.relateTags("books", TagRelationRequest("cargo", "hulls", TagRelation.NONE))
+        // A tag of several parents: under cargo too
+        tagsApi.relateTags("books", TagRelationRequest(cargo, other, TagRelation.CHILD))
+        assertEquals(setOf(hulls, cargo), tagsApi.getTag("books", other).body!!.parents.map { it.key }.toSet())
+        tagsApi.relateTags("books", TagRelationRequest(cargo, other, TagRelation.NONE))
+        // A tag never under its own descendant: other under hulls under cargo, and cargo not under other
+        tagsApi.relateTags("books", TagRelationRequest(cargo, hulls, TagRelation.CHILD))
+        assertThrows<ResponseStatusException> { tagsApi.relateTags("books", TagRelationRequest(other, cargo, TagRelation.CHILD)) }
+        tagsApi.relateTags("books", TagRelationRequest(cargo, hulls, TagRelation.NONE))
         // The parent taken away: the child goes with it, not shown at all
-        corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = "hulls"))
-        assertTrue(tagsOf("t2").none { it.key == "starhulls" }, "tags ${tagsOf("t2")}")
-        assertEquals(io.github.vlsergey.recommend4me.api.model.FacetValueInfo.Corrected.REMOVED, tagsOf("t2").single { it.key == "hulls" }.corrected)
+        corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = hulls))
+        assertTrue(tagsOf("t2").none { it.key == other }, "tags ${tagsOf("t2")}")
+        assertEquals(io.github.vlsergey.recommend4me.api.model.FacetValueInfo.Corrected.REMOVED, tagsOf("t2").single { it.key == hulls }.corrected)
         // The other way round: above it
-        assertEquals(listOf("starhulls"), tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.PARENT)).body!!.parents.map { it.key })
-        tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.NONE))
-        assertEquals(TagRelation.NONE, relationOf("starhulls") ?: TagRelation.NONE)
+        assertEquals(listOf(other), tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.PARENT)).body!!.parents.map { it.key })
+        tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.NONE))
+        assertEquals(TagRelation.NONE, relationOf(other) ?: TagRelation.NONE)
+
+        // A tag the user makes up on a work by its name: a new normalized tag of that name; the same name again, the same tag
+        val made = corrections.correctFacet("site", "t1", FacetCorrection(facet = "tags", added = true, name = "Пустота")).body!!
+        val void = made.allFacets.single { it.facet == "tags" }.propertyValues.single { it.name == "Пустота" }.key
+        assertEquals("Пустота", type.tags.explicitNames()[TagRepository.idOf(void)])
+        corrections.correctFacet("site", "t3", FacetCorrection(facet = "tags", added = true, name = "пустота"))
+        assertEquals(void, stores.source("site")!!.corrections.facetsOf("t3").single { it.facet == "tags" && it.added && it.key != hulls }.key)
     }
 }

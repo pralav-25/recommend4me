@@ -65,6 +65,7 @@ export type TagNameRule = Schemas["TagNameRule"];
 export type SimilarTag = Schemas["SimilarTag"];
 export type TagRelation = Schemas["TagRelation"];
 export type TagRef = Schemas["TagRef"];
+export type TagVariantInfo = Schemas["TagVariantInfo"];
 
 /**
  * The failure of a call as the user should read it: the backend answers an error as

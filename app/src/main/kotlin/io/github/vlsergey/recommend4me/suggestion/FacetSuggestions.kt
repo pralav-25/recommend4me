@@ -5,7 +5,8 @@ import io.github.vlsergey.recommend4me.correction.FacetCorrection
 import io.github.vlsergey.recommend4me.encoder.TextEncoder
 import io.github.vlsergey.recommend4me.encoder.TextKind
 import io.github.vlsergey.recommend4me.item.ItemsChanged
-import io.github.vlsergey.recommend4me.layer.LayerValues
+import io.github.vlsergey.recommend4me.tag.SiteTagRef
+import io.github.vlsergey.recommend4me.tag.TagRepository
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import io.github.vlsergey.recommend4me.part.PartsSaved
 import io.github.vlsergey.recommend4me.plugin.Plugins
@@ -400,19 +401,21 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      */
     private fun examplesVocabulary(store: SourceStore, facet: FacetDef): Vocabulary? {
         val from = store.schema.facets.firstOrNull { it.key == facet.examplesFrom } ?: return null
-        // Every value of the sites' facet, by its name — or by the tag the user merged it into — of every source of the type
-        val merges = store.tags.merges(facet.key)
+        // Every normalized tag a site's tag of the type is bound to, of every source of the type
+        val bindings = store.tags.bindings()
         val values = HashMap<String, String>()
         stores.typeOf(store.id).sources.forEach { s ->
             val theirs = s.schema.facets.firstOrNull { it.standard != null && it.standard === from.standard } ?: return@forEach
             val names = s.names(theirs.key)
-            s.items.valueUses(theirs.key).keys.forEach { key -> (names[key] ?: key).let { values.putIfAbsent(LayerValues.keyOf(it, merges), it.trim()) } }
+            s.items.valueUses(theirs.key).keys.forEach { key ->
+                bindings[SiteTagRef(s.id, key)]?.let { values.putIfAbsent(TagRepository.key(it), (names[key] ?: key).trim()) }
+            }
         }
-        // A tag is read by its name as the user and the sites name it ([TagRepository][io.github.vlsergey.recommend4me.tag.TagRepository])
-        store.tags.shown(facet.key, values.keys).forEach { (key, name) -> values[key] = name }
-        val names = store.names(from.key)
+        // A tag is read by its name as the user and the sites name it ([TagRepository])
+        store.tags.shown(values.keys).forEach { (key, name) -> values[key] = name }
+        val bound = store.tags.bindingsOf(store.id)
         val own = HashMap<String, List<String>>()
-        store.items.forEachFacet(from.key) { id, keys -> own[id] = keys.map { LayerValues.keyOf(names[it] ?: it, merges) }.distinct() }
+        store.items.forEachFacet(from.key) { id, keys -> own[id] = keys.mapNotNull { bound[it]?.let(TagRepository::key) }.distinct() }
         val answered = store.corrections.allFacets().filter { it.facet == facet.key && it.key !in own[it.itemId].orEmpty() }
         val denied = answered.count { !it.added }
         return Vocabulary(

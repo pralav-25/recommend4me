@@ -7,9 +7,9 @@ import kotlin.test.assertTrue
 
 class TagNamingTest {
 
-    private fun tag(vararg variants: Triple<String, String, IntArray>) = TagStats("angst").apply {
+    private fun tag(vararg variants: Triple<String, String, IntArray>) = TagStats("1").apply {
         variants.forEach { (source, name, uses) ->
-            variant(source, name).uses.apply {
+            variant(SiteTagRef(source, name.lowercase()), name).uses.apply {
                 works = uses[0]
                 graded = uses[1]
                 liked = uses[2]

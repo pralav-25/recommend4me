@@ -1082,8 +1082,8 @@ paths:
       tags: [tags]
       operationId: listTags
       summary: |
-        The sites' free tags of a content type, every site's together, as the user merged and named them:
-        the most used first
+        The normalized tags of a content type's free tags - every site's tag is bound to one - as the user
+        merged, named and linked them: the most used first
       parameters:
         - $ref: '#/components/parameters/Type'
         - name: query
@@ -1137,8 +1137,9 @@ paths:
       tags: [tags]
       operationId: listSimilarTags
       summary: |
-        The tags most alike the tag by the meaning of their names, of one site or another - but the ones the
-        user said are different. Only offered: the user merges
+        The normalized tags most alike the tag by the meaning of their names, of one site or another, with
+        every tag the user linked it to or told apart from it, and every site's tag bound to it. Only
+        offered: the user merges
       parameters:
         - $ref: '#/components/parameters/Type'
         - name: tag
@@ -1161,29 +1162,6 @@ paths:
                 items:
                   $ref: '#/components/schemas/SimilarTag'
 
-  /api/types/{type}/tags/merge:
-    post:
-      tags: [tags]
-      operationId: mergeTags
-      summary: |
-        The tags merged into the first of them, named when a name is given; the user's answers on them become
-        answers on it, the newest standing of a work answered on more than one
-      parameters:
-        - $ref: '#/components/parameters/Type'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TagMergeRequest'
-      responses:
-        '200':
-          description: The tag merged into
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TagInfo'
-
   /api/types/{type}/tags/name:
     put:
       tags: [tags]
@@ -1204,25 +1182,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TagInfo'
-
-  /api/types/{type}/tags/split:
-    post:
-      tags: [tags]
-      operationId: splitTag
-      summary: A tag taken out of the tag it was merged into, a tag of its own again; the answers stay with the tag
-      parameters:
-        - $ref: '#/components/parameters/Type'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TagSplitRequest'
-      responses:
-        '204':
-          description: Taken out
-        '404':
-          description: Not merged into any tag
 
   /api/types/{type}/tags/relation:
     put:
@@ -1249,11 +1208,13 @@ paths:
         '400':
           description: A tag put above or under one of its own ancestors or descendants
 
-  /api/types/{type}/tags/distinct:
+  /api/types/{type}/tags/binding:
     put:
       tags: [tags]
-      operationId: setTagsDistinct
-      summary: The user's word that two tags are different - not offered as alike again - or its taking back
+      operationId: bindSiteTag
+      summary: |
+        A site's tag bound to a normalized tag - to a new one of its own when none is given: taken out of the
+        tag it was. The user's answers stay with the tags they were given on
       parameters:
         - $ref: '#/components/parameters/Type'
       requestBody:
@@ -1261,10 +1222,16 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TagDistinctRequest'
+              $ref: '#/components/schemas/TagBindingRequest'
       responses:
-        '204':
-          description: Saved
+        '200':
+          description: The normalized tag the site's tag is bound to now
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagInfo'
+        '404':
+          description: No such site's tag, or no such normalized tag
 
   /api/types/{type}/model:
     get:
@@ -3336,11 +3303,11 @@ components:
 
     TagInfo:
       type: object
-      required: [key, name, rule, works, graded, liked, variants, members, parents, children]
+      required: [key, name, rule, works, graded, liked, variants, parents, children]
       properties:
         key:
           type: string
-          description: The tag's key - its first name lowercased; of a merged tag, the key of the tag merged into
+          description: The normalized tag's id, written out - the value of the works' tags
         name:
           type: string
         rule:
@@ -3357,14 +3324,9 @@ components:
           description: Works graded above the middle of the scale
         variants:
           type: array
-          description: The tag's names as the sites write them, with their works, the most used first
+          description: The sites' tags bound to this one, with their works, the most used first
           items:
             $ref: '#/components/schemas/TagVariantInfo'
-        members:
-          type: array
-          description: The keys of the tags merged into this one
-          items:
-            type: string
         parents:
           type: array
           description: The tags right above this one - a work with this tag has them too
@@ -3388,8 +3350,8 @@ components:
     TagRelation:
       type: string
       description: |
-        What a tag is to another: NONE; MERGED - merged into it; CHILD - under it; PARENT - above it;
-        DIFFERENT - a different tag
+        What a tag is to another: NONE; MERGED - one tag (merged into it; of a site's tag, bound to it);
+        CHILD - under it; PARENT - above it; DIFFERENT - a different tag
       enum: [NONE, MERGED, CHILD, PARENT, DIFFERENT]
 
     TagRelationRequest:
@@ -3405,10 +3367,14 @@ components:
 
     TagVariantInfo:
       type: object
-      required: [source, name, works, graded, liked]
+      description: A site's tag
+      required: [source, tag, name, works, graded, liked]
       properties:
         source:
           type: string
+        tag:
+          type: string
+          description: The site's own key of the tag
         name:
           type: string
         works:
@@ -3430,19 +3396,9 @@ components:
           description: The cosine of the meaning of their names, up to 1
         relation:
           $ref: '#/components/schemas/TagRelation'
-
-    TagMergeRequest:
-      type: object
-      required: [tags]
-      properties:
-        tags:
-          type: array
-          description: The keys of the tags; the first is the one the others are merged into
-          items:
-            type: string
-        name:
-          type: string
-          description: The name of the tag merged into; none - as its sites name it
+        site:
+          # Of a row of a site's tag bound to the tag asked of (MERGED), that site's tag; then tag is the tag itself
+          $ref: '#/components/schemas/TagVariantInfo'
 
     TagNameRequest:
       type: object
@@ -3453,23 +3409,18 @@ components:
         name:
           type: string
 
-    TagSplitRequest:
+    TagBindingRequest:
       type: object
-      required: [member]
+      required: [source, siteTag]
       properties:
-        member:
+        source:
           type: string
-
-    TagDistinctRequest:
-      type: object
-      required: [first, other, different]
-      properties:
-        first:
+        siteTag:
           type: string
-        other:
+          description: The site's own key of the tag
+        tag:
           type: string
-        different:
-          type: boolean
+          description: The key of the normalized tag to bind it to; none - a new one of its own
 
     LocalName:
       type: object
