@@ -296,6 +296,12 @@ class SiteTest {
             chanceOf(tag("magic")) < chanceOf(tag("space")) && chanceOf(tag("magic")) < chanceOf(tag("ships")),
             "magic on a space work: ${worked.propertyValues}",
         )
+        // The site's tag is shown all the same, unlikely as it is: given, or offered to answer on — never hidden
+        val magic = worked.propertyValues.find { it.key == tag("magic") }
+        assertNotNull(magic, "the site's magic of w1: ${worked.propertyValues}")
+        // By its name — any case until the names are worked out again — with its chance
+        assertEquals("magic", magic.name.lowercase())
+        assertNotNull(magic.chance, "the chance of magic of w1: $magic")
 
         // The site's word is not corrected
         val refused = assertThrows<Refused> { corrections.correctFacet("site", "x1", FacetCorrection(facet = "tag", added = true, key = "space")) }

@@ -82,22 +82,31 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             // The chances of a facet the model works on now: none of one it no longer does
             val own = if (def.suggest || def.infer) chances?.get(def.key).orEmpty() else emptyMap()
             val siteKeys = site[def.key].orEmpty().toSet()
-            // Of a facet of the layer the model works out, the likeliest values the work is not shown
-            // with, the user has not answered on and the site does not give — to make at least so many
+            // Of a facet of the layer the model works out: every value the site gives the work — a tag of
+            // the site bound to it — it is not shown with and the user has not answered on, whatever its
+            // chance: the site's word, none hidden; then the likeliest values the work is not shown with,
+            // the user has not answered on and the site does not give — to make at least so many
             val offered = if (!(def.infer && def.editable) || def.key in complete) emptyList() else {
                 val fromSite = siteKeys + def.examplesFrom?.let { from ->
                     val keys = site[from].orEmpty()
                     val bound = store.tags.bindingsOf(store.id)
                     keys.mapNotNull { bound[it]?.let(TagRepository::key) }
                 }.orEmpty()
-                ModelValues.offered(
+                val answered = corrections.filter { it.facet == def.key }.map { it.key }.toSet()
+                val shown = keys.toSet()
+                val bySite = fromSite.filter { it !in shown && it !in answered && it !in out && it !in negated }
+                    .sortedByDescending { own[it]?.chance ?: -1.0 }
+                bySite + ModelValues.offered(
                     own.filterValues { !it.had && it.key !in out && it.key !in negated }.mapValues { it.value.chance },
-                    shown = keys.toSet(), answered = corrections.filter { it.facet == def.key }.map { it.key }.toSet(), fromSite = fromSite,
+                    shown = shown, answered = answered, fromSite = fromSite,
                 )
             }
             if (!empty && keys.isEmpty() && removed.isEmpty() && offered.isEmpty() && original == null) return@mapNotNull null
             // The value's own name — a tag's as the user and the sites name it — the name the answer was given with only of a value nothing else names
-            fun name(key: String) = names[def.key]?.get(key) ?: added[key] ?: key
+            // The names of the values offered the caller did not read — a site's tags bound to tags of the layer — in one read
+            val unnamed = offered.filter { names[def.key]?.containsKey(it) != true }
+            val more = if (unnamed.isEmpty()) emptyMap() else store.names(def.key, unnamed)
+            fun name(key: String) = names[def.key]?.get(key) ?: more[key] ?: added[key] ?: key
             fun info(key: String, corrected: FacetValueInfo.Corrected?, offer: Boolean = false): FacetValueInfo {
                 // Drafted, unanswered: the site's value it was drafted from, not the model's word
                 val draftedFrom = chances?.get(def.key)?.get(key)?.draftedFrom?.takeIf { corrected == null && !offer }
