@@ -16,14 +16,14 @@ import {
   ZapIcon,
 } from "lucide-react";
 import type { ContentTypeInfo, ItemView } from "@/api/client";
-import { CaptureButton } from "@/capture/CaptureDialog";
+import { CaptureDialog } from "@/capture/CaptureDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { typeIcon, useTypes } from "@/contenttype/types";
+import { useTypes } from "@/contenttype/types";
 import { FacetFilters, NOTHING_HIDDEN, validSelection, type FacetSelection } from "@/facet/FacetFilters";
 import { NumberFilters, validRanges, type NumberRanges } from "@/number/NumberFilters";
 import { ItemBoard, type Layout } from "@/item/ItemBoard";
@@ -34,14 +34,14 @@ import { JobControl } from "@/job/JobControl";
 import { useJobs } from "@/job/useJobs";
 import { cn } from "@/lib/utils";
 import { usePref } from "@/lib/usePref";
-import { ModelButton } from "@/model/ModelDialog";
+import { ModelDialog } from "@/model/ModelDialog";
 import { useModel } from "@/model/useModel";
 import { SettingsDialog } from "@/settings/SettingsDialog";
 import { SearchQualityDialog } from "@/search/SearchQualityDialog";
 import { SourceFilter } from "@/source/SourceFilter";
 import { WorkProgress } from "@/status/WorkProgress";
 import { ThemeToggle } from "@/theme/ThemeToggle";
-import { ScreenNav } from "@/screen/ScreenNav";
+import { ScreenBar, ScreenMenuButton } from "@/screen/ScreenNav";
 import { useScreen } from "@/screen/screens";
 import { TagsScreen } from "@/tag/TagsScreen";
 import { UniversesScreen } from "@/universe/Universes";
@@ -115,6 +115,9 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
   const [settingsOpen, setSettingsOpen] = useState(false);
   const jobs = useJobs();
   const screen = useScreen();
+  const [modelOpen, setModelOpen] = useState(false);
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const menu = { types, type, screen, onType, onModel: () => setModelOpen(true), onCapture: () => setCaptureOpen(true) };
 
   // The list asks for the shown sources by name, and for none when all are shown
   const sources = useMemo(() => {
@@ -171,25 +174,14 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
     <div className="min-h-screen">
       <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur supports-backdrop-filter:bg-background/70">
         <div className="mx-auto flex h-14 max-w-[1800px] items-center gap-1 px-4 sm:gap-3">
+          <ScreenMenuButton {...menu} />
           <div className="flex items-center gap-2 font-semibold">
             <TelescopeIcon className="hidden size-5 sm:block" />
             <span className="hidden 2xl:inline">recommend4me</span>
           </div>
-          {types.length > 1 && (
-            <Tabs value={type.id} onValueChange={(v) => onType(String(v))}>
-              <TabsList>
-                {types.map((t) => {
-                  const Icon = typeIcon(t.id);
-                  return (
-                    <TabsTrigger key={t.id} value={t.id} className="px-2 sm:px-3" title={t.title}>
-                      <Icon /> <span className="hidden lg:inline">{t.title}</span>
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-            </Tabs>
-          )}
-          <ScreenNav type={type} screen={screen} />
+          <ErrorBoundary compact resetKey={type.id} title="Меню">
+            <ScreenBar {...menu} />
+          </ErrorBoundary>
           {/* On a phone the progress takes what the icons leave; on a wide screen it sits in the middle */}
           <div className="mx-1 min-w-0 flex-1 sm:mx-auto sm:flex-none">
             <ErrorBoundary compact resetKey={type.id} title="Задания не показываются">
@@ -198,12 +190,6 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
           </div>
           <ErrorBoundary compact title="Ход работы не показывается">
             <WorkProgress />
-          </ErrorBoundary>
-          <ErrorBoundary compact resetKey={type.id} title="Модель">
-            <ModelButton type={type} />
-          </ErrorBoundary>
-          <ErrorBoundary compact title="Расширение">
-            <CaptureButton />
           </ErrorBoundary>
           <ThemeToggle />
           <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} aria-label="Настройки" title="Настройки" className="relative">
@@ -394,6 +380,8 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
       )}
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <ModelDialog type={type} open={modelOpen} onOpenChange={setModelOpen} />
+      <CaptureDialog open={captureOpen} onOpenChange={setCaptureOpen} />
       <HashItemDialog />
     </div>
   );

@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BrainCircuitIcon, Loader2Icon, RefreshCwIcon, StarIcon, TriangleAlertIcon } from "lucide-react";
 import { api, unwrap, type ContentTypeInfo, type Grade, type GradeOnScale, type ModelCandidate, type ModelInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ALL_GRADES, gradeLabel } from "@/contenttype/types";
 import { formatDate, number, percent, score } from "@/i18n";
 import { ITEMS } from "@/item/lists";
@@ -12,21 +12,27 @@ import { FeatureBars } from "./FeatureBars";
 import { ScorerComparisonDialog } from "./ScorerComparisonDialog";
 import { useModel } from "./useModel";
 
-/** The model's state in the header, opening the details. */
-export function ModelButton({ type }: { type: ContentTypeInfo }) {
+/** The model's state as an entry of the menu shows it: training or not, how well it orders, whether it is stale. */
+export function ModelLabel({ type }: { type: ContentTypeInfo }) {
   const model = useModel(type.id);
   const m = model.data;
   const warn = m && (!m.textEncoderReady || !m.imageEncoderReady);
   return (
-    <Dialog>
-      <DialogTrigger render={<Button variant="ghost" className="gap-2" title="Модель рекомендаций" />}>
-        {m?.training ? <Loader2Icon className="animate-spin" /> : <BrainCircuitIcon />}
-        <span className="hidden sm:inline">
-          {!m ? "Модель" : m.trained ? (m.metrics ? `порядок ${percent(m.metrics.concordance)}` : "Модель") : "Не обучена"}
-        </span>
-        {m?.stale && !m.training && <span className="size-2 rounded-full bg-maybe" title="Оценки изменились после обучения" />}
-        {warn && <TriangleAlertIcon className="text-maybe" />}
-      </DialogTrigger>
+    <>
+      {m?.training ? <Loader2Icon className="animate-spin" /> : <BrainCircuitIcon />}
+      <span>{!m ? "Модель" : m.trained ? (m.metrics ? `порядок ${percent(m.metrics.concordance)}` : "Модель") : "Не обучена"}</span>
+      {m?.stale && !m.training && <span className="size-2 rounded-full bg-maybe" title="Оценки изменились после обучения" />}
+      {warn && <TriangleAlertIcon className="text-maybe" />}
+    </>
+  );
+}
+
+/** The details of the model of the type, opened from the menu. */
+export function ModelDialog({ type, open, onOpenChange }: { type: ContentTypeInfo; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const model = useModel(type.id);
+  const m = model.data;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">{m && <ModelDetails type={type} m={m} />}</DialogContent>
     </Dialog>
   );

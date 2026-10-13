@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckIcon, CopyIcon, ExternalLinkIcon, Loader2Icon, RadarIcon } from "lucide-react";
 import { api, unwrap, type ItemRef } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { findSource, useTypes } from "@/contenttype/types";
 import { ago, formatDate } from "@/i18n";
 import { ItemRefDialog } from "@/item/ItemRefDialog";
@@ -14,17 +14,11 @@ const DEFAULT_ADDRESS = "http://127.0.0.1:8095";
  * Browser tracking: how to install the Firefox extension that sends the pages of the tracked
  * sites the user opens, and the pages it sent last.
  */
-export function CaptureButton() {
-  const [open, setOpen] = useState(false);
+export function CaptureDialog({ open, onOpenChange: setOpen }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [item, setItem] = useState<ItemRef | null>(null);
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogTrigger
-          render={<Button variant="ghost" className="px-2 lg:px-3" aria-label="Расширение для Firefox и Safari на iPad" title="Расширение для Firefox и скрипт для Safari на iPad: как подключить, что они присылают" />}
-        >
-          <RadarIcon /> <span className="hidden lg:inline">Расширение</span>
-        </DialogTrigger>
         <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
           {open && (
             <CaptureDetails

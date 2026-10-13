@@ -96,7 +96,8 @@ export function UniversesScreen({ type, selected }: { type: ContentTypeInfo; sel
         )}
         {universes.data && universes.data.length > 0 && (
           <ul className="flex flex-col divide-y rounded-lg border">
-            {universes.data.map((u) => (
+            {/* The universes of the most works first; of as many, by name */}
+            {[...universes.data].sort((a, b) => b.works - a.works || a.name.localeCompare(b.name, "ru")).map((u) => (
               <UniverseRow key={u.value} type={type} universe={u} expanded={!!selected && sameUniverse(selected, u)} />
             ))}
           </ul>

@@ -21,7 +21,8 @@ export function WorkProgress() {
   const work = (status.data?.work ?? []).filter((w) => w.total > 0 || w.running);
   if (work.length === 0) return null;
   return (
-    <div className="hidden items-center gap-3 lg:flex">
+    // Where the header has the room: on a narrower screen the menu and the buttons come first
+    <div className="hidden shrink-0 items-center gap-3 2xl:flex">
       {work.map((w) => (
         <Work key={w.name} w={w} />
       ))}
@@ -36,7 +37,7 @@ function Work({ w }: { w: WorkStatus }) {
   const left = w.perMinute && w.perMinute > 0 && rest > 0 ? duration((rest / w.perMinute) * 60) : undefined;
   return (
     <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground tabular-nums" />}>
+      <TooltipTrigger render={<span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground tabular-nums" />}>
         {w.running ? <Loader2Icon className="size-3.5 animate-spin" /> : <Icon className="size-3.5" />}
         {w.total > 0 && `${compact(w.done)} / ${compact(w.total)}`}
       </TooltipTrigger>
