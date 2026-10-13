@@ -1,7 +1,9 @@
 {
   "AddFacetValue.add": "Add",
   "AddFacetValue.addNew": "Add a new value",
+  "AddFacetValue.close": "Close",
   "AddFacetValue.heading": "Add a value",
+  "AddFacetValue.headingOf": "Find by name and add: {{facet}}",
   "AddFacetValue.newValue": "New value: no work has it yet",
   "AddFacetValue.placeholder": "Start typing…",
   "CorrectedMark.hint": "You corrected this value; the site has a different one",
@@ -17,6 +19,7 @@
   "FacetCorrections.heading": "Attributes",
   "FacetLine.confirmAll": "✓ all ({{n, number}})",
   "FacetLine.confirmAllHint": "Confirm every value you haven't answered",
+  "FacetLine.search": "Find by name and add",
   "FacetValue.added": "Added by you",
   "FacetValue.confirmed": "Confirmed by you",
   "FacetValue.fromSubtag": "from a child tag",

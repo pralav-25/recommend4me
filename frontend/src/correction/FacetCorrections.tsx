@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { CheckIcon, Loader2Icon, PlusIcon } from "lucide-react";
+import { CheckIcon, Loader2Icon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api, unwrap, type FacetValueInfo, type ItemFacet, type ItemRef, type SourceInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
@@ -69,7 +69,7 @@ export function FacetCorrections({
       {layer.map((f) => (
         <div key={f.facet}>
           {source && <OriginalOf source={source} facets={allFacets} facet={f.facet} />}
-          <FacetLine facet={f} item={item} corrections={corrections} />
+          <FacetLine facet={f} item={item} source={source} corrections={corrections} />
         </div>
       ))}
       {editing && addable && <AddFacetValue source={addable} corrections={corrections} />}
@@ -91,9 +91,13 @@ export function FacetCorrections({
  * are given — with "✓ all" for every value shown the user has not answered on, and "…" for more
  * candidates of the [item] — shown as it is when not.
  */
-function FacetLine({ facet: f, item, corrections }: { facet: ItemFacet; item?: ItemRef; corrections?: Corrections }) {
+function FacetLine({ facet: f, item, source, corrections }: { facet: ItemFacet; item?: ItemRef; source?: SourceInfo; corrections?: Corrections }) {
   const { t } = useTranslation("correction");
   const values = useStableOrder(f.values);
+  const [searching, setSearching] = useState(false);
+  // A value of this facet alone found by its name, when the facet takes values the user adds
+  const own = source?.facets.filter((d) => d.key === f.facet && d.editable) ?? [];
+  const addable = source && own.length > 0 ? { ...source, facets: own } : undefined;
   // The work's values the user has not answered on — not those only offered
   const open = f.values.filter((v) => !decided(v) && !v.offered);
   const confirmAll = async () => {
@@ -114,8 +118,19 @@ function FacetLine({ facet: f, item, corrections }: { facet: ItemFacet; item?: I
           <FacetValue key={v.key} facet={f.facet} value={v} corrections={corrections} />
         ))}
         {item && corrections && <MoreCandidates item={item} facet={f.facet} shown={f.values} corrections={corrections} />}
+        {corrections && addable && <SearchButton onClick={() => setSearching(!searching)} title={t("FacetLine.search")} />}
       </div>
+      {searching && corrections && addable && <AddFacetValue source={addable} corrections={corrections} onClose={() => setSearching(false)} />}
     </div>
+  );
+}
+
+/** A small 🔍 after a line of values, beside "…": a value found by its name and added. */
+export function SearchButton({ onClick, title }: { onClick: () => void; title: string }) {
+  return (
+    <Button variant="outline" size="xs" className="h-5 px-1.5" onClick={onClick} title={title} aria-label={title}>
+      <SearchIcon className="size-3" />
+    </Button>
   );
 }
 
@@ -214,9 +229,10 @@ export function FacetValue({ facet, value, corrections }: { facet: string; value
 /**
  * Adding a value: the facet from the source's facets, the value typed — the facet's values the
  * site or the user gave are offered as it is typed and one picked is taken with its key; a new
- * one is sent by its name alone, and the backend makes its key.
+ * one is sent by its name alone, and the backend makes its key. Of one facet alone, no choice of
+ * it; with [onClose], closed by its ✕ or Escape.
  */
-function AddFacetValue({ source, corrections }: { source: SourceInfo; corrections: Corrections }) {
+function AddFacetValue({ source, corrections, onClose }: { source: SourceInfo; corrections: Corrections; onClose?: () => void }) {
   const { t } = useTranslation("correction");
   const facets = source.facets;
   const [facetKey, setFacetKey] = useState(facets[0]?.key ?? "");
@@ -256,24 +272,37 @@ function AddFacetValue({ source, corrections }: { source: SourceInfo; correction
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-dashed p-2" onKeyDown={(e) => e.stopPropagation()}>
-      <div className="text-xs text-muted-foreground">{t("AddFacetValue.heading")}</div>
-      <select
-        value={facet.key}
-        onChange={(e) => setFacetKey(e.target.value)}
-        className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring dark:bg-input/30"
-      >
-        {facets.map((f) => (
-          <option key={f.key} value={f.key}>
-            {label(f.labelKey)}
-          </option>
-        ))}
-      </select>
+    <div className="mt-1 flex flex-col gap-2 rounded-lg border border-dashed p-2" onKeyDown={(e) => e.stopPropagation()}>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        {facets.length === 1 ? t("AddFacetValue.headingOf", { facet: label(facet.labelKey) }) : t("AddFacetValue.heading")}
+        {onClose && (
+          <Button variant="ghost" size="icon-xs" onClick={onClose} title={t("AddFacetValue.close")}>
+            <XIcon />
+          </Button>
+        )}
+      </div>
+      {facets.length > 1 && (
+        <select
+          value={facet.key}
+          onChange={(e) => setFacetKey(e.target.value)}
+          className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring dark:bg-input/30"
+        >
+          {facets.map((f) => (
+            <option key={f.key} value={f.key}>
+              {label(f.labelKey)}
+            </option>
+          ))}
+        </select>
+      )}
       <div className="flex gap-1">
         <Input
+          autoFocus={onClose !== undefined}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && typed && add().catch(() => {})}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && typed) add().catch(() => {});
+            if (e.key === "Escape") onClose?.();
+          }}
           list={listId}
           placeholder={t("AddFacetValue.placeholder")}
           className="h-8"

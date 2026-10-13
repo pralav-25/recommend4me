@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FacetAnswers } from "@/correction/FacetAnswers";
-import { FacetValue, MoreCandidates } from "@/correction/FacetCorrections";
+import { FacetValue, MoreCandidates, SearchButton } from "@/correction/FacetCorrections";
 import type { Corrections } from "@/correction/useCorrections";
 import { useStableOrder } from "@/facet/valueOrder";
 import { OriginalOf } from "@/item/WorkFacts";
@@ -232,7 +232,8 @@ function Block({ label, children }: { label: string; children: ReactNode }) {
 
 /**
  * The work's values of a facet as chips, the suggested ones dashed after them, a dash when there
- * are none; with [item], "…" for more of its candidates.
+ * are none; with [item], "…" for more of its candidates; with [search], a 🔍 after it that opens
+ * the search of a value by its name.
  */
 function Chips({
   facet,
@@ -240,12 +241,14 @@ function Chips({
   suggested = [],
   item,
   corrections,
+  search,
 }: {
   facet: string;
   values: FacetValueInfo[];
   suggested?: SuggestedValue[];
   item?: ItemRef;
   corrections: Corrections;
+  search?: { onClick: () => void; title: string };
 }) {
   const ordered = useStableOrder(values);
   if (values.length === 0 && suggested.length === 0 && !item) return <div className="text-sm text-muted-foreground">—</div>;
@@ -259,6 +262,7 @@ function Chips({
         <SuggestedChip key={v.key} facet={facet} value={v} corrections={corrections} />
       ))}
       {item && <MoreCandidates item={item} facet={facet} shown={[...values, ...suggested]} corrections={corrections} />}
+      {search && <SearchButton onClick={search.onClick} title={search.title} />}
     </div>
   );
 }
@@ -608,12 +612,13 @@ function OpenCharacters({
   ];
   const candidates = useCandidates(item, facet, true);
   const failed = characters.find((q) => q.isError)?.error?.message ?? dictionary.error?.message ?? candidates.error?.message;
+  // The search of a character by name: opened by the 🔍 after the work's characters
+  const [searching, setSearching] = useState(false);
 
   return (
     <Block label={label}>
-      <Chips facet={facet} values={values} item={item} corrections={corrections} />
-      <Named type={type} item={item} facet={facet} candidates={candidates.data} universes={universes} corrections={corrections} />
-      <div className="flex flex-wrap items-start gap-1">
+      <Chips facet={facet} values={values} item={item} corrections={corrections} search={{ onClick: () => setSearching(!searching), title: t("OpenCharacters.add") }} />
+      {searching && (
         <Picker
           label={t("OpenCharacters.add")}
           placeholder={t("OpenCharacters.placeholder")}
@@ -623,9 +628,11 @@ function OpenCharacters({
           empty={universes.length === 0 ? t("OpenCharacters.noUniverse") : undefined}
           onPick={(key) => corrections.setFacet(facet, { key }, true)}
           onName={(name) => corrections.setFacet(facet, { name }, true)}
+          onClose={() => setSearching(false)}
         />
-        {allNamed}
-      </div>
+      )}
+      <Named type={type} item={item} facet={facet} candidates={candidates.data} universes={universes} corrections={corrections} />
+      {allNamed && <div className="flex flex-wrap items-start gap-1">{allNamed}</div>}
     </Block>
   );
 }
@@ -852,7 +859,8 @@ function Named({
 /**
  * A button that opens a list of values to add, every one of them, narrowed by a line that looks in
  * all their names and finds an id of the catalogue exactly; one the work has already is shown, not
- * offered. With [onName], a typed name is added as a value of the user's own.
+ * offered. With [onName], a typed name is added as a value of the user's own. With [onClose], it
+ * is opened by another button (a 🔍 after the values) — open from the start, and closing tells it.
  */
 function Picker({
   label,
@@ -863,6 +871,7 @@ function Picker({
   empty,
   onPick,
   onName,
+  onClose,
 }: {
   label: string;
   placeholder: string;
@@ -873,13 +882,15 @@ function Picker({
   empty?: string;
   onPick: (key: string) => Promise<unknown>;
   onName?: (name: string) => Promise<unknown>;
+  onClose?: () => void;
 }) {
   const { t } = useTranslation("universe");
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(onClose !== undefined);
   const [filter, setFilter] = useState("");
   const close = () => {
     setOpen(false);
     setFilter("");
+    onClose?.();
   };
 
   if (!open)

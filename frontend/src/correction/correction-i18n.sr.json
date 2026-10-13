@@ -1,7 +1,9 @@
 {
   "AddFacetValue.add": "Dodaj",
   "AddFacetValue.addNew": "Dodaj novu vrednost",
+  "AddFacetValue.close": "Zatvori",
   "AddFacetValue.heading": "Dodaj vrednost",
+  "AddFacetValue.headingOf": "Pronađi po imenu i dodaj: {{facet}}",
   "AddFacetValue.newValue": "Nova vrednost: nijedno delo je još nema",
   "AddFacetValue.placeholder": "Počnite da kucate…",
   "CorrectedMark.hint": "Ispravili ste ovu vrednost; sajt navodi drugu",
@@ -17,6 +19,7 @@
   "FacetCorrections.heading": "Obeležja",
   "FacetLine.confirmAll": "✓ sve ({{n, number}})",
   "FacetLine.confirmAllHint": "Potvrdi sve vrednosti na koje niste odgovorili",
+  "FacetLine.search": "Pronađi po imenu i dodaj",
   "FacetValue.added": "Vi ste dodali",
   "FacetValue.confirmed": "Vi ste potvrdili",
   "FacetValue.fromSubtag": "iz podređenog taga",

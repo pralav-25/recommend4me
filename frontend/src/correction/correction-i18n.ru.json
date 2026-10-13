@@ -1,7 +1,9 @@
 {
   "AddFacetValue.add": "Добавить",
   "AddFacetValue.addNew": "Добавить новое значение",
+  "AddFacetValue.close": "Закрыть",
   "AddFacetValue.heading": "Добавить значение",
+  "AddFacetValue.headingOf": "Найти по имени и добавить: {{facet}}",
   "AddFacetValue.newValue": "Новое значение: такого ещё нет ни у одной работы",
   "AddFacetValue.placeholder": "Начните вводить…",
   "CorrectedMark.hint": "Значение исправлено вами; сайт даёт другое",
@@ -17,6 +19,7 @@
   "FacetCorrections.heading": "Признаки",
   "FacetLine.confirmAll": "✓ все ({{n, number}})",
   "FacetLine.confirmAllHint": "Подтвердить все значения без вашего ответа",
+  "FacetLine.search": "Найти по имени и добавить",
   "FacetValue.added": "Добавлено вами",
   "FacetValue.confirmed": "Подтверждено вами",
   "FacetValue.fromSubtag": "из подтега",
