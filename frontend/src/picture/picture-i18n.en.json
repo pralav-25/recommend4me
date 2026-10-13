@@ -1,5 +1,5 @@
 {
-  "PictureMatches.explanation": "On the left, a picture of this work; on the right, the one you marked in another. The number is how far the likeness is from chance: by chance it comes out around 1, 3 for one work in twenty, 5 for one in a hundred and fifty. ✓ — alike in that sense, ✕ — alike, but not in that sense: the mark takes it into account and becomes more precise.",
+  "PictureMatches.explanation": "On the left, a picture of this work; on the right, the one you marked in another work. The number shows how far the similarity is from chance: chance gives about 1, a 3 happens for one work in twenty, a 5 for one in a hundred and fifty. ✓ — similar in that sense, ✕ — similar, but not in that sense: the mark will take this into account and become more precise.",
   "PictureMatches.heading": "Similar to pictures you marked",
   "PictureMatches.likeDrop": "Similar to a picture that would make you drop the work",
   "PictureMatches.likePick": "Similar to a picture that would make you pick the work",

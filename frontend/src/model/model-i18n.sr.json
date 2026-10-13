@@ -20,7 +20,7 @@
   "ModelDetails.folds_few": "{{count, number}} folda",
   "ModelDetails.folds_one": "{{count, number}} fold",
   "ModelDetails.folds_other": "{{count, number}} foldova",
-  "ModelDetails.grades": "Ocena",
+  "ModelDetails.grades": "Ocene",
   "ModelDetails.lower": "Spuštaju na skali",
   "ModelDetails.noImageEncoder": "Model slika nije pronađen u direktorijumu models — korice i slike se ne uzimaju u obzir.",
   "ModelDetails.noTextEncoder": "Model tekstova nije pronađen u direktorijumu models — tekstovi se ne uzimaju u obzir.",

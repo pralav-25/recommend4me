@@ -211,7 +211,7 @@ var R4M_WORDS = {
     "popup.unwanted": "{{time}} {{url}} — ни одному источнику не нужна",
     "popup.nothingNew": "ничего нового",
     "popup.partTitle": "«{{title}}»",
-    "popup.untitled": "глава без названия",
+    "popup.untitled": "главы без названия",
     "popup.partText": "текст {{title}}{{of}}: {{length}} знаков",
 
     "options.title": "recommend4me — настройки",
@@ -255,7 +255,7 @@ var R4M_WORDS = {
     "value.restore": "Vrati: rekli ste da delo ovo nema",
     "value.removeAdded": "Uklonite ono što ste dodali",
     "value.unanswer": "Poništite svoj odgovor",
-    "value.unlikely": "Model smatra da delo ovo pre nema",
+    "value.unlikely": "Model smatra da delo ovo verovatnije nema",
     "value.confidence": "Pouzdanost modela",
     "value.yes": "Da, delo ovo ima",
     "value.no": "Ne, delo ovo nema",
@@ -316,7 +316,7 @@ var R4M_WORDS = {
     "popup.unwanted": "{{time}} {{url}} — nijednom izvoru nije potrebna",
     "popup.nothingNew": "ništa novo",
     "popup.partTitle": "„{{title}}“",
-    "popup.untitled": "poglavlje bez naslova",
+    "popup.untitled": "poglavlja bez naslova",
     "popup.partText": "tekst {{title}}{{of}}: {{length}} znakova",
 
     "options.title": "recommend4me — podešavanja",

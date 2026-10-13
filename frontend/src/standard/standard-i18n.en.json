@@ -5,7 +5,7 @@
   "error.badAnswer": "An answer is +1, 0 or −1",
   "error.badGrade": "A grade is from {{min}} to {{max}}",
   "error.badMark": "A mark is +1 or −1",
-  "error.badRange": "The range “{{range}}” is not understood: “number=from..to” is wanted",
+  "error.badRange": "The range “{{range}}” is not understood: expected “number=from..to”",
   "error.catalogueSilent": "The catalogue did not answer: {{error}}",
   "error.joinSelf": "A work cannot be joined with itself",
   "error.joinTypes": "Works of different types cannot be joined",

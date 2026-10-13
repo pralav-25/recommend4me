@@ -1,7 +1,7 @@
 {
   "Work.parts.about": "Tekstovi poglavlja isečeni na fragmente; svaki fragment ima svoj vektor.",
   "Work.parts.title": "Poglavlja",
-  "Work.pictures.about": "Korice i snimci ekrana koje je obradio model slika: prvo ocenjenih dela, zatim ostalih po predviđanju.",
+  "Work.pictures.about": "Korice i snimci ekrana koje je analizirao model slika: prvo ocenjenih dela, zatim ostalih po predviđanju.",
   "Work.pictures.title": "Slike",
   "Work.sets.about": "Ponovno računanje pravaca skupova: snimaka ekrana, recenzija, fragmenata teksta.",
   "Work.sets.title": "Skupovi",
