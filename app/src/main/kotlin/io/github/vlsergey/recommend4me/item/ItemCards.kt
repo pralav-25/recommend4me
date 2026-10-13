@@ -168,9 +168,10 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val corrections = store.corrections.facetsOf(ids)
             val fields = store.corrections.fieldsOf(ids)
             val onCard = store.schema.facets.filter { it.onCard }.map { it.key }.toSet()
-            val chances = store.suggestions.ofItems(ids)
+            // The chances of the facets on a card alone
+            val chances = store.suggestions.ofItems(ids, facets = onCard)
             val names = onCard.associateWith { facet ->
-                store.names(facet, ids.flatMap { facets[it]?.get(facet).orEmpty() + chances[it]?.get(facet)?.keys.orEmpty() })
+                store.names(facet, ids.flatMap { facets[it]?.get(facet).orEmpty() + ModelValues.named(chances[it]?.get(facet)) + corrections[it].orEmpty().filter { c -> c.facet == facet }.map { c -> c.key } })
             }
             val numbers = store.items.numbersOf(ids)
             val pictures = store.pictures.countsOf(ids)

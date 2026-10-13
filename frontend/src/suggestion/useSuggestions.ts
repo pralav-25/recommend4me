@@ -1,6 +1,6 @@
 import { useQuery, type QueryClient } from "@tanstack/react-query";
 import { api, refKey, unwrap, type ItemRef, type SourceInfo } from "@/api/client";
-import { itemKey } from "@/item/lists";
+import { applyDetails } from "@/item/lists";
 
 export function suggestionsKey(ref: ItemRef) {
   return ["suggestions", ref.source, ref.item];
@@ -55,7 +55,10 @@ export function suggestionsLater(queryClient: QueryClient, ref: ItemRef) {
   void api.GET("/api/items/{source}/{item}/suggestions/settled", { params: { path: { source: ref.source, item: ref.item } } }).then((result) => {
     if (settling.get(key) !== asked || !result.response.ok) return;
     settling.delete(key);
-    queryClient.invalidateQueries({ queryKey: itemKey(ref) });
+    // The work as the application now has it, in the dialog and in the lists alike
+    void api.GET("/api/items/{source}/{item}", { params: { path: { source: ref.source, item: ref.item } } }).then((read) => {
+      if (read.data !== undefined && settling.get(key) === undefined) applyDetails(queryClient, read.data, ref);
+    });
     queryClient.invalidateQueries({ queryKey: suggestionsKey(ref) });
     queryClient.invalidateQueries({ queryKey: candidatesKey(ref) });
   });

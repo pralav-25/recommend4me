@@ -185,11 +185,12 @@
   }
 
   /**
-   * Runs a change. ITS EFFECT IS SHOWN AT ONCE: [shown] changes the work as shown the way the
-   * application will keep it, and the value it is [about] is marked as being saved until the
-   * application answers — a click must be seen to have landed. Changes go one after another in
-   * the order made, none is dropped; when the last is answered the page is shown as the
-   * application now knows it, and again once the chances the answers change are made
+   * Runs a change. The value it is [about] is marked as being saved until the application answers
+   * — a click must be seen to have landed — and ITS EFFECT IS SHOWN ONCE THE APPLICATION HAS KEPT
+   * IT, never before: [shown] changes the work as shown the way the application keeps it. Changes
+   * go one after another in the order made, none is dropped, and nothing is read between them: the
+   * application only writes them. Once no change has come for [SETTLE_MS] the page is read as the
+   * application now knows it ([loadLater]), and again once the chances the answers change are made
    * ([settledLater]).
    */
   function act(change, shown, about) {
@@ -197,33 +198,45 @@
     pending++;
     // A wait for the chances of the answers before is stale now
     settling++;
-    // A new change puts off reading what moves the prediction
+    // A new change puts off reading the work and what moves the prediction
     clearTimeout(explanationTimer);
+    clearTimeout(loadTimer);
     if (about) saving.add(about);
-    if (shown && view && view.item) {
-      try {
-        shown(view.item);
-      } catch (e) {
-        // The application's answer shows it all the same
-      }
-    }
     render();
     queue = queue.then(async () => {
+      let kept = false;
       try {
         await change();
+        kept = true;
       } catch (e) {
         message = e.message;
       }
+      if (kept && shown && view && view.item) {
+        try {
+          shown(view.item);
+        } catch (e) {
+          // The work read after the quiet shows it all the same
+        }
+      }
       if (about) saving.delete(about);
       pending--;
-      if (pending === 0) {
-        // The answers as kept, at once; the chances they change once they are made
-        await load();
-        explanationLater();
-        settledLater();
-      } else render();
+      render();
+      if (pending === 0) loadLater();
     });
     return queue;
+  }
+
+  let loadTimer = null;
+
+  /** The work read as the application now knows it once no change has come for [SETTLE_MS]; the chances the answers change once they are made. */
+  function loadLater() {
+    clearTimeout(loadTimer);
+    loadTimer = setTimeout(async () => {
+      if (pending !== 0) return;
+      await load();
+      explanationLater();
+      settledLater();
+    }, SETTLE_MS);
   }
 
   const keyOf = (item) => `${item.summary.source}/${item.summary.item}`;

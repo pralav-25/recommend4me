@@ -48,4 +48,12 @@ object ModelValues {
     /** The values the model gives an item of a facet it works out — and every draft of the layer ([Chance.drafted]) — the likeliest first. */
     fun given(chances: Map<String, Chance>): List<String> =
         chances.values.filter { !it.had && (it.drafted || it.chance > LIKELY) }.sortedByDescending { it.chance }.map { it.key }
+
+    /**
+     * The values of an item's [chances] a card or a work's facets may show with their names: those it
+     * has and those given. Not every value kept — thousands of a universe's characters are, of a work
+     * of it — the few offered beside them named apart, when shown.
+     */
+    fun named(chances: Map<String, Chance>?): List<String> =
+        chances.orEmpty().values.filter { it.had || it.drafted || it.chance > LIKELY }.map { it.key }
 }

@@ -19,6 +19,7 @@ import io.github.vlsergey.recommend4me.source.PageDecor
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
+import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.suggestion.toApi
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
@@ -73,7 +74,7 @@ class PagesController(
         val corrections = store.corrections.facetsOf(itemId)
         val chances = store.suggestions.ofItems(listOf(itemId))[itemId]
         val names = wanted.associateWith { facet ->
-            store.names(facet, site[facet].orEmpty() + corrections.filter { it.facet == facet }.map { it.key } + chances?.get(facet)?.keys.orEmpty())
+            store.names(facet, site[facet].orEmpty() + corrections.filter { it.facet == facet }.map { it.key } + ModelValues.named(chances?.get(facet)))
         }
         val texts = Corrected.texts(store.items.texts(itemId), store.corrections.fieldsOf(itemId))
         val pictureMarks = store.marks.pictureMarksOf(itemId)

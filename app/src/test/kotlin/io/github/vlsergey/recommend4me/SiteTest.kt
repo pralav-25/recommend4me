@@ -772,8 +772,11 @@ class SiteTest {
         assertEquals(TagRelation.NONE, relationOf(other) ?: TagRelation.NONE)
 
         // A tag the user makes up on a work by its name: a new normalized tag of that name; the same name again, the same tag
+        // The answer is only written: it tells the key found or made, nothing of the work read back
         val made = corrections.correctFacet("site", "t1", FacetCorrection(facet = "tags", added = true, name = "Пустота")).body!!
-        val void = made.allFacets.single { it.facet == "tags" }.propertyValues.single { it.name == "Пустота" }.key
+        val void = made.key
+        assertEquals("Пустота", made.name)
+        assertEquals(void, items.getItem("site", "t1").body!!.allFacets.single { it.facet == "tags" }.propertyValues.single { it.name == "Пустота" }.key)
         assertEquals("Пустота", type.tags.explicitNames()[TagRepository.idOf(void)])
         corrections.correctFacet("site", "t3", FacetCorrection(facet = "tags", added = true, name = "пустота"))
         assertEquals(void, stores.source("site")!!.corrections.facetsOf("t3").single { it.facet == "tags" && it.added && it.key != hulls }.key)

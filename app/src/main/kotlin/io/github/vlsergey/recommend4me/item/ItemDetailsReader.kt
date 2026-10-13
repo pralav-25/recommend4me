@@ -24,6 +24,7 @@ import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.source.downloadsPages
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
+import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.work.Works
 import org.springframework.stereotype.Component
 import java.time.ZoneOffset
@@ -65,7 +66,7 @@ class ItemDetailsReader(
         val names = schema.facets.associate { def ->
             def.key to store.names(
                 def.key,
-                site[def.key].orEmpty() + corrections.filter { it.facet == def.key }.map { it.key } + chances?.get(def.key)?.keys.orEmpty(),
+                site[def.key].orEmpty() + corrections.filter { it.facet == def.key }.map { it.key } + ModelValues.named(chances?.get(def.key)),
             )
         }
         // A facet's own line as the site writes it is shown with the facet, not among the texts

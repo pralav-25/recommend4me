@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.correction
 
 import io.github.vlsergey.recommend4me.api.CorrectionsApi
+import io.github.vlsergey.recommend4me.api.model.FacetAnswer
 import io.github.vlsergey.recommend4me.api.model.FieldCorrection
 import io.github.vlsergey.recommend4me.api.model.ItemDetails
 import io.github.vlsergey.recommend4me.api.model.ItemRef
@@ -58,24 +59,23 @@ class CorrectionsController(
     }
 
     /**
-     * An answer on a facet: [change] written and the work read back with it, at once. The chances
-     * it changes are made apart ([FacetSuggestions.answered]); the page asks for them when they
-     * are made (settleSuggestions).
+     * An answer on a facet: [change] written, and nothing else — nothing of the work read back: a
+     * second answer right after the first waits for no reading. The page shows the answer once it
+     * is kept and reads the work anew once the answers have settled; the chances it changes are
+     * made apart ([FacetSuggestions.answered]), and the page asks for them when they are made
+     * (settleSuggestions).
      */
-    private fun answered(store: SourceStore, item: String, facet: String, change: () -> Unit): ResponseEntity<ItemDetails> {
+    private fun answered(store: SourceStore, item: String, facet: String, change: () -> Unit) {
         val started = System.currentTimeMillis()
         change()
-        val written = System.currentTimeMillis()
         suggestions.answered(store, item, facet)
-        return corrected(store, item).also {
-            log.info("{}: an answer on {} of {} in {} ms — written {}, the work read back {}", store.id, facet, item, System.currentTimeMillis() - started, written - started, System.currentTimeMillis() - written)
-        }
+        log.info("{}: an answer on {} of {} written in {} ms", store.id, facet, item, System.currentTimeMillis() - started)
     }
 
     private fun itemOf(source: String, item: String): SourceStore? =
         stores.source(source)?.takeIf { it.items.find(item) != null }
 
-    override fun correctFacet(source: String, item: String, facetCorrection: ApiFacetCorrection): ResponseEntity<ItemDetails> {
+    override fun correctFacet(source: String, item: String, facetCorrection: ApiFacetCorrection): ResponseEntity<FacetAnswer> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
         val c = facetCorrection
         val def = store.schema.facet(c.facet) ?: throw noField(store, c.facet)
@@ -95,8 +95,7 @@ class CorrectionsController(
                 )
             }
         }
-        // The next likeliest values of the facet are offered at once
-        return answered(store, item, c.facet) {
+        answered(store, item, c.facet) {
             // A name is kept for a value the site does not name: one the user made up
             val known = store.names(c.facet, listOf(key)).isNotEmpty()
             store.corrections.setFacet(item, c.facet, key, c.added, name.takeIf { !known }, Instant.now())
@@ -105,23 +104,26 @@ class CorrectionsController(
                 if (store.corrections.facetsOf(item).any { it.facet == other && it.key == key && it.added }) store.corrections.unsetFacet(item, other, key)
             }
         }
+        return ResponseEntity.ok(FacetAnswer(c.facet, key, name))
     }
 
-    override fun uncorrectFacet(source: String, item: String, facet: String, key: String): ResponseEntity<ItemDetails> {
+    override fun uncorrectFacet(source: String, item: String, facet: String, key: String): ResponseEntity<Unit> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
-        return answered(store, item, facet) { store.corrections.unsetFacet(item, facet, key) }
+        answered(store, item, facet) { store.corrections.unsetFacet(item, facet, key) }
+        return ResponseEntity.noContent().build()
     }
 
-    override fun completeFacet(source: String, item: String, facet: String): ResponseEntity<ItemDetails> = complete(source, item, facet, true)
+    override fun completeFacet(source: String, item: String, facet: String): ResponseEntity<Unit> = complete(source, item, facet, true)
 
-    override fun uncompleteFacet(source: String, item: String, facet: String): ResponseEntity<ItemDetails> = complete(source, item, facet, false)
+    override fun uncompleteFacet(source: String, item: String, facet: String): ResponseEntity<Unit> = complete(source, item, facet, false)
 
-    /** The user's word that the item's values of the [facet] are all named, or its taking back; the facet's chances made current at once. */
-    private fun complete(source: String, item: String, facet: String, complete: Boolean): ResponseEntity<ItemDetails> {
+    /** The user's word that the item's values of the [facet] are all named, or its taking back; the facet's chances made current apart. */
+    private fun complete(source: String, item: String, facet: String, complete: Boolean): ResponseEntity<Unit> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
         val def = store.schema.facet(facet) ?: throw noField(store, facet)
         if (!def.editable) throw siteField(store, def)
-        return answered(store, item, facet) { store.corrections.setComplete(item, facet, complete, Instant.now()) }
+        answered(store, item, facet) { store.corrections.setComplete(item, facet, complete, Instant.now()) }
+        return ResponseEntity.noContent().build()
     }
 
     override fun correctField(source: String, item: String, field: String, fieldCorrection: FieldCorrection): ResponseEntity<ItemDetails> {

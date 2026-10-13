@@ -7,6 +7,7 @@ import io.github.vlsergey.recommend4me.database.source.tables.references.FACET_V
 import io.github.vlsergey.recommend4me.draft.DraftRepository
 import io.github.vlsergey.recommend4me.universe.LayerDraft
 import io.github.vlsergey.recommend4me.vector.Vectors
+import org.jooq.Condition
 import org.jooq.DSLContext
 import java.time.Instant
 import java.util.concurrent.locks.ReentrantLock
@@ -120,17 +121,22 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
     /**
      * The chances of the items [ids]: item to facet to value to chance — with the drafts of the
      * layer among them ([Chance.draftedFrom]) unless [withDrafts] is false: what the model made
-     * alone, as the model compares it with what it makes anew.
+     * alone, as the model compares it with what it makes anew. Of the [facets] alone when given: a
+     * card's — a work of a universe keeps the chances of thousands of its characters.
      */
-    fun ofItems(ids: Collection<String>, withDrafts: Boolean = true): Map<String, Map<String, Map<String, Chance>>> {
+    fun ofItems(ids: Collection<String>, withDrafts: Boolean = true, facets: Collection<String>? = null): Map<String, Map<String, Map<String, Chance>>> {
         val out = HashMap<String, HashMap<String, HashMap<String, Chance>>>()
-        ids.distinct().chunked(BATCH).forEach { chunk ->
+        if (facets != null && facets.isEmpty()) return out
+        fun read(condition: Condition) =
             db.select(FACET_SUGGESTION.ITEM_ID, FACET_SUGGESTION.FACET, FACET_SUGGESTION.VALUE_KEY, FACET_SUGGESTION.KIND, FACET_SUGGESTION.CHANCE, FACET_SUGGESTION.MENTIONS)
                 .from(FACET_SUGGESTION)
-                .where(FACET_SUGGESTION.SOURCE.eq(source), FACET_SUGGESTION.ITEM_ID.`in`(chunk))
+                .where(FACET_SUGGESTION.SOURCE.eq(source), condition)
                 .fetch { r -> put(out, Chance(r.value1()!!, r.value2()!!, r.value3()!!, r.value4() == HAD, r.value5()!!, r.value6())) }
-        }
-        if (withDrafts) drafted(out, drafts.ofItems(ids))
+        if (facets == null) ids.distinct().chunked(BATCH).forEach { chunk -> read(FACET_SUGGESTION.ITEM_ID.`in`(chunk)) }
+        // An item at a time: the key's index is read by the item and the facets both — the items and
+        // the facets each IN would read every value of every facet of the items
+        else ids.distinct().forEach { id -> read(FACET_SUGGESTION.ITEM_ID.eq(id).and(FACET_SUGGESTION.FACET.`in`(facets))) }
+        if (withDrafts) drafted(out, drafts.ofItems(ids).let { all -> if (facets == null) all else all.mapValues { (_, list) -> list.filter { it.facet in facets } } })
         return out
     }
 

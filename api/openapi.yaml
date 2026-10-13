@@ -617,7 +617,8 @@ paths:
         added: true gives the work a value it lacks (ADDED) or confirms one the site or the model
         gave it (CONFIRMED); added: false says the work has it not (REMOVED). Either is applied
         over any chance of the model; taking the correction back (uncorrectFacet) leaves the value
-        to the site and the model again.
+        to the site and the model again. Only written, nothing read back: the page shows the answer
+        once it is kept, and reads the work anew once the answers have settled.
       parameters:
         - $ref: '#/components/parameters/Source'
         - $ref: '#/components/parameters/Item'
@@ -629,11 +630,11 @@ paths:
               $ref: '#/components/schemas/FacetCorrection'
       responses:
         '200':
-          description: The item after the correction
+          description: The value answered on, by its key - of one named alone, the key found or made for it
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ItemDetails'
+                $ref: '#/components/schemas/FacetAnswer'
     delete:
       tags: [corrections]
       operationId: uncorrectFacet
@@ -652,12 +653,8 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: The item after the correction is taken back
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ItemDetails'
+        '204':
+          description: Taken back; nothing read back
 
   /api/items/{source}/{item}/corrections/complete:
     put:
@@ -673,12 +670,8 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: The item after the correction
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ItemDetails'
+        '204':
+          description: Kept; nothing read back
     delete:
       tags: [corrections]
       operationId: uncompleteFacet
@@ -692,12 +685,8 @@ paths:
           schema:
             type: string
       responses:
-        '200':
-          description: The item after the correction
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ItemDetails'
+        '204':
+          description: Taken back; nothing read back
 
   /api/items/{source}/{item}/corrections/fields/{field}:
     put:
@@ -2640,6 +2629,20 @@ components:
         added:
           type: boolean
           description: true - the value is added; false - the site's value is taken away
+
+    FacetAnswer:
+      type: object
+      required: [facet, key]
+      description: An answer on a value as kept - the page shows it by this, nothing of the work read back
+      properties:
+        facet:
+          type: string
+        key:
+          type: string
+          description: The value's key - of a value named alone, the one found or made for it
+        name:
+          type: string
+          description: The name the answer was given with, when it named the value
 
     FieldCorrection:
       type: object
