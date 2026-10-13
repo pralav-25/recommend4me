@@ -9,6 +9,9 @@ import io.github.vlsergey.recommend4me.api.model.ScorerChoice
 import io.github.vlsergey.recommend4me.api.model.ScorerInfo
 import io.github.vlsergey.recommend4me.api.model.ModelWorth as ApiModelWorth
 import io.github.vlsergey.recommend4me.api.model.PartWorth as ApiPartWorth
+import io.github.vlsergey.recommend4me.api.model.WeighedGroup as ApiWeighedGroup
+import io.github.vlsergey.recommend4me.api.model.Weighing as ApiWeighing
+import io.github.vlsergey.recommend4me.api.model.WeighingFold as ApiWeighingFold
 import io.github.vlsergey.recommend4me.api.model.ScorerComparison as ApiScorerComparison
 import io.github.vlsergey.recommend4me.api.model.ScorerQuality as ApiScorerQuality
 import io.github.vlsergey.recommend4me.item.toApi
@@ -79,6 +82,24 @@ class ModelController(
                 grades = worth.grades,
                 parts = worth.parts.map { ApiPartWorth(it.part, it.labelKey, it.features, it.metrics?.toApi()) },
                 full = worth.full?.toApi(),
+            ),
+        )
+    }
+
+    override fun measureWeighing(type: String): ResponseEntity<ApiWeighing> {
+        if (stores.type(type) == null) return ResponseEntity.notFound().build()
+        val w = recommendations.weighing(type) ?: return ResponseEntity.notFound().build()
+        val (baseline, baselineSe) = GroupWeights.meanAndError(w.folds.map { it.baseline })
+        val (weighed, weighedSe) = GroupWeights.meanAndError(w.folds.map { it.weighed })
+        val (gain, gainSe) = GroupWeights.meanAndError(w.folds.map { it.weighed - it.baseline })
+        return ResponseEntity.ok(
+            ApiWeighing(
+                scorer = w.scorer,
+                grades = w.grades,
+                groups = w.groups.map { ApiWeighedGroup(it.part, it.labelKey, it.columns, it.weight) },
+                folds = w.folds.map { f -> ApiWeighingFold(f.baseline, f.weighed, f.weights.toList()) },
+                baseline = baseline, baselineSe = baselineSe, weighed = weighed, weighedSe = weighedSe, gain = gain, gainSe = gainSe,
+                onAll = w.onAll?.toApi(),
             ),
         )
     }

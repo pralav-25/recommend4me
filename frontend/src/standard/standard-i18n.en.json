@@ -51,6 +51,7 @@
   "model.likeReviews": "Likeness to the marked reviews",
   "model.likeWorks": "Likeness of the description to the graded works",
   "model.pictures": "Cover and pictures",
+  "model.rest": "Every other part",
   "model.previous": "Grade of the previous version",
   "model.reviews": "Reviews",
   "model.reviewsOneByOne": "Reviews one by one",

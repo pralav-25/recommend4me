@@ -22,6 +22,12 @@ class PartWorth(val part: String, val labelKey: String, val features: Int, val m
 /** The out-of-fold quality of the ranking on everything, and without every part in turn — the most needed part first. */
 class ModelWorth(val scorer: String, val full: RankingMetrics?, val grades: Int, val parts: List<PartWorth>)
 
+/** A group of the input ([ColumnGroup]) by the key of its label, of [columns] columns, and the weight chosen of it on every grade. */
+class WeighedGroup(val part: String, val labelKey: String, val columns: Int, val weight: Double)
+
+/** Whether weighing the parts would rank better ([GroupWeights.nested]), fold by fold, and the weights on every grade with their quality. */
+class Weighing(val scorer: String, val grades: Int, val groups: List<WeighedGroup>, val folds: List<GroupWeights.NestedFold>, val onAll: RankingMetrics?)
+
 /** What a part of a work's input moves its score by as a whole — a facet, the pictures, a text — and every feature in it. */
 data class ContributionGroup(val part: String, val labelKey: String, val contribution: Double, val features: List<LabelledContribution>)
 

@@ -2,6 +2,7 @@ package io.github.vlsergey.recommend4me.model
 
 import io.github.vlsergey.recommend4me.interest.Interest
 import io.github.vlsergey.recommend4me.interest.InterestChanged
+import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.likeness.Likenesses
 import io.github.vlsergey.recommend4me.likeness.MarkLikeness
@@ -771,14 +772,7 @@ class Recommendations(
         val p = prepare(reader.read(type)) ?: return@withLock null
         if (p.perItem.size < CrossValidation.MIN_WORKS) return@withLock null
         val full = CrossValidation.choose(CrossValidation.measureAll(p.task, scorer, p.xFor))?.metrics
-        val layout = p.layout
-        val columns = LinkedHashMap<String, MutableList<Int>>()
-        layout.blocks.forEach { block ->
-            val at = layout.offsetOf(block)!!
-            columns.getOrPut(partOf(block)) { ArrayList() } += (at until at + layout.dimOf(block))
-        }
-        layout.categorical.forEachIndexed { i, name -> columns.getOrPut(partOf(name)) { ArrayList() } += layout.categoricalOffset + i }
-        layout.numeric.forEachIndexed { i, name -> columns.getOrPut(partOf(name)) { ArrayList() } += layout.numericOffset + i }
+        val columns = partColumns(p.layout)
         val labels = FeatureNames.partLabels(columns.keys, type.sources)
         fun without(m: Matrix, cols: List<Int>): Matrix {
             val out = Matrix(m.rows, m.cols)
@@ -792,6 +786,50 @@ class Recommendations(
             PartWorth(part, labels.getValue(part), cols.size, CrossValidation.choose(CrossValidation.measureAll(task, scorer, xFor))?.metrics)
         }
         ModelWorth(scorer.id, full, p.grades.size, parts.sortedBy { it.metrics?.concordance ?: Double.MAX_VALUE })
+    }
+
+    /** The columns of every part of the input in [layout], as the explanation names the parts. */
+    private fun partColumns(layout: FeatureLayout): Map<String, List<Int>> {
+        val columns = LinkedHashMap<String, MutableList<Int>>()
+        layout.blocks.forEach { block ->
+            val at = layout.offsetOf(block)!!
+            columns.getOrPut(partOf(block)) { ArrayList() } += (at until at + layout.dimOf(block))
+        }
+        layout.categorical.forEachIndexed { i, name -> columns.getOrPut(partOf(name)) { ArrayList() } += layout.categoricalOffset + i }
+        layout.numeric.forEachIndexed { i, name -> columns.getOrPut(partOf(name)) { ArrayList() } += layout.numericOffset + i }
+        return columns
+    }
+
+    /**
+     * WHETHER WEIGHING THE PARTS OF THE INPUT WOULD RANK BETTER ([GroupWeights]): every fold of the
+     * works ranked by a model whose weights were chosen without it, against every weight 1 the same
+     * way — and the weights chosen on every grade. The rows are read under the type's lock, the
+     * trainings — hundreds of them — run without it. Nothing is kept.
+     */
+    fun weighing(typeId: String): Weighing? {
+        val type = type(typeId)
+        val scorer = plugins.scorer(typeId) ?: return null
+        val p = lock(typeId).withLock { prepare(reader.read(type)) } ?: return null
+        if (p.perItem.size < CrossValidation.MIN_WORKS) return null
+        val started = System.currentTimeMillis()
+        val columns = partColumns(p.layout)
+        val groups = GroupWeights.groups(columns)
+        val labels = FeatureNames.partLabels(columns.keys, type.sources)
+        val folds = GroupWeights.nested(p.task, p.xFor, scorer, groups)
+        val onAll = GroupWeights.tune(p.task, p.xFor, scorer, groups)
+        log.info(
+            "{}: the weighing of {} groups measured on {} grades in {} ms: {} folds, every weight 1 {} against weighed {}; on every grade {}",
+            typeId, groups.size, p.grades.size, System.currentTimeMillis() - started, folds.size,
+            folds.map { "%.4f".format(it.baseline) }, folds.map { "%.4f".format(it.weighed) },
+            groups.indices.joinToString { "${groups[it].part}=${onAll.weights[it]}" },
+        )
+        return Weighing(
+            scorer.id, p.grades.size,
+            groups.mapIndexed { g, group ->
+                WeighedGroup(group.part, labels[group.part] ?: I18nKeys.qualified(I18nKeys.STANDARD, "model.rest"), group.columns.size, onAll.weights[g])
+            },
+            folds, onAll.metrics,
+        )
     }
 
     /** Makes [scorerId] the scorer of the type and trains it. */

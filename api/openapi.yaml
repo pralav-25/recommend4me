@@ -1326,6 +1326,26 @@ paths:
         '404':
           description: No such type, or too few grades to cross-validate
 
+  /api/types/{type}/model/weighing:
+    post:
+      tags: [model]
+      operationId: measureWeighing
+      summary: Measures whether a weight of every large part of the input chosen by cross-validation would rank better; nothing is kept
+      description: |
+        Nested cross-validation: every fold of the works is ranked by a model whose weights of the parts
+        were chosen without it, and by one of every weight 1 the same way. Takes hundreds of trainings
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      responses:
+        '200':
+          description: The quality of both fold by fold, the gain, and the weights chosen on every grade
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Weighing'
+        '404':
+          description: No such type, or too few grades to cross-validate
+
   /api/types/{type}/model/comparison:
     get:
       tags: [model]
@@ -2756,6 +2776,79 @@ components:
           description: Every part of the input, the one whose removal costs most first
           items:
             $ref: '#/components/schemas/PartWorth'
+
+    Weighing:
+      type: object
+      required: [scorer, grades, groups, folds, baseline, baselineSe, weighed, weighedSe, gain, gainSe]
+      properties:
+        scorer:
+          type: string
+        grades:
+          type: integer
+        groups:
+          type: array
+          description: The parts weighed by themselves, and every small part together
+          items:
+            $ref: '#/components/schemas/WeighedGroup'
+        folds:
+          type: array
+          items:
+            $ref: '#/components/schemas/WeighingFold'
+        baseline:
+          type: number
+          format: double
+          description: The concordance of every weight 1 on the folds, as the weighed one is measured
+        baselineSe:
+          type: number
+          format: double
+        weighed:
+          type: number
+          format: double
+          description: The concordance of the weights chosen without the fold
+        weighedSe:
+          type: number
+          format: double
+        gain:
+          type: number
+          format: double
+          description: The mean of the folds' differences, weighed against every weight 1
+        gainSe:
+          type: number
+          format: double
+        onAll:
+          $ref: '#/components/schemas/ModelMetrics'
+
+    WeighedGroup:
+      type: object
+      required: [part, labelKey, columns, weight]
+      properties:
+        part:
+          type: string
+        labelKey:
+          type: string
+        columns:
+          type: integer
+        weight:
+          type: number
+          format: double
+          description: The weight chosen on every grade
+
+    WeighingFold:
+      type: object
+      required: [baseline, weighed, weights]
+      properties:
+        baseline:
+          type: number
+          format: double
+        weighed:
+          type: number
+          format: double
+        weights:
+          type: array
+          description: The weights chosen without the fold, in the order of the groups
+          items:
+            type: number
+            format: double
 
     PartWorth:
       type: object
