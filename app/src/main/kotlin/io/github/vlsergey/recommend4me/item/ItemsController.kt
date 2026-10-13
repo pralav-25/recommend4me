@@ -113,8 +113,16 @@ class ItemsController(
         return ResponseEntity.ok(
             FacetValues.of(store, facet).asSequence()
                 .filter { v -> piece.isEmpty() || piece in v.name.lowercase() || piece in v.key.lowercase() || aliases[v.key].orEmpty().any { piece in it } }
-                // A value beginning with what was typed before one only holding it
-                .sortedBy { if (it.name.lowercase().startsWith(piece)) 0 else 1 }
+                // A value named exactly what was typed first — by its own name or a site's — then one
+                // beginning with it, then one only holding it
+                .sortedBy { v ->
+                    val names = listOf(v.name.lowercase()) + aliases[v.key].orEmpty()
+                    when {
+                        names.any { it == piece } -> 0
+                        names.any { it.startsWith(piece) } -> 1
+                        else -> 2
+                    }
+                }
                 .take(limit.coerceIn(1, 500))
                 .map { FacetValueUse(it.key, it.name, it.items, it.nameKey) }
                 .toList(),
