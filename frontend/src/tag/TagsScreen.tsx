@@ -336,12 +336,12 @@ const SETTLE_MS = 1000;
  *
  * AN ANSWER IS SAVED AT ONCE, THE TABLE READ ANEW AFTER A QUIET: a press is sent at once — the
  * answers one after another, in the order pressed — and shown pressed at once; the table, whose
- * order a merge changes, is read anew two seconds after the last press. Then the buttons are locked,
- * the rows move to their new places for a second, and the buttons are free a second after — so a row
- * that moved is never pressed by the click meant for the one that was there.
+ * order a merge changes, is read anew two seconds after the last press, in the background, the
+ * buttons free. Once it is here the buttons are locked, the rows move to their new places for a
+ * second, and the buttons are free a second after — so a row that moved is never pressed by the
+ * click meant for the one that was there.
  */
 function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
-  const changed = useTagsChanged(type.id);
   const [shown, setShown] = useState<Record<Said, boolean>>({ MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true });
   const [locked, setLocked] = useState(false);
   /** The answers given since the table was read, by tag: shown pressed before the table says so. */
@@ -363,19 +363,45 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     },
     [],
   );
-  const similar = useQuery({
-    queryKey: [TAGS, type.id, "similar", tag.key],
-    queryFn: async () =>
-      unwrap(await api.GET("/api/types/{type}/tags/similar", { params: { path: { type: type.id }, query: { tag: tag.key, limit: SIMILAR } } })),
-  });
+  const queryClient = useQueryClient();
+  const similarQuery = async () =>
+    unwrap(await api.GET("/api/types/{type}/tags/similar", { params: { path: { type: type.id }, query: { tag: tag.key, limit: SIMILAR } } }));
+  const similar = useQuery({ queryKey: [TAGS, type.id, "similar", tag.key], queryFn: similarQuery });
 
-  /** The table read anew once every answer is saved — unless the user pressed again meanwhile. */
+  /**
+   * The table read anew once every answer is saved — unless the user pressed again meanwhile — in the
+   * background, the buttons free; only once it is here are they locked and the rows moved to it.
+   */
   const refresh = async (asked: number) => {
     await sending.current;
     if (asked !== presses.current) return;
-    setLocked(true);
-    before.current = new Map([...rows.current].map(([key, el]) => [key, el.getBoundingClientRect().top]));
-    await changed();
+    const key = [TAGS, type.id, "similar", tag.key];
+    let read;
+    try {
+      read = await queryClient.fetchQuery({ queryKey: [...key, "fresh"], queryFn: similarQuery, staleTime: 0 });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    queryClient.removeQueries({ queryKey: [...key, "fresh"], exact: true });
+    // Pressed again while it was read: the reading after that press shows it
+    if (asked !== presses.current) return;
+    const shownBefore = queryClient.getQueryData(key);
+    before.current = new Map([...rows.current].map(([k, el]) => [k, el.getBoundingClientRect().top]));
+    queryClient.setQueryData(key, read);
+    if (queryClient.getQueryData(key) === shownBefore) {
+      // The same table: nothing moves, nothing is locked
+      before.current = null;
+      setSaid({});
+    } else {
+      setLocked(true);
+    }
+    // The tag itself, the list and the works read anew too; the table is current already — read again, it would move without the rows
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: [TAGS, type.id], predicate: (q) => q.queryKey[2] !== "similar" }),
+      queryClient.invalidateQueries({ queryKey: ["item"] }),
+      queryClient.invalidateQueries({ queryKey: ["facets", type.id] }),
+    ]);
   };
 
   const answer = (other: string, relation: TagRelation) => {
@@ -398,7 +424,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   // The rows read anew: each moved from where it was to where it is, a new one faded in
   useLayoutEffect(() => {
     const was = before.current;
-    if (!was || similar.isFetching || !similar.data) return;
+    if (!was || !similar.data) return;
     before.current = null;
     setSaid({});
     rows.current.forEach((el, key) => {
@@ -416,7 +442,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     );
     clearTimeout(unlock.current);
     unlock.current = setTimeout(() => setLocked(false), MOVE_MS + SETTLE_MS);
-  }, [similar.data, similar.isFetching]);
+  }, [similar.data]);
 
   const visible = similar.data?.filter((s) => s.relation === "NONE" || shown[s.relation]);
 
