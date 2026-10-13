@@ -327,7 +327,10 @@ class SiteTest {
         val answeredYes = setOf(FacetValueInfo.Corrected.ADDED, FacetValueInfo.Corrected.CONFIRMED)
         val space = values.single { it.name == "Космос" }.key
         assertEquals(setOf(tag("space"), tag("magic"), space), values.filter { it.corrected in answeredYes }.map { it.key }.toSet())
-        assertEquals(listOf(tag("magic")), items.listFacetValues("site", "tags", "mag", 10).body!!.map { it.key })
+        // Found by its name first; the others it lacks to make the number, by the meaning of theirs, each once
+        val mag = items.listFacetValues("site", "tags", "mag", 10).body!!.map { it.key }
+        assertEquals(tag("magic"), mag.first())
+        assertEquals(mag.distinct(), mag)
 
         // The prediction is told part by part, each part with its features; a page of the site gets the parts alone
         (3..8).forEach { k ->
@@ -699,9 +702,10 @@ class SiteTest {
         assertEquals(listOf("Starhulls", "Hulls"), named.names)
         val shown = items.getItem("site", "t3").body!!.allFacets.single { it.facet == "tags" }.propertyValues.single { it.key == hulls }
         assertEquals("Корпуса", shown.name)
-        // Found by the name of a site's tag of it, not its own; once, by its own name
+        // Found by the name of a site's tag of it, not its own; once, by its own name; the rest by meaning
         val found = items.listFacetValues("site", "tags", "starhull", 10).body!!
-        assertEquals(listOf(hulls to "Корпуса"), found.map { it.key to it.name })
+        assertEquals(hulls to "Корпуса", found.first().let { it.key to it.name })
+        assertEquals(1, found.count { it.key == hulls })
         // The name taken back: the sites' names decide again
         assertEquals(TagNameRule.LIKED, tagsApi.nameTag("books", TagNameRequest(hulls)).body!!.rule)
 

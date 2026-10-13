@@ -35,8 +35,7 @@ import io.github.vlsergey.recommend4me.refusal.Refusal
 import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.downloadsPages
 import io.github.vlsergey.recommend4me.source.Stores
-import io.github.vlsergey.recommend4me.tag.TagNormalization
-import io.github.vlsergey.recommend4me.tag.TagRepository
+import io.github.vlsergey.recommend4me.tag.Tags
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
@@ -71,7 +70,7 @@ class ItemsController(
     private val linkedGrades: LinkedGrades,
     private val linkedInterest: LinkedInterest,
     private val searchQuality: io.github.vlsergey.recommend4me.search.SearchQuality,
-    private val normalization: TagNormalization,
+    private val tags: Tags,
 ) : ItemsApi {
 
     override fun judgeSearch(type: String, searchJudgment: SearchJudgment): ResponseEntity<Unit> {
@@ -109,43 +108,22 @@ class ItemsController(
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         if (store.schema.facet(facet) == null) return ResponseEntity.notFound().build()
         val piece = query?.trim()?.lowercase().orEmpty()
-        val aliases = if (piece.isEmpty() || facet !in store.tagFacets) emptyMap() else tagAliases(store.id, facet)
+        val wanted = limit.coerceIn(1, 500)
+        // A facet of tags: the normalized tags, found by the names on this site, on any, then by meaning ([Tags.find])
+        if (facet in store.tagFacets) {
+            val type = stores.typeOf(store.id)
+            val found = if (piece.isEmpty()) tags.list(type, facet, null).take(wanted) else tags.find(type, facet, store.id, piece, wanted)
+            return ResponseEntity.ok(found.map { FacetValueUse(it.stats.key, it.name.name, it.stats.items.size, null) })
+        }
         return ResponseEntity.ok(
             FacetValues.of(store, facet).asSequence()
-                .filter { v -> piece.isEmpty() || piece in v.name.lowercase() || piece in v.key.lowercase() || aliases[v.key].orEmpty().any { piece in it } }
-                // A value named exactly what was typed first — by its own name or a site's — then one
-                // beginning with it, then one only holding it
-                .sortedBy { v ->
-                    val names = listOf(v.name.lowercase()) + aliases[v.key].orEmpty()
-                    when {
-                        names.any { it == piece } -> 0
-                        names.any { it.startsWith(piece) } -> 1
-                        else -> 2
-                    }
-                }
-                .take(limit.coerceIn(1, 500))
+                .filter { piece.isEmpty() || piece in it.name.lowercase() || piece in it.key.lowercase() }
+                // A value beginning with what was typed before one only holding it
+                .sortedBy { if (it.name.lowercase().startsWith(piece)) 0 else 1 }
+                .take(wanted)
                 .map { FacetValueUse(it.key, it.name, it.items, it.nameKey) }
                 .toList(),
         )
-    }
-
-    /**
-     * Every name a tag of the layer [facet] goes by on the sites of the source's type — the names of
-     * the sites' tags bound to it, lower case — by the tag's key: a tag is found by any of them, as on
-     * the screen of the tags ("angst" finds "Ангст").
-     */
-    private fun tagAliases(source: String, facet: String): Map<String, List<String>> {
-        val type = stores.typeOf(source)
-        val bound = type.tags.bindings()
-        val out = HashMap<String, MutableList<String>>()
-        type.sources.forEach { s ->
-            val siteFacet = normalization.siteFacetOf(s, facet) ?: return@forEach
-            val names = s.names(siteFacet)
-            bound.forEach { (ref, id) ->
-                if (ref.source == s.id) out.getOrPut(TagRepository.key(id)) { ArrayList() } += (names[ref.tag] ?: ref.tag).lowercase()
-            }
-        }
-        return out
     }
 
     override fun lookupItems(type: String, query: String, limit: Int): ResponseEntity<List<LinkedItem>> {

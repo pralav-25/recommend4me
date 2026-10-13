@@ -199,32 +199,10 @@ class Tags(
         val own = stats[tag] ?: return null
         val n = naming(type, facet, stats)
         val distinct = type.tags.distinct()
-        val vectors = HashMap<SiteTagRef, FloatArray>()
-        type.sources.forEach { s ->
-            val names = stats.values.flatMap { t -> t.variants.values.filter { it.site.source == s.id } }.associate { it.site to it.name }
-            if (names.isEmpty()) return@forEach
-            val encoded = phrases.of(s, names.values.distinct())
-            names.forEach { (site, name) -> encoded[name]?.let { vectors[site] = it } }
-        }
-        fun direction(sites: Collection<SiteTagRef>): FloatArray? {
-            val list = sites.mapNotNull { vectors[it] }
-            if (list.isEmpty()) return null
-            val sum = FloatArray(list.first().size)
-            list.forEach { v ->
-                val norm = norm(v).takeIf { it > 0 } ?: return@forEach
-                for (i in sum.indices) sum[i] += v[i] / norm
-            }
-            val total = norm(sum).takeIf { it > 0 } ?: return null
-            return FloatArray(sum.size) { sum[it] / total }
-        }
-        // The query is encoded as the names are, and kept nowhere: a text typed is not a name of the sites
+        val meaning = Meaning(type, stats)
         val asked = query?.trim()?.takeIf { it.isNotEmpty() }
-        val target = if (asked == null) direction(own.variants.keys) else phrases.encoder()?.encode(listOf(asked))?.firstOrNull()?.let { v ->
-            val norm = norm(v).takeIf { it > 0 } ?: return@let null
-            FloatArray(v.size) { v[it] / norm }
-        }
-        fun likeness(sites: Collection<SiteTagRef>): Double =
-            target?.let { tv -> direction(sites)?.let { d -> d.indices.sumOf { (d[it] * tv[it]).toDouble() } } } ?: 0.0
+        val target = if (asked == null) meaning.direction(own.variants.keys) else meaning.ofText(asked)
+        fun likeness(sites: Collection<SiteTagRef>): Double = meaning.likeness(target, sites)
         fun relation(key: String): TagRelation {
             val other = TagRepository.idOf(key)!!
             return when {
@@ -243,6 +221,90 @@ class Tags(
             .sortedWith(compareByDescending<Row> { it.similarity }.thenBy { it.key })
         val page = rows.drop(offset.coerceAtLeast(0)).take(limit)
         return SimilarPage(rows.size, page.map { SimilarTag(n.named(it.tag), it.similarity, it.relation, it.site) })
+    }
+
+    /**
+     * THE MEANING OF THE SITES' TAGS' NAMES of one reading ([stats]): every name encoded as the search
+     * encodes short texts, a tag's direction the mean of its sites' tags', alike by the cosine. Read
+     * for one operation, kept nowhere.
+     */
+    private inner class Meaning(type: TypeStore, stats: Map<String, TagStats>) {
+        private val vectors = HashMap<SiteTagRef, FloatArray>()
+
+        init {
+            type.sources.forEach { s ->
+                val names = stats.values.flatMap { t -> t.variants.values.filter { it.site.source == s.id } }.associate { it.site to it.name }
+                if (names.isEmpty()) return@forEach
+                val encoded = phrases.of(s, names.values.distinct())
+                names.forEach { (site, name) -> encoded[name]?.let { vectors[site] = it } }
+            }
+        }
+
+        /** The mean direction of the sites' tags [sites]; null when none is encoded. */
+        fun direction(sites: Collection<SiteTagRef>): FloatArray? {
+            val list = sites.mapNotNull { vectors[it] }
+            if (list.isEmpty()) return null
+            val sum = FloatArray(list.first().size)
+            list.forEach { v ->
+                val norm = norm(v).takeIf { it > 0 } ?: return@forEach
+                for (i in sum.indices) sum[i] += v[i] / norm
+            }
+            val total = norm(sum).takeIf { it > 0 } ?: return null
+            return FloatArray(sum.size) { sum[it] / total }
+        }
+
+        /** A text typed, encoded as the names are and kept nowhere: it is not a name of the sites. */
+        fun ofText(text: String): FloatArray? = phrases.encoder()?.encode(listOf(text))?.firstOrNull()?.let { v ->
+            val norm = norm(v).takeIf { it > 0 } ?: return@let null
+            FloatArray(v.size) { v[it] / norm }
+        }
+
+        /** How alike the sites' tags [sites] are to [target]: the cosine; nought when either is not known. */
+        fun likeness(target: FloatArray?, sites: Collection<SiteTagRef>): Double =
+            target?.let { tv -> direction(sites)?.let { d -> d.indices.sumOf { (d[it] * tv[it]).toDouble() } } } ?: 0.0
+    }
+
+    /**
+     * The tags of the layer [facet] found by [query] for a work of [source], at most [limit], in
+     * three steps, each only while the ones before found fewer: the tags a site's tag of [source]
+     * of that name holds it; then by any of their names — of every site, the user's, the one shown;
+     * then the likest by the meaning of their names. Of the first two, a name that is the text first,
+     * then one beginning with it, then one holding it; the most used first among them.
+     */
+    fun find(type: TypeStore, facet: String, source: String, query: String, limit: Int): List<NamedTag> {
+        val wanted = query.trim().lowercase()
+        val stats = stats(type, facet)
+        val n = naming(type, facet, stats)
+        val found = LinkedHashMap<String, TagStats>()
+        fun step(namesOf: (TagStats) -> List<String>) {
+            if (found.size >= limit) return
+            stats.values.filter { it.key !in found }
+                .mapNotNull { t ->
+                    val names = namesOf(t).map { it.lowercase() }
+                    when {
+                        names.any { it == wanted } -> 0
+                        names.any { it.startsWith(wanted) } -> 1
+                        names.any { wanted in it } -> 2
+                        else -> null
+                    }?.let { t to it }
+                }
+                .sortedWith(compareBy<Pair<TagStats, Int>> { it.second }.thenByDescending { it.first.items.size }.thenBy { it.first.key })
+                .forEach { found.putIfAbsent(it.first.key, it.first) }
+        }
+        step { t -> t.variants.values.filter { it.site.source == source }.map { it.name } }
+        step { t -> t.variants.values.map { it.name } + listOfNotNull(n.explicitOf(t.key), n.shown(t.key)) }
+        if (found.size < limit && wanted.isNotEmpty()) {
+            val meaning = Meaning(type, stats)
+            val target = meaning.ofText(query.trim())
+            if (target != null) {
+                stats.values.filter { it.key !in found && it.variants.isNotEmpty() }
+                    .map { it to meaning.likeness(target, it.variants.keys) }
+                    .sortedWith(compareByDescending<Pair<TagStats, Double>> { it.second }.thenBy { it.first.key })
+                    .take(limit - found.size)
+                    .forEach { found[it.first.key] = it.first }
+            }
+        }
+        return found.values.take(limit).map(n::named)
     }
 
     // --- The user's word ---
