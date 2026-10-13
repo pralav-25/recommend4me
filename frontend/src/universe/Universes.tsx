@@ -143,7 +143,8 @@ function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; u
         >
           <ChevronRightIcon className={cn("transition-transform", expanded && "rotate-90")} />
         </Button>
-        <div className="min-w-0 flex-1">
+        {/* At least so wide: on a narrow screen the buttons go to a line of their own, not squeeze the name */}
+        <div className="min-w-0 flex-1 basis-60">
           <a
             href={screenHref({ kind: "universes", ...ref })}
             onClick={(e) => followLink(e, expanded ? { kind: "universes" } : { kind: "universes", ...ref })}
@@ -175,7 +176,7 @@ function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; u
             <span title={formatDate(u.addedAt)}>· добавлено {ago(u.addedAt)}</span>
           </div>
         </div>
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="ml-auto flex flex-wrap items-center gap-1">
           <Button
             size="sm"
             variant="outline"
@@ -358,7 +359,7 @@ function Classes({ classes, onToggle }: { classes: UniverseClassInfo[]; onToggle
               aria-pressed={c.included}
               onClick={() => onToggle(c)}
               title={`${c.included ? "Оставлены как персонажи" : "Убраны"}${c.choice != null ? " — ваш выбор" : ""}. Нажмите, чтобы ${c.included ? "убрать" : "оставить"} все ${c.count}`}
-              className={cn("h-auto min-h-6 whitespace-normal", !c.included && "text-muted-foreground line-through decoration-muted-foreground/60")}
+              className={cn("h-auto min-h-6 max-w-full whitespace-normal text-left", !c.included && "text-muted-foreground line-through decoration-muted-foreground/60")}
             >
               {c.choice != null && <span className="text-primary">•</span>}
               {c.name} <span className="tabular-nums">{c.count}</span>
