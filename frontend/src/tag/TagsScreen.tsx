@@ -1,12 +1,24 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, CombineIcon, Loader2Icon, SearchIcon, TagsIcon, XIcon } from "lucide-react";
-import { api, unwrap, type ContentTypeInfo, type TagInfo, type TagNameRule, type TagRef, type TagRelation, type TagVariantInfo } from "@/api/client";
+import {
+  api,
+  unwrap,
+  type ContentTypeInfo,
+  type SimilarTag,
+  type SimilarTagPage,
+  type TagInfo,
+  type TagNameRule,
+  type TagRef,
+  type TagRelation,
+  type TagVariantInfo,
+} from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
 import { plural } from "@/i18n";
+import { usePref } from "@/lib/usePref";
 import { cn } from "@/lib/utils";
 import { followLink, screenHref } from "@/screen/screens";
 
@@ -306,8 +318,11 @@ function rowKey(tag: string, site?: TagVariantInfo): string {
  * every tag the user said something of to this one, and every site's tag bound to it. Every row of a
  * tag has the user's four words on it: the same tag (merged), a tag under it, a tag above it, a
  * different one; pressed again, taken back. A row of a site's tag is merged: unpressed, the site's
- * tag is taken out to a tag of its own. A word said keeps the row in its place among the others; the
- * filters above hide the rows said so.
+ * tag is taken out to a tag of its own. A word said keeps the row in its place among the others.
+ *
+ * The server sorts and filters: the rows of the relations unticked above are left out (the choice
+ * kept in the browser), alike the text searched for instead of the tag when one is typed, a page at
+ * a time; a page read after the table was sorted anew may repeat a row, shown once.
  *
  * AN ANSWER IS SAVED AT ONCE, THE TABLE READ ANEW AFTER A QUIET: a press is sent at once — the
  * answers one after another, in the order pressed — and shown pressed at once; the table, whose
@@ -317,7 +332,15 @@ function rowKey(tag: string, site?: TagVariantInfo): string {
  * click meant for the one that was there.
  */
 function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
-  const [shown, setShown] = useState<Record<Said, boolean>>({ MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true });
+  const [stored, setShown] = usePref<Partial<Record<Said, boolean>>>("tags.similar.shown", {});
+  const shown: Record<Said, boolean> = { MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true, ...stored };
+  const hidden = RELATIONS.filter((r) => !shown[r.relation]).map((r) => r.relation);
+  const [input, setInput] = useState("");
+  const [query, setQuery] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setQuery(input.trim()), QUERY_SETTLE_MS);
+    return () => clearTimeout(t);
+  }, [input]);
   const [locked, setLocked] = useState(false);
   /** The answers given since the table was read, by tag: shown pressed before the table says so. */
   const [said, setSaid] = useState<Record<string, TagRelation>>({});
@@ -339,32 +362,63 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     [],
   );
   const queryClient = useQueryClient();
-  const similarQuery = async () =>
-    unwrap(await api.GET("/api/types/{type}/tags/similar", { params: { path: { type: type.id }, query: { tag: tag.key, limit: SIMILAR } } }));
-  const similar = useQuery({ queryKey: [TAGS, type.id, "similar", tag.key], queryFn: similarQuery });
+  /** A page of the table as the filters and the search are now, read from [offset]. */
+  const readPage = async (offset: number, limit: number, asked: { query: string; hidden: Said[] }) =>
+    unwrap(
+      await api.GET("/api/types/{type}/tags/similar", {
+        params: {
+          path: { type: type.id },
+          query: { tag: tag.key, query: asked.query || undefined, hidden: asked.hidden, offset, limit },
+        },
+      }),
+    );
+  const key = [TAGS, type.id, "similar", tag.key, query, hidden.join(",")];
+  const similar = useInfiniteQuery({
+    queryKey: key,
+    initialPageParam: 0,
+    queryFn: ({ pageParam }) => readPage(pageParam, SIMILAR, { query, hidden }),
+    // The next page from the rows read so far: a table sorted anew meanwhile repeats a row or two, left out below
+    getNextPageParam: (last, pages) => {
+      const read = pages.reduce((n, p) => n + p.tags.length, 0);
+      return read < last.total ? read : undefined;
+    },
+  });
+  /** The rows of every page read, each once: the first place it was read in stays. */
+  const loaded = similar.data?.pages.flatMap((p) => p.tags);
+  const seen = new Set<string>();
+  const unique = loaded?.filter((s) => {
+    const k = rowKey(s.tag.key, s.site ?? undefined);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  /** What the table is read with now: a reading planned before is made with what is current when it is made. */
+  const current = useRef({ key, query, hidden, rows: 0 });
+  current.current = { key, query, hidden, rows: loaded?.length ?? 0 };
 
   /**
    * The table read anew once every answer is saved — unless the user pressed again meanwhile — in the
-   * background, the buttons free; only once it is here are they locked and the rows moved to it.
+   * background, the buttons free; as many rows as were read, in one page; only once it is here are
+   * the buttons locked and the rows moved to it.
    */
   const refresh = async (asked: number) => {
     await sending.current;
     if (asked !== presses.current) return;
-    const key = [TAGS, type.id, "similar", tag.key];
-    let read;
+    const { key, query, hidden, rows: count } = current.current;
+    let fresh;
     try {
-      read = await queryClient.fetchQuery({ queryKey: [...key, "fresh"], queryFn: similarQuery, staleTime: 0 });
+      fresh = await readPage(0, Math.max(SIMILAR, count), { query, hidden });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       return;
     }
-    queryClient.removeQueries({ queryKey: [...key, "fresh"], exact: true });
-    // Pressed again while it was read: the reading after that press shows it
-    if (asked !== presses.current) return;
-    const shownBefore = queryClient.getQueryData(key);
+    // Pressed again while it was read, or the filters changed: the reading after that shows it
+    if (asked !== presses.current || current.current.key.join("\u0001") !== key.join("\u0001")) return;
+    const signature = (rows: SimilarTag[] | undefined) => rows?.map((s) => `${rowKey(s.tag.key, s.site ?? undefined)}=${s.relation}`).join("|");
+    const shownBefore = signature(queryClient.getQueryData<{ pages: SimilarTagPage[] }>(key)?.pages.flatMap((p) => p.tags));
     before.current = new Map([...rows.current].map(([k, el]) => [k, el.getBoundingClientRect().top]));
-    queryClient.setQueryData(key, read);
-    if (queryClient.getQueryData(key) === shownBefore) {
+    queryClient.setQueryData(key, { pages: [fresh], pageParams: [0] });
+    if (signature(fresh.tags) === shownBefore) {
       // The same table: nothing moves, nothing is locked
       before.current = null;
       setSaid({});
@@ -429,7 +483,8 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     unlock.current = setTimeout(() => setLocked(false), MOVE_MS + SETTLE_MS);
   }, [similar.data]);
 
-  const visible = similar.data?.filter((s) => s.relation === "NONE" || shown[s.relation]);
+  const visible = unique;
+  const total = similar.data?.pages.at(-1)?.total;
 
   return (
     <section className="flex flex-col gap-1.5 text-sm">
@@ -438,6 +493,16 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
         Только предложение: решаете вы. «Объединить» — это тот же тег; «Подтег» — более узкий, работа с ним получает и этот тег;
         «Надтег» — более широкий; «Разные» — просто похоже названы. Нажатая кнопка снимается повторным нажатием.
       </p>
+      <div className="relative">
+        <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Похожие на текст, а не на этот тег"
+          className="pl-8"
+          type="search"
+        />
+      </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
         <span className="text-muted-foreground">Показывать:</span>
         {RELATIONS.map((r) => (
@@ -446,7 +511,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
             {r.filter}
           </label>
         ))}
-        {locked && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
+        {(locked || similar.isFetching) && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
       </div>
       {similar.isLoading && (
         <p className="flex items-center gap-2 text-muted-foreground">
@@ -455,7 +520,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
         </p>
       )}
       {similar.isError && <p className="text-destructive">Похожие не нашлись: {similar.error.message}</p>}
-      {similar.data && similar.data.length === 0 && <p className="text-muted-foreground">Похожих нет.</p>}
+      {visible && visible.length === 0 && <p className="text-muted-foreground">Похожих нет.</p>}
       {error && <p className="text-destructive">Не сохранилось: {error}</p>}
       {visible && visible.length > 0 && (
         <ul className={cn("flex flex-col divide-y rounded-lg border", locked && "pointer-events-none")} aria-busy={locked}>
@@ -534,6 +599,12 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
             );
           })}
         </ul>
+      )}
+      {similar.hasNextPage && (
+        <Button variant="outline" size="sm" onClick={() => void similar.fetchNextPage()} disabled={similar.isFetchingNextPage || locked}>
+          {similar.isFetchingNextPage && <Loader2Icon className="animate-spin" />} Показать ещё
+          {total !== undefined && visible && <span className="text-muted-foreground">({visible.length} из {total})</span>}
+        </Button>
       )}
     </section>
   );

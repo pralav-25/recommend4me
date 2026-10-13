@@ -571,7 +571,7 @@ class SiteTest {
         textVectors.refresh(stores.source("site")!!)
 
         // Offered alike: the other tags of the sites, with how alike their names are; the site's own tag of it, merged
-        val similar = tagsApi.listSimilarTags("books", hulls, 50).body!!
+        val similar = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null).body!!.tags
         assertTrue(similar.any { it.tag.key == starhulls && it.site == null }, "similar ${similar.map { it.tag.key }}")
         assertEquals(listOf("hulls"), similar.filter { it.site != null }.map { it.site!!.tag })
         // Nothing is merged by itself
@@ -600,7 +600,7 @@ class SiteTest {
         assertEquals(TagNameRule.LIKED, tagsApi.nameTag("books", TagNameRequest(hulls)).body!!.rule)
 
         // Both site's tags merged rows of it; one taken out, to a new tag of its own; the answer stays with the tag
-        fun rows() = tagsApi.listSimilarTags("books", hulls, 50).body!!
+        fun rows() = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null).body!!.tags
         assertEquals(setOf("hulls", "starhulls"), rows().filter { it.site != null }.onEach { assertEquals(TagRelation.MERGED, it.relation) }.map { it.site!!.tag }.toSet())
         val out = tagsApi.bindSiteTag("books", TagBindingRequest("site", "starhulls")).body!!
         assertTrue(out.key != hulls && out.key != starhulls, "a new tag ${out.key}")
@@ -612,9 +612,21 @@ class SiteTest {
         assertEquals(listOf(TagRelation.NONE), rows().filter { it.tag.key == other && it.site == null }.map { it.relation })
 
         // Told apart: stays among the alike, marked, whatever its likeness
-        fun relationOf(key: String) = tagsApi.listSimilarTags("books", hulls, 1).body!!.singleOrNull { it.tag.key == key && it.site == null }?.relation
+        fun relationOf(key: String) = rows().singleOrNull { it.tag.key == key && it.site == null }?.relation
         tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.DIFFERENT))
         assertEquals(TagRelation.DIFFERENT, relationOf(other))
+        // The rows of a relation hidden on the server, the total without them
+        val all = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null).body!!
+        val noDifferent = tagsApi.listSimilarTags("books", hulls, null, 0, 50, listOf(TagRelation.DIFFERENT)).body!!
+        assertTrue(noDifferent.tags.none { it.relation == TagRelation.DIFFERENT }, "hidden ${noDifferent.tags.map { it.relation }}")
+        assertEquals(all.total - 1, noDifferent.total)
+        // A page at a time: the pages one after another are the whole table
+        val paged = (0 until all.total).chunked(1).flatMap { tagsApi.listSimilarTags("books", hulls, null, it.first(), 1, null).body!!.tags }
+        assertEquals(all.tags.map { it.tag.key to it.site?.tag }, paged.map { it.tag.key to it.site?.tag })
+        // Searched for: alike the text, not the tag — all the rows, in another order
+        val searched = tagsApi.listSimilarTags("books", hulls, "freight cargo", 0, 50, null).body!!
+        assertEquals(all.total, searched.total)
+        assertTrue(searched.tags.zipWithNext().all { (a, b) -> a.similarity >= b.similarity }, "the likest first")
         tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.NONE))
         assertEquals(TagRelation.NONE, rows().single { it.tag.key == other && it.site == null }.relation)
 

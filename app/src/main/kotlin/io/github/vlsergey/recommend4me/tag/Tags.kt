@@ -80,6 +80,9 @@ enum class TagRelation {
  */
 class SimilarTag(val tag: NamedTag, val similarity: Double, val relation: TagRelation, val site: TagVariant? = null)
 
+/** A page of a tag's table of the alike, and how many rows the whole table has. */
+class SimilarPage(val total: Int, val rows: List<SimilarTag>)
+
 /**
  * THE NORMALIZED TAGS OF A CONTENT TYPE ([TagRepository]), AS THE USER MERGES, NAMES AND LINKS THEM.
  * Every site's tag is bound to a normalized tag ([TagNormalization]); the user merges normalized
@@ -179,15 +182,16 @@ class Tags(
     }
 
     /**
-     * The table of the alike of [tag]: the normalized tags most alike it by the meaning of their
-     * names, of one site or another — a site's tag's name encoded as the search encodes short texts,
-     * a tag the mean of its sites' tags' directions, alike by the cosine — with every tag the user
-     * said something of to it besides (under or above it, different), and every site's tag bound to
-     * it (merged), whatever their likeness.
+     * A page of the table of the alike of [tag]: every other normalized tag and every site's tag
+     * bound to it (merged), but the rows of the relations [hidden], the likest first by the meaning
+     * of their names, of one site or another — a site's tag's name encoded as the search encodes
+     * short texts, a tag the mean of its sites' tags' directions, alike by the cosine. Alike the
+     * tag's own names; alike the text [query] instead, when one is given. Of rows alike equally, by
+     * key: a page read after another continues it while nothing changed.
      */
-    fun similar(type: TypeStore, facet: String, tag: String, limit: Int): List<SimilarTag> {
+    fun similar(type: TypeStore, facet: String, tag: String, query: String?, hidden: Set<TagRelation>, offset: Int, limit: Int): SimilarPage? {
         val stats = stats(type, facet)
-        val own = stats[tag] ?: return emptyList()
+        val own = stats[tag] ?: return null
         val n = naming(type, facet, stats)
         val distinct = type.tags.distinct()
         val vectors = HashMap<SiteTagRef, FloatArray>()
@@ -208,7 +212,12 @@ class Tags(
             val total = norm(sum).takeIf { it > 0 } ?: return null
             return FloatArray(sum.size) { sum[it] / total }
         }
-        val target = direction(own.variants.keys)
+        // The query is encoded as the names are, and kept nowhere: a text typed is not a name of the sites
+        val asked = query?.trim()?.takeIf { it.isNotEmpty() }
+        val target = if (asked == null) direction(own.variants.keys) else phrases.encoder()?.encode(listOf(asked))?.firstOrNull()?.let { v ->
+            val norm = norm(v).takeIf { it > 0 } ?: return@let null
+            FloatArray(v.size) { v[it] / norm }
+        }
         fun likeness(sites: Collection<SiteTagRef>): Double =
             target?.let { tv -> direction(sites)?.let { d -> d.indices.sumOf { (d[it] * tv[it]).toDouble() } } } ?: 0.0
         fun relation(key: String): TagRelation {
@@ -220,13 +229,15 @@ class Tags(
                 else -> TagRelation.NONE
             }
         }
-        val others = stats.values.filter { it.key != tag }.map { t -> Triple(t, likeness(t.variants.keys), relation(t.key)) }
-        val alike = others.sortedByDescending { it.second }.take(limit).map { it.first.key }.toSet()
-        val rows = others.filter { it.first.key in alike || it.third != TagRelation.NONE }.map { (t, s, r) -> SimilarTag(n.named(t), s, r) }
+        /** A row before it is named — a tag, or a site's tag bound to this one — named only on the page asked for. */
+        class Row(val tag: TagStats, val similarity: Double, val relation: TagRelation, val site: TagVariant?, val key: String)
+        val others = stats.values.filter { it.key != tag }.map { t -> Row(t, likeness(t.variants.keys), relation(t.key), null, t.key) }
         // Every site's tag bound to this one: a row of its own, merged — taken out by the user, a tag of its own
-        val named = n.named(own)
-        val bound = own.variants.values.map { v -> SimilarTag(named, likeness(listOf(v.site)), TagRelation.MERGED, v) }
-        return (rows + bound).sortedByDescending { it.similarity }
+        val bound = own.variants.values.map { v -> Row(own, likeness(listOf(v.site)), TagRelation.MERGED, v, "site:${v.site.source}/${v.site.tag}") }
+        val rows = (others + bound).filter { it.relation !in hidden }
+            .sortedWith(compareByDescending<Row> { it.similarity }.thenBy { it.key })
+        val page = rows.drop(offset.coerceAtLeast(0)).take(limit)
+        return SimilarPage(rows.size, page.map { SimilarTag(n.named(it.tag), it.similarity, it.relation, it.site) })
     }
 
     // --- The user's word ---

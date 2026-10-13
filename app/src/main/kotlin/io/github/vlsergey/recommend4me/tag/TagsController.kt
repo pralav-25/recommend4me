@@ -2,6 +2,7 @@ package io.github.vlsergey.recommend4me.tag
 
 import io.github.vlsergey.recommend4me.api.TagsApi
 import io.github.vlsergey.recommend4me.api.model.SimilarTag as ApiSimilarTag
+import io.github.vlsergey.recommend4me.api.model.SimilarTagPage
 import io.github.vlsergey.recommend4me.api.model.TagBindingRequest
 import io.github.vlsergey.recommend4me.api.model.TagInfo
 import io.github.vlsergey.recommend4me.api.model.TagNameRequest
@@ -39,12 +40,20 @@ class TagsController(private val stores: Stores, private val tags: Tags) : TagsA
         return tags.one(t, facet, tag)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 
-    override fun listSimilarTags(type: String, tag: String, limit: Int): ResponseEntity<List<ApiSimilarTag>> {
+    override fun listSimilarTags(
+        type: String,
+        tag: String,
+        query: String?,
+        offset: Int,
+        limit: Int,
+        hidden: List<ApiTagRelation>?,
+    ): ResponseEntity<SimilarTagPage> {
         val (t, facet) = of(type)
-        return ResponseEntity.ok(
-            tags.similar(t, facet, tag, limit.coerceIn(1, 200))
-                .map { ApiSimilarTag(it.tag.toApi(), it.similarity, ApiTagRelation.valueOf(it.relation.name), it.site?.toApi()) },
-        )
+        // Rows of no relation are the offers themselves: never hidden
+        val hide = hidden.orEmpty().map { TagRelation.valueOf(it.name) }.toSet() - TagRelation.NONE
+        val page = tags.similar(t, facet, tag, query, hide, offset, limit.coerceIn(1, 1000)) ?: return ResponseEntity.notFound().build()
+        val rows = page.rows.map { ApiSimilarTag(it.tag.toApi(), it.similarity, ApiTagRelation.valueOf(it.relation.name), it.site?.toApi()) }
+        return ResponseEntity.ok(SimilarTagPage(page.total, rows))
     }
 
     override fun relateTags(type: String, tagRelationRequest: TagRelationRequest): ResponseEntity<TagInfo> {

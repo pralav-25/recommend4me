@@ -1137,9 +1137,10 @@ paths:
       tags: [tags]
       operationId: listSimilarTags
       summary: |
-        The normalized tags most alike the tag by the meaning of their names, of one site or another, with
-        every tag the user linked it to or told apart from it, and every site's tag bound to it. Only
-        offered: the user merges
+        A page of the table of the alike of a tag: every other normalized tag and every site's tag bound to it,
+        but the rows of the relations hidden, the likest first by the meaning of their names, of one site or
+        another - alike the tag's names, or alike the query when one is given. Of rows alike equally, by key.
+        Only offered: the user merges
       parameters:
         - $ref: '#/components/parameters/Type'
         - name: tag
@@ -1147,20 +1148,39 @@ paths:
           required: true
           schema:
             type: string
+        - name: query
+          in: query
+          description: A text the rows are to be alike by meaning, in place of the tag's names
+          schema:
+            type: string
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
         - name: limit
           in: query
           schema:
             type: integer
             default: 30
+        - name: hidden
+          in: query
+          description: The relations whose rows are left out; NONE is never left out
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/TagRelation'
       responses:
         '200':
           description: The likest first
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/SimilarTag'
+                $ref: '#/components/schemas/SimilarTagPage'
+        '404':
+          description: No such tag
 
   /api/types/{type}/tags/name:
     put:
@@ -3408,6 +3428,18 @@ components:
           type: string
         name:
           type: string
+
+    SimilarTagPage:
+      type: object
+      required: [total, tags]
+      properties:
+        total:
+          type: integer
+          description: How many rows the whole table has, the hidden left out
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimilarTag'
 
     TagBindingRequest:
       type: object

@@ -63,6 +63,7 @@ export type UniverseClassInfo = Schemas["UniverseClassInfo"];
 export type TagInfo = Schemas["TagInfo"];
 export type TagNameRule = Schemas["TagNameRule"];
 export type SimilarTag = Schemas["SimilarTag"];
+export type SimilarTagPage = Schemas["SimilarTagPage"];
 export type TagRelation = Schemas["TagRelation"];
 export type TagRef = Schemas["TagRef"];
 export type TagVariantInfo = Schemas["TagVariantInfo"];
