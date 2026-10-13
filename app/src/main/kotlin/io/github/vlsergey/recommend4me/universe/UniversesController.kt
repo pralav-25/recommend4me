@@ -3,6 +3,7 @@ package io.github.vlsergey.recommend4me.universe
 import io.github.vlsergey.recommend4me.api.UniversesApi
 import io.github.vlsergey.recommend4me.api.model.CharacterInfo
 import io.github.vlsergey.recommend4me.api.model.Inclusion
+import io.github.vlsergey.recommend4me.api.model.LocalName
 import io.github.vlsergey.recommend4me.api.model.UniverseClassInfo
 import io.github.vlsergey.recommend4me.api.model.UniverseInfo
 import io.github.vlsergey.recommend4me.api.model.UniverseRef
@@ -61,9 +62,15 @@ class UniversesController(private val stores: Stores, private val universes: Uni
             val c = e.character
             CharacterInfo(
                 character = c.id, value = UniverseFacet.valueOf(catalogue, c.id), names = c.names, url = c.url,
-                classes = c.classes, included = e.included, description = c.description, choice = e.choice,
+                classes = c.classes, included = e.included, description = c.description, choice = e.choice, localName = e.localName,
             )
         })
+
+    override fun nameUniverseEntry(type: String, catalogue: String, entry: String, localName: LocalName): ResponseEntity<Unit> {
+        typeOf(type)
+        universes.setLocalName(type, catalogue, entry, localName.name)
+        return ResponseEntity.noContent().build()
+    }
 
     override fun listUniverseClasses(type: String, catalogue: String, universe: String): ResponseEntity<List<UniverseClassInfo>> =
         ResponseEntity.ok(typeOf(type).universes.classes(catalogue, universe).map {
@@ -96,6 +103,8 @@ class UniversesController(private val stores: Stores, private val universes: Uni
         universe = id,
         value = value,
         name = name,
+        catalogueName = catalogueName,
+        localName = localName,
         url = url,
         characters = characters,
         total = entries,

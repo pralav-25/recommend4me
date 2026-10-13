@@ -33,6 +33,7 @@ import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
 import io.github.vlsergey.recommend4me.suggestion.SuggestionsController
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.api.model.Inclusion
+import io.github.vlsergey.recommend4me.api.model.LocalName
 import io.github.vlsergey.recommend4me.api.model.FacetRole as ApiFacetRole
 import io.github.vlsergey.recommend4me.api.model.UniverseRef
 import io.github.vlsergey.recommend4me.api.model.TagDistinctRequest
@@ -530,6 +531,20 @@ class SiteTest {
         suggestions.refresh(store)
         assertEquals(emptyList(), suggestionsApi.getCandidates("site", "o1", "universe").body!!.map { it.key })
         assertEquals(emptyList(), suggestionsApi.getCandidates("site", "o2", "universe").body!!.map { it.key })
+
+        // The user's own name of a character and of a universe over the catalogue's: shown everywhere in its place
+        fun characterName() = items.getItem("site", "p9").body!!.allFacets.single { it.facet == "characters" }.propertyValues.single { it.key == "fake:C1" }.name
+        this.universes.nameUniverseEntry("books", "fake", "C1", LocalName("Лётчица"))
+        assertEquals("Лётчица", characterName())
+        assertEquals(listOf("Лётчица", "Pilot"), this.universes.listCharacters("books", "fake", "U2").body!!.single { it.character == "C1" }.names.take(2))
+        this.universes.nameUniverseEntry("books", "fake", "U2", LocalName("Флот"))
+        val fleet = this.universes.listUniverses("books").body!!.single { it.universe == "U2" }
+        assertEquals("Флот" to "Fleet", fleet.name to fleet.catalogueName)
+        // Taken back: the catalogue's names again
+        this.universes.nameUniverseEntry("books", "fake", "C1", LocalName(null))
+        this.universes.nameUniverseEntry("books", "fake", "U2", LocalName(""))
+        assertEquals("Pilot", characterName())
+        assertNull(this.universes.listUniverses("books").body!!.single { it.universe == "U2" }.localName)
     }
 
     @Test

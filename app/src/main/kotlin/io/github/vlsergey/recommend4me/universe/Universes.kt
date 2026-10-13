@@ -84,6 +84,18 @@ class Universes(
         }, "universes-languages").apply { isDaemon = true }.start()
     }
 
+    /**
+     * The name the user gives a universe or a character of [catalogue] ([id]) over the catalogue's —
+     * shown everywhere in its place, read in the texts as one more name of it; null or blank takes it
+     * back. A character is named in every universe it is in.
+     */
+    fun setLocalName(typeId: String, catalogueId: String, id: String, name: String?) {
+        val type = type(typeId)
+        type.universes.setLocalName(catalogueId, id, name, Instant.now())
+        log.info("{}: {} named {}", typeId, UniverseFacet.valueOf(catalogueId, id), name?.trim()?.takeIf { it.isNotEmpty() } ?: "as the catalogue names it")
+        dictionaryChanged(type)
+    }
+
     /** The user's word on a class of the universe's entries — kept, left out, or null: as the catalogue says. */
     fun chooseClass(typeId: String, catalogueId: String, id: String, cls: String, included: Boolean?) {
         val type = type(typeId)

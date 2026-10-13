@@ -980,6 +980,32 @@ paths:
         '404':
           description: No such universe
 
+  /api/types/{type}/universes/{catalogue}/{entry}/name:
+    put:
+      tags: [universes]
+      operationId: nameUniverseEntry
+      summary: |
+        The name the user gives a universe or a character of the dictionary over the catalogue's - shown everywhere in
+        its place, read in the works' texts as one more name of it; none takes it back
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - $ref: '#/components/parameters/Catalogue'
+        - name: entry
+          in: path
+          required: true
+          description: The id of the universe or of the character in the catalogue
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LocalName'
+      responses:
+        '204':
+          description: Saved
+
   /api/types/{type}/universes/{catalogue}/{universe}/characters/{character}:
     put:
       tags: [universes]
@@ -3209,7 +3235,7 @@ components:
 
     UniverseInfo:
       type: object
-      required: [catalogue, universe, value, name, url, characters, total, works, addedAt, refreshedAt]
+      required: [catalogue, universe, value, name, catalogueName, url, characters, total, works, addedAt, refreshedAt]
       properties:
         catalogue:
           type: string
@@ -3220,6 +3246,13 @@ components:
           description: The key of the universe as a value of the facet "universe" of the works
         name:
           type: string
+          description: What it is shown by - the user's name, else the catalogue's
+        catalogueName:
+          type: string
+          description: The catalogue's name, in the user's languages
+        localName:
+          type: string
+          description: The name the user gave it over the catalogue's, when given
         description:
           type: string
         url:
@@ -3438,6 +3471,13 @@ components:
         different:
           type: boolean
 
+    LocalName:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The user's name; none or blank - the catalogue's again
+
     Inclusion:
       type: object
       required: [included]
@@ -3470,9 +3510,12 @@ components:
           description: The key of the character as a value of the facet "characters" of the works
         names:
           type: array
-          description: Every name it goes by, the main one first
+          description: Every name it goes by, the main one first - the user's name, when given
           items:
             type: string
+        localName:
+          type: string
+          description: The name the user gave it over the catalogue's, when given
         description:
           type: string
         url:

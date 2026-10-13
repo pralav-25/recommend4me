@@ -6,6 +6,7 @@ import io.github.vlsergey.recommend4me.database.typecorrections.tables.reference
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CHARACTER_CLASS
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CLASS
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CLASS_CHOICE
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_LOCAL_NAME
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import java.time.Instant
@@ -14,7 +15,8 @@ import java.time.Instant
 class StoredUniverse(
     val catalogue: String,
     val id: String,
-    val name: String,
+    /** The catalogue's name, in the user's languages. */
+    val catalogueName: String,
     val description: String?,
     val url: String,
     val addedAt: Instant,
@@ -23,15 +25,24 @@ class StoredUniverse(
     val entries: Int,
     /** The languages the catalogue was asked in for it; none of a universe saved before they were kept. */
     val languages: List<String>,
+    /** The name the user gave it over the catalogue's; null when none. */
+    val localName: String? = null,
 ) {
     val value: String get() = UniverseFacet.valueOf(catalogue, id)
+
+    /** What it is shown by: the user's name, else the catalogue's. */
+    val name: String get() = localName ?: catalogueName
+
+    /** Every name it goes by, the shown one first: what its works' texts are read for. */
+    val names: List<String> get() = listOfNotNull(localName, catalogueName).distinct()
 }
 
 /**
  * An entry of a universe of the dictionary, whether it is kept as a character ([included]), and
- * the user's word on it alone ([choice]; null when its classes decide).
+ * the user's word on it alone ([choice]; null when its classes decide). Its [character]'s names
+ * begin with the name the user gave it ([localName]), when given.
  */
-class KeptEntry(val character: UniverseCharacter, val included: Boolean, val choice: Boolean?)
+class KeptEntry(val character: UniverseCharacter, val included: Boolean, val choice: Boolean?, val localName: String? = null)
 
 /**
  * A class the entries of a universe are of: whether its entries are characters, how many of the
@@ -52,18 +63,40 @@ class UniverseRepository(
     private val languages: List<String>,
 ) {
 
-    fun all(): List<StoredUniverse> = db.selectFrom(UNIVERSE).fetch().map { u ->
-        val entries = entries(u.catalogue!!, u.universeId!!)
-        StoredUniverse(
-            // Of a universe saved before the texts were kept by language, the ones shown then
-            u.catalogue!!, u.universeId!!,
-            if (u.labels != null) shown(u.labels) ?: u.universeId!! else u.name!!,
-            if (u.labels != null) shown(u.descriptions) else u.description,
-            u.url!!,
-            u.addedAt!!, u.refreshedAt!!, entries.count { it.included }, entries.size,
-            u.languages?.split(',')?.filter { it.isNotEmpty() }.orEmpty(),
-        )
-    }.sortedBy { it.name.lowercase() }
+    fun all(): List<StoredUniverse> {
+        val local = localNames()
+        return db.selectFrom(UNIVERSE).fetch().map { u ->
+            val entries = entries(u.catalogue!!, u.universeId!!, local)
+            StoredUniverse(
+                // Of a universe saved before the texts were kept by language, the ones shown then
+                u.catalogue!!, u.universeId!!,
+                if (u.labels != null) shown(u.labels) ?: u.universeId!! else u.name!!,
+                if (u.labels != null) shown(u.descriptions) else u.description,
+                u.url!!,
+                u.addedAt!!, u.refreshedAt!!, entries.count { it.included }, entries.size,
+                u.languages?.split(',')?.filter { it.isNotEmpty() }.orEmpty(),
+                local[UniverseFacet.valueOf(u.catalogue!!, u.universeId!!)],
+            )
+        }.sortedBy { it.name.lowercase() }
+    }
+
+    /** The names the user gave the universes and the characters over the catalogue's: value ("<catalogue>:<id>") to name. */
+    fun localNames(): Map<String, String> =
+        db.select(UNIVERSE_LOCAL_NAME.CATALOGUE, UNIVERSE_LOCAL_NAME.ENTRY_ID, UNIVERSE_LOCAL_NAME.NAME).from(UNIVERSE_LOCAL_NAME)
+            .fetch().associate { UniverseFacet.valueOf(it.value1()!!, it.value2()!!) to it.value3()!! }
+
+    /** The name the user gives a universe or a character of [catalogue] over the catalogue's; null or blank takes it back. */
+    fun setLocalName(catalogue: String, id: String, name: String?, now: Instant) {
+        val n = UNIVERSE_LOCAL_NAME
+        val given = name?.trim()?.takeIf { it.isNotEmpty() }
+        if (given == null) {
+            db.deleteFrom(n).where(n.CATALOGUE.eq(catalogue), n.ENTRY_ID.eq(id)).execute()
+            return
+        }
+        db.insertInto(n).set(n.CATALOGUE, catalogue).set(n.ENTRY_ID, id).set(n.NAME, given.take(1000)).set(n.NAMED_AT, now)
+            .onDuplicateKeyUpdate().set(n.NAME, given.take(1000)).set(n.NAMED_AT, now)
+            .execute()
+    }
 
     fun find(catalogue: String, id: String): StoredUniverse? = all().firstOrNull { it.catalogue == catalogue && it.id == id }
 
@@ -123,8 +156,8 @@ class UniverseRepository(
     /** The entries of the universe kept as characters. */
     fun characters(catalogue: String, id: String): List<UniverseCharacter> = entries(catalogue, id).filter { it.included }.map { it.character }
 
-    /** Every entry of the universe, kept or not, by name. */
-    fun entries(catalogue: String, id: String): List<KeptEntry> {
+    /** Every entry of the universe, kept or not, by name; the names the user gave first ([local], read once for a reading of many universes). */
+    fun entries(catalogue: String, id: String, local: Map<String, String> = localNames()): List<KeptEntry> {
         val classes = classesOf(catalogue, id)
         val ofEntry = HashMap<String, MutableList<String>>()
         db.select(UNIVERSE_CHARACTER_CLASS.CHARACTER_ID, UNIVERSE_CHARACTER_CLASS.CLASS_ID).from(UNIVERSE_CHARACTER_CLASS)
@@ -138,18 +171,22 @@ class UniverseRepository(
             .fetch { r ->
                 val own = ofEntry[r.characterId!!].orEmpty()
                 val sex = r.sex?.let(CharacterSex::valueOf)
+                // The name the user gave it, as a label of a language of its own before the user's: its first name, and one more it goes by
+                val given = local[UniverseFacet.valueOf(catalogue, r.characterId!!)]
+                val localLabel = listOfNotNull(given?.let { LOCAL to it }).toMap()
+                val localFirst = if (given == null) emptyList() else listOf(LOCAL)
                 val character = if (r.labels != null) {
-                    UniverseCharacter(r.characterId!!, decode(r.labels), decodeAll(r.aliases), decode(r.descriptions), r.url!!, languages, own, sex)
+                    UniverseCharacter(r.characterId!!, localLabel + decode(r.labels), decodeAll(r.aliases), decode(r.descriptions), r.url!!, localFirst + languages, own, sex)
                 } else {
                     // Saved before the texts were kept by language: its texts as they were shown then
                     val names = r.names!!.split('\n')
                     UniverseCharacter(
-                        r.characterId!!, mapOf(SHOWN to names.first()), mapOf(SHOWN to names.drop(1)), listOfNotNull(r.description?.let { SHOWN to it }).toMap(),
-                        r.url!!, languages + SHOWN, own, sex,
+                        r.characterId!!, localLabel + (SHOWN to names.first()), mapOf(SHOWN to names.drop(1)), listOfNotNull(r.description?.let { SHOWN to it }).toMap(),
+                        r.url!!, localFirst + languages + SHOWN, own, sex,
                     )
                 }
                 val choice = choices[r.characterId!!]
-                KeptEntry(character, choice ?: (own.isEmpty() || own.any { kept[it] == true }), choice)
+                KeptEntry(character, choice ?: (own.isEmpty() || own.any { kept[it] == true }), choice, given)
             }
             .sortedBy { it.character.names.first().lowercase() }
     }
@@ -162,9 +199,11 @@ class UniverseRepository(
             val wanted = byCatalogue(values).ifEmpty { return emptyMap() }
             query.where(DSL.or(wanted.map { (catalogue, ids) -> u.CATALOGUE.eq(catalogue).and(u.UNIVERSE_ID.`in`(ids)) })).fetch()
         }
+        val local = localNames()
         return rows.associate { r ->
             val id = r.value2()!!
-            UniverseFacet.valueOf(r.value1()!!, id) to (if (r.value3() != null) shown(r.value3()) ?: id else r.value4()!!)
+            val value = UniverseFacet.valueOf(r.value1()!!, id)
+            value to (local[value] ?: if (r.value3() != null) shown(r.value3()) ?: id else r.value4()!!)
         }
     }
 
@@ -180,9 +219,10 @@ class UniverseRepository(
             val wanted = byCatalogue(values).ifEmpty { return emptyMap() }
             query.where(DSL.or(wanted.map { (catalogue, ids) -> c.CATALOGUE.eq(catalogue).and(c.CHARACTER_ID.`in`(ids)) })).fetch()
         }
+        val local = localNames()
         return rows.associate { r ->
             val id = r.value2()!!
-            val name = if (r.value3() != null) {
+            val name = local[UniverseFacet.valueOf(r.value1()!!, id)] ?: if (r.value3() != null) {
                 val labels = decode(r.value3())
                 val aliases = decodeAll(r.value4())
                 languages.firstNotNullOfOrNull { labels[it] } ?: languages.firstNotNullOfOrNull { aliases[it]?.firstOrNull() } ?: id
@@ -254,6 +294,9 @@ class UniverseRepository(
 
         /** The language of the texts of an entry saved before they were kept by language: the ones shown then, the last choice. */
         private const val SHOWN = ""
+
+        /** The "language" of the name the user gave an entry: before every language of the user's. */
+        private const val LOCAL = "local"
 
         /** Texts by language as kept: a line each, "<language><TAB><text>". */
         private fun encode(texts: Map<String, String>): String = encodeAll(texts.mapValues { listOf(it.value) })

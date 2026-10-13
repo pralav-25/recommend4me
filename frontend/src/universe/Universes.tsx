@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, LinkIcon, Loader2Icon, OrbitIcon, PlusIcon, RefreshCwIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
 import { api, ensureOk, unwrap, type CharacterInfo, type ContentTypeInfo, type FoundUniverse, type UniverseClassInfo, type UniverseInfo } from "@/api/client";
@@ -9,6 +9,7 @@ import { ago, formatDate, plural } from "@/i18n";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
 import { followLink, navigate, screenHref } from "@/screen/screens";
+import { LocalNameEdit } from "./LocalName";
 
 /** The cache key of the dictionary: ["universes", type]; a universe's characters lie under it. */
 const UNIVERSES = "universes";
@@ -151,9 +152,18 @@ function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; u
           >
             {u.name}
           </a>
+          {u.localName && <span className="ml-1.5 text-xs text-muted-foreground">в Викиданных — {u.catalogueName}</span>}
           <a href={u.url} target="_blank" rel="noreferrer" className="ml-1.5 inline-flex align-middle text-muted-foreground hover:text-foreground" title="Страница в Викиданных">
             <ExternalLinkIcon className="size-3.5" />
           </a>
+          <LocalNameEdit
+            typeId={type.id}
+            catalogue={u.catalogue}
+            entry={u.universe}
+            localName={u.localName}
+            catalogueName={u.catalogueName}
+            onSaved={() => changed(true)}
+          />
           {u.description && <div className="text-muted-foreground">{u.description}</div>}
           <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
             <span title="Оставлено персонажами из всего, что Викиданные относят ко вселенной">
@@ -264,6 +274,7 @@ function Characters({ type, universe: u }: { type: ContentTypeInfo; universe: Un
   const characters = useQuery(charactersQuery(type.id, u));
   const classes = useQuery(classesQuery(type.id, u));
   const inclusion = useInclusion(type.id, u);
+  const changed = useDictionaryChanged(type.id);
 
   if (characters.isLoading || classes.isLoading) return <Loader2Icon className="ml-9 size-4 animate-spin text-muted-foreground" />;
   if (characters.isError) return <p className="ml-9 text-destructive">Не удалось загрузить персонажей: {characters.error.message}</p>;
@@ -306,6 +317,16 @@ function Characters({ type, universe: u }: { type: ContentTypeInfo; universe: Un
             character={c}
             classNames={c.classes.map((id) => byId.get(id)?.name ?? id)}
             onToggle={() => inclusion.setEntry(c, byClasses(c))}
+            naming={
+              <LocalNameEdit
+                typeId={type.id}
+                catalogue={u.catalogue}
+                entry={c.character}
+                localName={c.localName}
+                catalogueName={(c.localName ? c.names[1] : c.names[0]) ?? c.character}
+                onSaved={() => changed(false)}
+              />
+            }
           />
         ))}
       </ul>
@@ -355,7 +376,18 @@ function Classes({ classes, onToggle }: { classes: UniverseClassInfo[]; onToggle
   );
 }
 
-function CharacterRow({ character: c, classNames, onToggle }: { character: CharacterInfo; classNames: string[]; onToggle: () => Promise<unknown> }) {
+function CharacterRow({
+  character: c,
+  classNames,
+  onToggle,
+  naming,
+}: {
+  character: CharacterInfo;
+  classNames: string[];
+  onToggle: () => Promise<unknown>;
+  /** The user's own name of the character over the catalogue's, to give or take back. */
+  naming?: ReactNode;
+}) {
   const [main, ...others] = c.names;
   return (
     <li className={cn("flex items-start gap-2 px-3 py-1.5", !c.included && "text-muted-foreground")}>
@@ -370,6 +402,7 @@ function CharacterRow({ character: c, classNames, onToggle }: { character: Chara
       />
       <div className="min-w-0 flex-1">
         <span className={cn("font-medium", !c.included && "line-through decoration-muted-foreground/60")}>{main ?? c.character}</span>
+        {naming}
         {others.length > 0 && <span className="text-muted-foreground"> · {others.join(", ")}</span>}
         {c.choice != null && <span className="ml-1 text-xs text-primary">ваш выбор</span>}
         {(classNames.length > 0 || c.description) && (

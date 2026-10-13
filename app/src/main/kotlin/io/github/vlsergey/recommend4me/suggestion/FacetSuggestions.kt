@@ -443,7 +443,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                 val ofCharacter = HashMap<String, MutableSet<String>>()
                 val names = HashMap<String, List<String>>()
                 universes.forEach { u ->
-                    names[u.value] = listOf(u.name)
+                    names[u.value] = u.names
                     type.universes.characters(u.catalogue, u.id).forEach { c ->
                         val value = UniverseFacet.valueOf(u.catalogue, c.id)
                         names[value] = c.names
