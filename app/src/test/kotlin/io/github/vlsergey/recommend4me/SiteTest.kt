@@ -429,9 +429,20 @@ class SiteTest {
         val unanswered = characters.filter { it.corrected == null }
         assertEquals(1, unanswered.count { it.offered == true }, "characters $characters")
         assertTrue(unanswered.size >= 3, "characters $characters")
-        // A work of no universe has no characters of it: only its site's line, and the original characters offered
-        val outside = items.getItem("site", "q9").body!!.allFacets.filter { it.facet == "characters" || it.facet == "pairings" }
-        assertTrue(outside.all { f -> f.propertyValues.all { it.offered == true } && f.original == "Knight/Princess" }, "outside $outside")
+        // A universe the model gives a work — more likely than not — lets it have the universe's characters, confirmed or not
+        fun outside() = items.getItem("site", "q9").body!!.allFacets.filter { it.facet == "characters" || it.facet == "pairings" }
+        val givenUniverse = items.getItem("site", "q9").body!!.allFacets.single { it.facet == "universe" }.propertyValues
+            .any { it.key == "fake:U2" && it.inferred == true }
+        if (givenUniverse) {
+            val chosen = outside().single { it.facet == "characters" }.propertyValues.map { it.key } +
+                suggestionsApi.getCandidates("site", "q9", "characters").body!!.map { it.key }
+            assertTrue(chosen.any { it.startsWith("fake:C") }, "characters of q9 $chosen")
+        }
+        // Said to have no universe, a work has no characters of one: only its site's line, and the original characters offered
+        corrections.completeFacet("site", "q9", "universe")
+        suggestionsApi.settleSuggestions("site", "q9")
+        val none = outside()
+        assertTrue(none.all { f -> f.propertyValues.all { it.offered == true } && f.original == "Knight/Princess" }, "outside $none")
         // Its site's line is shown above
         assertEquals("Pilot/Captain", facets.single { it.facet == "characters" }.original)
 

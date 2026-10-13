@@ -154,6 +154,50 @@ class UniverseRepository(
             .sortedBy { it.character.names.first().lowercase() }
     }
 
+    /** The name of every universe of [values] ("<catalogue>:<id>") in the dictionary, in the user's languages; of every universe when null. */
+    fun universeNames(values: Collection<String>?): Map<String, String> {
+        val u = UNIVERSE
+        val query = db.select(u.CATALOGUE, u.UNIVERSE_ID, u.LABELS, u.NAME).from(u)
+        val rows = if (values == null) query.fetch() else {
+            val wanted = byCatalogue(values).ifEmpty { return emptyMap() }
+            query.where(DSL.or(wanted.map { (catalogue, ids) -> u.CATALOGUE.eq(catalogue).and(u.UNIVERSE_ID.`in`(ids)) })).fetch()
+        }
+        return rows.associate { r ->
+            val id = r.value2()!!
+            UniverseFacet.valueOf(r.value1()!!, id) to (if (r.value3() != null) shown(r.value3()) ?: id else r.value4()!!)
+        }
+    }
+
+    /**
+     * The name every character of [values] ("<catalogue>:<id>") is shown by — the first of its
+     * names, as [UniverseCharacter.names] orders them — and its sex, of whichever universe of the
+     * dictionary has it; of every character when null.
+     */
+    fun characterNames(values: Collection<String>?): Map<String, Pair<String, CharacterSex?>> {
+        val c = UNIVERSE_CHARACTER
+        val query = db.select(c.CATALOGUE, c.CHARACTER_ID, c.LABELS, c.ALIASES, c.NAMES, c.SEX).from(c)
+        val rows = if (values == null) query.fetch() else {
+            val wanted = byCatalogue(values).ifEmpty { return emptyMap() }
+            query.where(DSL.or(wanted.map { (catalogue, ids) -> c.CATALOGUE.eq(catalogue).and(c.CHARACTER_ID.`in`(ids)) })).fetch()
+        }
+        return rows.associate { r ->
+            val id = r.value2()!!
+            val name = if (r.value3() != null) {
+                val labels = decode(r.value3())
+                val aliases = decodeAll(r.value4())
+                languages.firstNotNullOfOrNull { labels[it] } ?: languages.firstNotNullOfOrNull { aliases[it]?.firstOrNull() } ?: id
+            } else {
+                // Saved before the texts were kept by language: as it was shown then
+                r.value5()!!.substringBefore('\n')
+            }
+            UniverseFacet.valueOf(r.value1()!!, id) to (name to r.value6()?.let(CharacterSex::valueOf))
+        }
+    }
+
+    /** The ids of [values] ("<catalogue>:<id>") by catalogue; a value of no catalogue left out. */
+    private fun byCatalogue(values: Collection<String>): Map<String, List<String>> =
+        values.mapNotNull(UniverseFacet::parse).groupBy({ it.first }, { it.second }).mapValues { it.value.distinct() }
+
     /** Every class the entries of the universe are of, the most entries first. */
     fun classes(catalogue: String, id: String): List<ClassInUniverse> = classesOf(catalogue, id).values.sortedByDescending { it.entries }
 

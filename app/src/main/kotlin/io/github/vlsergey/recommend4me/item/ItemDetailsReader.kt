@@ -59,7 +59,7 @@ class ItemDetailsReader(
         if (withChances) suggestions.ensureFor(store, key.id)
         val chances = store.suggestions.ofItems(listOf(key.id))[key.id]
         val names = schema.facets.associate { def ->
-            def.key to store.items.facetNames(
+            def.key to store.names(
                 def.key,
                 site[def.key].orEmpty() + corrections.filter { it.facet == def.key }.map { it.key } + chances?.get(def.key)?.keys.orEmpty(),
             )

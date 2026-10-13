@@ -13,7 +13,7 @@ object FacetValues {
 
     fun of(store: SourceStore, facet: String): List<FacetValueUse> {
         val uses = HashMap(store.items.valueUses(facet))
-        val names = HashMap(store.items.facetNames(facet))
+        val names = HashMap(store.names(facet))
         store.corrections.allFacets().filter { it.facet == facet }.forEach { c ->
             uses.merge(c.key, if (c.added) 1 else -1, Int::plus)
             c.name?.let { names.putIfAbsent(c.key, it) }

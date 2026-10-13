@@ -59,7 +59,7 @@ object FeatureNames {
         wanted.forEach { (facetId, keys) ->
             sources.forEach { s ->
                 s.schema.facets.filter { facetId(s.source, it) == facetId }.forEach { def ->
-                    s.items.facetNames(def.key, keys).forEach { (key, name) -> names.putIfAbsent(facetId to key, name) }
+                    s.names(def.key, keys).forEach { (key, name) -> names.putIfAbsent(facetId to key, name) }
                     s.corrections.allFacets().filter { it.facet == def.key && it.name != null }.forEach { names.putIfAbsent(facetId to it.key, it.name!!) }
                 }
             }

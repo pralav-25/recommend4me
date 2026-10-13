@@ -56,12 +56,8 @@ class Universes(
         val characters = catalogue.characters(id, languages)
         val classes = catalogue.classes(characters.flatMap { it.classes }.toSet(), languages)
         type.universes.save(catalogueId, entry, characters, classes, Instant.now())
+        // Its name and its characters' are the dictionary's, read from it by every source ([UniverseNames])
         val value = UniverseFacet.valueOf(catalogueId, id)
-        val names = characters.associate { UniverseFacet.valueOf(catalogueId, it.id) to it.names.first() }
-        type.sources.forEach {
-            it.items.nameFacetValues(UniverseFacet.KEY, mapOf(value to entry.name))
-            UniverseFacet.CHARACTER_FACETS.forEach { facet -> it.items.nameFacetValues(facet, names) }
-        }
         val stored = type.universes.find(catalogueId, id)!!
         log.info("{}: the universe {} ({}) has {} entries of {} classes, {} of them kept as characters", typeId, entry.name, value, characters.size, classes.size, stored.characters)
         dictionaryChanged(type)

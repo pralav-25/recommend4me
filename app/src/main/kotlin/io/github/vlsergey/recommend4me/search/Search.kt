@@ -100,7 +100,7 @@ class Search(
         val texts = s.items.textsOf(ids)
         val searchedFacets = schema.facets.filter { it.searchWeight > 0 }
         val names = searchedFacets.associate { def ->
-            def.key to s.items.facetNames(def.key, ids.flatMap { facets[it]?.get(def.key).orEmpty() }) +
+            def.key to s.names(def.key, ids.flatMap { facets[it]?.get(def.key).orEmpty() }) +
                 facetCorrections.values.flatten().filter { it.facet == def.key && it.name != null }.associate { it.key to it.name!! }
         }
         val encoder = plugins.textEncoder()?.takeIf { passages }

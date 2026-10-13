@@ -26,6 +26,7 @@ import io.github.vlsergey.recommend4me.suggestion.SuggestionRepository
 import io.github.vlsergey.recommend4me.suggestion.ValueNameRepository
 import io.github.vlsergey.recommend4me.textvector.TextVectorRepository
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
+import io.github.vlsergey.recommend4me.universe.UniverseNames
 import io.github.vlsergey.recommend4me.universe.UniverseRepository
 import io.github.vlsergey.recommend4me.search.SearchJudgmentRepository
 import io.github.vlsergey.recommend4me.search.SearchScoreRepository
@@ -35,7 +36,11 @@ import org.springframework.stereotype.Component
 import java.nio.file.Path
 
 /** Everything of one source: its plugin, its folder and the repositories over its three database files. */
-class SourceStore(val source: Source, contentType: ContentType, val folder: Path, databases: Databases, events: ApplicationEventPublisher) {
+class SourceStore(
+    val source: Source, contentType: ContentType, val folder: Path, databases: Databases, events: ApplicationEventPublisher,
+    /** The user's languages, their first first. */
+    languages: List<String>,
+) {
     val id: String get() = source.id
     val type: String get() = source.contentType
 
@@ -84,6 +89,22 @@ class SourceStore(val source: Source, contentType: ContentType, val folder: Path
     /** What is worked out of the source's facets, in the model database of its content type. */
     val suggestions = SuggestionRepository(databases.model(source.contentType), source.id)
 
+    /** The names of the layer of universes: the dictionary's of the content type, whatever the source; none for a type without universes. */
+    private val dictionaryNames = if (contentType.universes) UniverseNames(UniverseRepository(databases.typeCorrections(contentType.id), languages)) else null
+
+    /**
+     * What the values [keys] of a facet are shown by: of the layer of universes, as the dictionary
+     * names them ([UniverseNames]); of any other facet, as the source does.
+     */
+    fun names(facet: String, keys: Collection<String>): Map<String, String> {
+        if (keys.isEmpty()) return emptyMap()
+        return dictionaryNames?.of(facet, keys) { items.facetNames(facet, it!!) } ?: items.facetNames(facet, keys)
+    }
+
+    /** The name of every value of a facet the source or the dictionary names. */
+    fun names(facet: String): Map<String, String> =
+        dictionaryNames?.of(facet, null) { if (it == null) items.facetNames(facet) else items.facetNames(facet, it) } ?: items.facetNames(facet)
+
     /** The source database, for the source's own tables. */
     val sourceDsl = dbs.source.dsl
 }
@@ -112,7 +133,7 @@ class Stores(
     @Value("\${recommend4me.languages:ru,en}") languages: List<String>,
 ) {
 
-    val sources: List<SourceStore> = plugins.sources.map { SourceStore(it, plugins.type(it.contentType)!!, folder.source(it.id), databases, events) }
+    val sources: List<SourceStore> = plugins.sources.map { SourceStore(it, plugins.type(it.contentType)!!, folder.source(it.id), databases, events, languages) }
 
     val types: List<TypeStore> = plugins.types.map { t -> TypeStore(t, sources.filter { it.type == t.id }, databases, languages) }
 

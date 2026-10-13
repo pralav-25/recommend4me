@@ -38,5 +38,5 @@ fun SourceStore.workPassages(itemId: String, names: FacetNames = items::facetNam
  */
 fun SourceStore.everyName(): FacetNames {
     val read = HashMap<String, Map<String, String>>()
-    return { facet, _ -> read.getOrPut(facet) { items.facetNames(facet) } }
+    return { facet, _ -> read.getOrPut(facet) { names(facet) } }
 }

@@ -216,7 +216,7 @@ class ItemList(
                     if (keys.isNotEmpty()) group.with++
                     keys.forEach { group.uses.merge(it, 1, Int::plus) }
                 }
-                group.names += s.items.facetNames(def.key, group.uses.keys)
+                group.names += s.names(def.key, group.uses.keys)
                 corrections.values.flatten().filter { it.facet == def.key && it.name != null }.forEach { group.names.putIfAbsent(it.key, it.name!!) }
             }
         }

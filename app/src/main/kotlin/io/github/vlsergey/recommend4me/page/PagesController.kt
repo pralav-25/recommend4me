@@ -74,7 +74,7 @@ class PagesController(
         val corrections = store.corrections.facetsOf(itemId)
         val chances = store.suggestions.ofItems(listOf(itemId))[itemId]
         val names = wanted.associateWith { facet ->
-            store.items.facetNames(facet, site[facet].orEmpty() + corrections.filter { it.facet == facet }.map { it.key } + chances?.get(facet)?.keys.orEmpty())
+            store.names(facet, site[facet].orEmpty() + corrections.filter { it.facet == facet }.map { it.key } + chances?.get(facet)?.keys.orEmpty())
         }
         val texts = Corrected.texts(store.items.texts(itemId), store.corrections.fieldsOf(itemId))
         val pictureMarks = store.marks.pictureMarksOf(itemId)

@@ -37,7 +37,7 @@ class LayerCorrections(private val stores: Stores) {
                         list.joinToString { "${it.itemId}:${if (it.added) "+" else "-"}${it.key}" })
                     return@forEach
                 }
-                val names = s.items.facetNames(facet)
+                val names = s.names(facet)
                 list.forEach { c ->
                     val name = names[c.key] ?: c.name ?: c.key
                     val key = LayerValues.keyOf(name)

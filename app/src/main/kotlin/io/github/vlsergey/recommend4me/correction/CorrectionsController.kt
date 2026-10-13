@@ -78,7 +78,7 @@ class CorrectionsController(
         // The next likeliest values of the facet are offered at once
         return answered(store, item, c.facet) {
             // A name is kept for a value the site does not name: one the user made up
-            val known = store.items.facetNames(c.facet, listOf(key)).isNotEmpty()
+            val known = store.names(c.facet, listOf(key)).isNotEmpty()
             store.corrections.setFacet(item, c.facet, key, c.added, name.takeIf { !known }, Instant.now())
             // A character is the work's main one or its secondary one: said to be one, it is the other no more
             UniverseFacet.otherCharacters(c.facet)?.takeIf { c.added && key !in UniverseFacet.ORIGINAL_CHARACTERS }?.let { other ->

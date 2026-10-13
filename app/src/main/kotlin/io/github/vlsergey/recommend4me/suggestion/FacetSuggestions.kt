@@ -403,11 +403,11 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val values = HashMap<String, String>()
         stores.typeOf(store.id).sources.forEach { s ->
             val theirs = s.schema.facets.firstOrNull { it.standard != null && it.standard === from.standard } ?: return@forEach
-            val names = s.items.facetNames(theirs.key)
+            val names = s.names(theirs.key)
             s.items.valueUses(theirs.key).keys.forEach { key -> (names[key] ?: key).let { values.putIfAbsent(LayerValues.keyOf(it), it.trim()) } }
         }
         store.items.nameFacetValues(facet.key, values)
-        val names = store.items.facetNames(from.key)
+        val names = store.names(from.key)
         val own = HashMap<String, List<String>>()
         store.items.forEachFacet(from.key) { id, keys -> own[id] = keys.map { LayerValues.keyOf(names[it] ?: it) }.distinct() }
         val answered = store.corrections.allFacets().filter { it.facet == facet.key && it.key !in own[it.itemId].orEmpty() }
@@ -423,10 +423,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val type = stores.typeOf(store.id)
         if (!type.type.universes) return null
         return when (facet.key) {
-            UniverseFacets.KIND -> {
-                store.items.nameFacetValues(UniverseFacets.KIND, UniverseFacet.KINDS)
-                Vocabulary(UniverseFacet.KINDS, null)
-            }
+            // The kinds, the universes, the characters and the pairings are named by the dictionary, whatever the source ([UniverseNames])
+            UniverseFacets.KIND -> Vocabulary(UniverseFacet.KINDS, null)
             // Every universe of the dictionary, linked to a work or not yet — to a work not known to have none
             UniverseFacets.UNIVERSE -> {
                 val kinds = HashMap<String, List<String>>()
@@ -478,9 +476,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                         names[value] = c.names
                     }
                 }
-                // Shown by the first of their names, as the dictionary names them; only a name changed is written
-                store.items.nameFacetValues(facet.key, UniverseFacet.ORIGINAL_CHARACTERS + names.mapValues { (key, own) -> own.firstOrNull() ?: key })
-                val universes = linked(store, UniverseFacets.UNIVERSE)
+                val universes = workUniverses(store)
                 val out = leftOut(store, facet.key)
                 fun of(id: String) = universes[id].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet() - out(id)
                 val sexes = UniverseFacet.sexes(type.universes)
@@ -516,15 +512,12 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                     kept.flatMapIndexed { k, a -> kept.drop(k + 1).map { b -> UniverseFacet.pairing(a, b) } }.toSet()
                 }
                 val names = UniverseFacet.ORIGINAL_CHARACTERS +
-                    store.items.facetNames(UniverseFacets.CHARACTERS, pairs.values.flatten().flatMap { p -> UniverseFacet.members(p)?.toList().orEmpty() })
+                    store.names(UniverseFacets.CHARACTERS, pairs.values.flatten().flatMap { p -> UniverseFacet.members(p)?.toList().orEmpty() })
                 val values = pairs.values.flatten().toSet().associateWith { p ->
                     UniverseFacet.members(p)!!.let { (a, b) -> "${names[a] ?: a} / ${names[b] ?: b}" }
                 }
-                // Shown with the sign of its characters' sexes; their names alone are what the model reads
+                // Their names alone are what the model reads; shown with the sign of their characters' sexes ([UniverseNames])
                 val sexes = UniverseFacet.sexes(type.universes)
-                store.items.nameFacetValues(UniverseFacets.PAIRINGS, values.mapValues { (p, name) ->
-                    UniverseFacet.sexesOf(p, sexes)?.let { "${UniverseFacet.sign(it)} $name" } ?: name
-                })
                 // Every name of a character of the dictionary, for counting two of them named together
                 val known = HashMap<String, List<String>>()
                 type.universes.all().forEach { u -> type.universes.characters(u.catalogue, u.id).forEach { known[UniverseFacet.valueOf(u.catalogue, it.id)] = it.names } }
@@ -587,6 +580,23 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
     }
 
+    /**
+     * The universes whose characters every work may have: the ones the user confirmed, and the ones
+     * the model gives it — more likely than not — unless the user rejected them; none but the
+     * confirmed once the user said the work has no other universes.
+     */
+    private fun workUniverses(store: SourceStore): Map<String, List<String>> {
+        val answers = store.corrections.allFacets().filter { it.facet == UniverseFacets.UNIVERSE }.groupBy { it.itemId }
+        val complete = store.corrections.allComplete()
+        val given = store.suggestions.ofFacets(listOf(UniverseFacets.UNIVERSE))
+        return (answers.keys + given.keys).associateWith { id ->
+            val own = answers[id].orEmpty()
+            val confirmed = own.filter { it.added }.map { it.key }
+            if (UniverseFacets.UNIVERSE in complete[id].orEmpty()) confirmed
+            else (confirmed + ModelValues.given(given[id]?.get(UniverseFacets.UNIVERSE).orEmpty()) - own.filter { !it.added }.map { it.key }.toSet()).distinct()
+        }
+    }
+
     /** The values of a facet the user linked every item to: item to values. */
     private fun linked(store: SourceStore, facet: String): Map<String, List<String>> =
         store.corrections.allFacets().filter { it.facet == facet && it.added }.groupBy({ it.itemId }, { it.key })
@@ -608,7 +618,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             val current = site[facet.key].orEmpty().toSet()
             val suggested = chances[facet.key].orEmpty().values
                 .filter { !it.had && it.key !in answered && it.key !in current && it.chance > ModelValues.LIKELY }.sortedByDescending { it.chance }
-            ItemFacetSuggestions(facet, suggested, store.items.facetNames(facet.key, suggested.map { it.key }))
+            ItemFacetSuggestions(facet, suggested, store.names(facet.key, suggested.map { it.key }))
         }
     }
 
@@ -660,7 +670,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
         val candidates = (scored + unscored)
             .sortedWith(compareByDescending<FacetCandidate> { it.chance ?: -1.0 }.thenByDescending { it.mentions ?: 0 })
-        return ItemFacetCandidates(def, candidates, store.items.facetNames(facet, candidates.map { it.key }))
+        return ItemFacetCandidates(def, candidates, store.names(facet, candidates.map { it.key }))
     }
 
     /**
@@ -991,7 +1001,7 @@ internal class FacetData(
         private fun nameVectors(
             store: SourceStore, facet: String, values: List<String>, corrections: List<FacetCorrection>, known: Map<String, String>, encoder: TextEncoder,
         ): Map<String, FloatArray> {
-            val names = store.items.facetNames(facet, values) + corrections.filter { it.facet == facet && it.name != null }.associate { it.key to it.name!! } + known
+            val names = store.names(facet, values) + corrections.filter { it.facet == facet && it.name != null }.associate { it.key to it.name!! } + known
             val stored = store.valueNames.of(facet, encoder.id)
             val out = HashMap<String, FloatArray>()
             val todo = ArrayList<Pair<String, String>>()

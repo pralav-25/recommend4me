@@ -77,7 +77,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val offered = if (!(def.infer && def.editable) || def.key in complete) emptyList() else {
                 val fromSite = siteKeys + def.examplesFrom?.let { from ->
                     val keys = site[from].orEmpty()
-                    store.items.facetNames(from, keys).let { n -> keys.map { LayerValues.keyOf(n[it] ?: it) } }
+                    store.names(from, keys).let { n -> keys.map { LayerValues.keyOf(n[it] ?: it) } }
                 }.orEmpty()
                 ModelValues.offered(
                     own.filterValues { !it.had && it.key !in out }.mapValues { it.value.chance },
@@ -140,7 +140,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val onCard = store.schema.facets.filter { it.onCard }.map { it.key }.toSet()
             val chances = store.suggestions.ofItems(ids)
             val names = onCard.associateWith { facet ->
-                store.items.facetNames(facet, ids.flatMap { facets[it]?.get(facet).orEmpty() + chances[it]?.get(facet)?.keys.orEmpty() })
+                store.names(facet, ids.flatMap { facets[it]?.get(facet).orEmpty() + chances[it]?.get(facet)?.keys.orEmpty() })
             }
             val numbers = store.items.numbersOf(ids)
             val pictures = store.pictures.countsOf(ids)
