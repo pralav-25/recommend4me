@@ -321,7 +321,10 @@ const RELATIONS: { relation: Said; label: string; title: string; filter: string 
   { relation: "DIFFERENT", label: "Разные", title: "Это другой тег, просто похоже назван", filter: "разные" },
 ];
 
-/** How long the rows move to their places after an answer, and how long the buttons stay locked after that. */
+/** The quiet after the last answer before the table is read anew. */
+const REFRESH_AFTER_MS = 2000;
+
+/** How long the rows move to their places once the table is read anew, and how long the buttons stay locked after that. */
 const MOVE_MS = 1000;
 const SETTLE_MS = 1000;
 
@@ -331,44 +334,73 @@ const SETTLE_MS = 1000;
  * the same tag (merged), a tag under it, a tag above it, a different one; pressed again, taken back.
  * A word said keeps the row in its place among the others; the filters above hide the rows said so.
  *
- * AN ANSWER MOVES THE ROWS SLOWLY, AND LOCKS THE BUTTONS: a merge changes what this tag means, and
- * the order of the alike with it. The buttons are locked at the press, the rows move to their new
- * places for a second once the answer is back, and the buttons are free a second after — so a row
+ * AN ANSWER IS SAVED AT ONCE, THE TABLE READ ANEW AFTER A QUIET: a press is sent at once — the
+ * answers one after another, in the order pressed — and shown pressed at once; the table, whose
+ * order a merge changes, is read anew two seconds after the last press. Then the buttons are locked,
+ * the rows move to their new places for a second, and the buttons are free a second after — so a row
  * that moved is never pressed by the click meant for the one that was there.
  */
 function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   const changed = useTagsChanged(type.id);
   const [shown, setShown] = useState<Record<Said, boolean>>({ MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true });
   const [locked, setLocked] = useState(false);
+  /** The answers given since the table was read, by tag: shown pressed before the table says so. */
+  const [said, setSaid] = useState<Record<string, TagRelation>>({});
+  const [error, setError] = useState<string | null>(null);
   const rows = useRef(new Map<string, HTMLLIElement>());
-  /** Where every row was before the answer, by tag: what the rows move from. */
+  /** Where every row was before the table was read anew, by tag: what the rows move from. */
   const before = useRef<Map<string, number> | null>(null);
+  /** The answers sent, one after another. */
+  const sending = useRef<Promise<void>>(Promise.resolve());
+  /** How many presses there were: a reading planned before the last one is not the last. */
+  const presses = useRef(0);
+  const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const unlock = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(unlock.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(unlock.current);
+      clearTimeout(refreshTimer.current);
+    },
+    [],
+  );
   const similar = useQuery({
     queryKey: [TAGS, type.id, "similar", tag.key],
     queryFn: async () =>
       unwrap(await api.GET("/api/types/{type}/tags/similar", { params: { path: { type: type.id }, query: { tag: tag.key, limit: SIMILAR } } })),
   });
-  const relate = useMutation({
-    mutationFn: async ({ other, relation }: { other: string; relation: TagRelation }) =>
-      unwrap(await api.PUT("/api/types/{type}/tags/relation", { params: { path: { type: type.id } }, body: { tag: tag.key, other, relation } })),
-    onMutate: () => {
-      setLocked(true);
-      before.current = new Map([...rows.current].map(([key, el]) => [key, el.getBoundingClientRect().top]));
-    },
-    onSuccess: () => changed(),
-    onError: () => {
-      before.current = null;
-      setLocked(false);
-    },
-  });
 
-  // The rows read anew after an answer: each moved from where it was to where it is, a new one faded in
+  /** The table read anew once every answer is saved — unless the user pressed again meanwhile. */
+  const refresh = async (asked: number) => {
+    await sending.current;
+    if (asked !== presses.current) return;
+    setLocked(true);
+    before.current = new Map([...rows.current].map(([key, el]) => [key, el.getBoundingClientRect().top]));
+    await changed();
+  };
+
+  const answer = (other: string, relation: TagRelation) => {
+    setSaid((s) => ({ ...s, [other]: relation }));
+    setError(null);
+    const asked = ++presses.current;
+    sending.current = sending.current.then(async () => {
+      try {
+        unwrap(await api.PUT("/api/types/{type}/tags/relation", { params: { path: { type: type.id } }, body: { tag: tag.key, other, relation } }));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+        // Not saved: the row shows what the table says again
+        setSaid((s) => Object.fromEntries(Object.entries(s).filter(([k]) => k !== other)));
+      }
+    });
+    clearTimeout(refreshTimer.current);
+    refreshTimer.current = setTimeout(() => void refresh(asked), REFRESH_AFTER_MS);
+  };
+
+  // The rows read anew: each moved from where it was to where it is, a new one faded in
   useLayoutEffect(() => {
     const was = before.current;
     if (!was || similar.isFetching || !similar.data) return;
     before.current = null;
+    setSaid({});
     rows.current.forEach((el, key) => {
       const top = was.get(key);
       el.style.transition = "none";
@@ -413,10 +445,13 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
       )}
       {similar.isError && <p className="text-destructive">Похожие не нашлись: {similar.error.message}</p>}
       {similar.data && similar.data.length === 0 && <p className="text-muted-foreground">Похожих нет.</p>}
-      {relate.isError && <p className="text-destructive">Не сохранилось: {relate.error.message}</p>}
+      {error && <p className="text-destructive">Не сохранилось: {error}</p>}
       {visible && visible.length > 0 && (
         <ul className={cn("flex flex-col divide-y rounded-lg border", locked && "pointer-events-none")} aria-busy={locked}>
-          {visible.map(({ tag: s, similarity, relation }) => (
+          {visible.map(({ tag: s, similarity, relation: read }) => {
+            // Pressed as the user said it, before the table is read anew
+            const relation = said[s.key] ?? read;
+            return (
             <li
               key={s.key}
               ref={(el) => {
@@ -450,7 +485,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                       size="xs"
                       aria-pressed={pressed}
                       disabled={locked}
-                      onClick={() => relate.mutate({ other: s.key, relation: pressed ? "NONE" : r.relation })}
+                      onClick={() => answer(s.key, pressed ? "NONE" : r.relation)}
                       title={pressed ? `${r.title}. Нажмите ещё раз, чтобы снять` : r.title}
                     >
                       {r.label}
@@ -459,7 +494,8 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                 })}
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
     </section>
