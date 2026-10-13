@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.scorer
 
+import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.matrix.Blas
 import io.github.vlsergey.recommend4me.matrix.Floats
 import io.github.vlsergey.recommend4me.matrix.Matrix
@@ -30,7 +31,11 @@ import kotlin.math.sqrt
  */
 class KernelScorer : Scorer {
     override val id = "kernel-arccos"
-    override val title = "Ядерное ранжирование: похожесть на оценённые работы"
+    override val title = Label(
+        "Kernel ranking: similarity to the rated works",
+        "Ядерное ранжирование: похожесть на оценённые работы",
+        "Kernelsko rangiranje: sličnost sa ocenjenim delima",
+    )
     override val candidates = listOf(0.01, 0.03, 0.1, 0.3, 1.0)
     override val defaultParameter = 0.1
 

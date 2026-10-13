@@ -7,19 +7,22 @@ import io.github.vlsergey.recommend4me.api.model.LocalName
 import io.github.vlsergey.recommend4me.api.model.UniverseClassInfo
 import io.github.vlsergey.recommend4me.api.model.UniverseInfo
 import io.github.vlsergey.recommend4me.api.model.UniverseRef
+import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.failure
 import io.github.vlsergey.recommend4me.source.Stores
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
 import java.time.ZoneOffset
 import io.github.vlsergey.recommend4me.api.model.FoundUniverse as ApiFoundUniverse
+
+private val CATALOGUE_SILENT = Label("The catalogue did not answer: %s", "Справочник не ответил: %s", "Katalog nije odgovorio: %s")
 
 @RestController
 class UniversesController(private val stores: Stores, private val universes: Universes) : UniversesApi {
 
     private fun typeOf(type: String) = stores.type(type)?.takeIf { it.type.universes }
-        ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "У типа «$type» нет вселенных")
+        ?: throw failure(HttpStatus.NOT_FOUND, Label("The type “%s” has no universes", "У типа «%s» нет вселенных", "Vrsta „%s” nema univerzume"), type)
 
     override fun listUniverses(type: String): ResponseEntity<List<UniverseInfo>> {
         val t = typeOf(type)
@@ -34,9 +37,9 @@ class UniversesController(private val stores: Stores, private val universes: Uni
         val added = try {
             universes.add(type, universeRef.catalogue, universeRef.universe)
         } catch (e: NoSuchElementException) {
-            throw ResponseStatusException(HttpStatus.NOT_FOUND, "В справочнике нет «${universeRef.universe}»")
+            throw failure(HttpStatus.NOT_FOUND, Label("The catalogue has no “%s”", "В справочнике нет «%s»", "Katalog nema „%s”"), universeRef.universe)
         } catch (e: Exception) {
-            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Справочник не ответил: ${e.message}")
+            throw failure(HttpStatus.BAD_GATEWAY, CATALOGUE_SILENT, e.message)
         }
         return ResponseEntity.ok(added.toApi(0))
     }
@@ -46,7 +49,7 @@ class UniversesController(private val stores: Stores, private val universes: Uni
         val found = try {
             universes.search(type, query.trim())
         } catch (e: Exception) {
-            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Справочник не ответил: ${e.message}")
+            throw failure(HttpStatus.BAD_GATEWAY, CATALOGUE_SILENT, e.message)
         }
         return ResponseEntity.ok(found.map { ApiFoundUniverse(it.catalogue, it.entry.id, it.entry.name, it.entry.url, it.added, it.entry.description) })
     }
@@ -93,7 +96,10 @@ class UniversesController(private val stores: Stores, private val universes: Uni
         try {
             choose()
         } catch (e: NoSuchElementException) {
-            throw ResponseStatusException(HttpStatus.NOT_FOUND, "Нет такой вселенной в словаре")
+            throw failure(
+                HttpStatus.NOT_FOUND,
+                Label("There is no such universe in the dictionary", "Нет такой вселенной в словаре", "U rečniku nema takvog univerzuma"),
+            )
         }
         return ResponseEntity.noContent().build()
     }

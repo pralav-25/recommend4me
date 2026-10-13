@@ -1,5 +1,7 @@
 package io.github.vlsergey.recommend4me.model
 
+import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.picture.PictureRepository
 import io.github.vlsergey.recommend4me.setvector.SetKind
 import io.github.vlsergey.recommend4me.likeness.MarkLikeness
@@ -49,9 +51,9 @@ object FeatureNames {
         val numberLabels = HashMap<String, String>()
         val blockLabels = HashMap<String, String>()
         sources.forEach { s ->
-            s.schema.facets.forEach { facetLabels.putIfAbsent(facetId(s.source, it), it.label) }
-            s.schema.numbers.forEach { numberLabels.putIfAbsent(numberId(s.source, it), it.label) }
-            TextVectors.blocks(s.schema).values.forEach { (block, label) -> blockLabels.putIfAbsent(block, label) }
+            s.schema.facets.forEach { facetLabels.putIfAbsent(facetId(s.source, it), it.label.text()) }
+            s.schema.numbers.forEach { numberLabels.putIfAbsent(numberId(s.source, it), it.label.text()) }
+            TextVectors.blocks(s.schema).values.forEach { (block, label) -> blockLabels.putIfAbsent(block, label.text()) }
         }
         // The names of the facet values, asked of every source that has the facet
         val wanted = features.mapNotNull(::parseFacet).groupBy({ it.first }, { it.second })
@@ -59,7 +61,7 @@ object FeatureNames {
         wanted.forEach { (facetId, keys) ->
             sources.forEach { s ->
                 s.schema.facets.filter { facetId(s.source, it) == facetId }.forEach { def ->
-                    s.names(def.key, keys).forEach { (key, name) -> names.putIfAbsent(facetId to key, name) }
+                    s.shownNames(def.key, keys).forEach { (key, name) -> names.putIfAbsent(facetId to key, name) }
                     s.corrections.allFacets().filter { it.facet == def.key && it.name != null }.forEach { names.putIfAbsent(facetId to it.key, it.name!!) }
                 }
             }
@@ -68,9 +70,9 @@ object FeatureNames {
             parseFacet(feature)?.let { (facetId, key) -> "${facetLabels[facetId] ?: facetId}: ${names[facetId to key] ?: key}" }
                 ?: when (val group = feature.substringBefore(':')) {
                     "num" -> numberLabels[feature.removePrefix("num:")] ?: feature
-                    "prev" -> "Оценка прошлой версии: " + feature.removePrefix("prev:")
-                    "source" -> "Источник: " + (sources.firstOrNull { it.id == feature.removePrefix("source:") }?.source?.title ?: feature)
-                    else -> BLOCKS[feature] ?: blockLabels[feature] ?: group
+                    "prev" -> PREVIOUS_LABEL.text() + ": " + feature.removePrefix("prev:")
+                    "source" -> SOURCE_LABEL.text() + ": " + (sources.firstOrNull { it.id == feature.removePrefix("source:") }?.source?.title?.text() ?: feature)
+                    else -> BLOCKS[feature]?.text() ?: blockLabels[feature] ?: group
                 }
         }
     }
@@ -87,27 +89,30 @@ object FeatureNames {
      */
     fun partLabels(parts: Collection<String>, sources: List<SourceStore>): Map<String, String> {
         val facetLabels = HashMap<String, String>()
-        sources.forEach { s -> s.schema.facets.forEach { facetLabels.putIfAbsent("facet:" + facetId(s.source, it), it.label) } }
+        sources.forEach { s -> s.schema.facets.forEach { facetLabels.putIfAbsent("facet:" + facetId(s.source, it), it.label.text()) } }
         val single = labels(parts.filter { !it.startsWith("facet:") && !it.startsWith("part:") }, sources)
         return parts.associateWith { part ->
             facetLabels[part] ?: when (part) {
-                PREVIOUS -> "Оценка прошлой версии"
-                SOURCE -> "Источник"
-                PICTURES -> "Обложка и картинки"
-                REVIEWS -> "Отзывы"
+                PREVIOUS -> PREVIOUS_LABEL.text()
+                SOURCE -> SOURCE_LABEL.text()
+                PICTURES -> Label("Cover and pictures", "Обложка и картинки", "Korica i slike").text()
+                REVIEWS -> Label("Reviews", "Отзывы", "Recenzije").text()
                 else -> single[part] ?: part
             }
         }
     }
 
+    private val PREVIOUS_LABEL = Label("Grade of the previous version", "Оценка прошлой версии", "Ocena prethodne verzije")
+    private val SOURCE_LABEL = Label("Source", "Источник", "Izvor")
+
     private val BLOCKS = mapOf(
-        PictureRepository.COVER to "Обложка",
-        PictureRepository.SCREENS to "Скриншоты в среднем",
-        SetKind.SCREENS.key to "Скриншоты по одному",
-        SetKind.REVIEWS.key to "Отзывы по одному",
-        SetKind.PARTS.key to "Текст по фрагментам",
-        MarkLikeness.PICTURES to "Похожесть на отмеченные картинки",
-        MarkLikeness.REVIEWS to "Похожесть на отмеченные отзывы",
-        WorkLikeness.WORKS to "Похожесть описания на оценённые работы",
+        PictureRepository.COVER to Label("Cover", "Обложка", "Korica"),
+        PictureRepository.SCREENS to Label("Screenshots on average", "Скриншоты в среднем", "Snimci ekrana u proseku"),
+        SetKind.SCREENS.key to Label("Screenshots one by one", "Скриншоты по одному", "Snimci ekrana jedan po jedan"),
+        SetKind.REVIEWS.key to Label("Reviews one by one", "Отзывы по одному", "Recenzije jedna po jedna"),
+        SetKind.PARTS.key to Label("Text by fragments", "Текст по фрагментам", "Tekst po fragmentima"),
+        MarkLikeness.PICTURES to Label("Likeness to the marked pictures", "Похожесть на отмеченные картинки", "Sličnost sa označenim slikama"),
+        MarkLikeness.REVIEWS to Label("Likeness to the marked reviews", "Похожесть на отмеченные отзывы", "Sličnost sa označenim recenzijama"),
+        WorkLikeness.WORKS to Label("Likeness of the description to the graded works", "Похожесть описания на оценённые работы", "Sličnost opisa sa ocenjenim delima"),
     )
 }

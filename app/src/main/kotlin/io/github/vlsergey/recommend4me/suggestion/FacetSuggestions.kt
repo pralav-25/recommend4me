@@ -624,7 +624,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             val current = site[facet.key].orEmpty().toSet()
             val suggested = chances[facet.key].orEmpty().values
                 .filter { !it.had && it.key !in answered && it.key !in current && it.chance > ModelValues.LIKELY }.sortedByDescending { it.chance }
-            ItemFacetSuggestions(facet, suggested, store.names(facet.key, suggested.map { it.key }))
+            ItemFacetSuggestions(facet, suggested, store.shownNames(facet.key, suggested.map { it.key }))
         }
     }
 
@@ -676,7 +676,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
         val candidates = (scored + unscored)
             .sortedWith(compareByDescending<FacetCandidate> { it.chance ?: -1.0 }.thenByDescending { it.mentions ?: 0 })
-        return ItemFacetCandidates(def, candidates, store.names(facet, candidates.map { it.key }))
+        return ItemFacetCandidates(def, candidates, store.shownNames(facet, candidates.map { it.key }))
     }
 
     /**

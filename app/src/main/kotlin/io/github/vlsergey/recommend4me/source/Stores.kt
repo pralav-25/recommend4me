@@ -6,6 +6,7 @@ import io.github.vlsergey.recommend4me.correction.CorrectionRepository
 import io.github.vlsergey.recommend4me.correction.TypeLinkRepository
 import io.github.vlsergey.recommend4me.database.Databases
 import io.github.vlsergey.recommend4me.folder.DataFolder
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.interest.InterestRepository
 import io.github.vlsergey.recommend4me.item.ItemRepository
 import io.github.vlsergey.recommend4me.item.ItemsChanged
@@ -113,6 +114,21 @@ class SourceStore(
     fun names(facet: String): Map<String, String> {
         if (facet in tagFacets) return items.facetNames(facet) + tags.shown(null)
         return dictionaryNames?.of(facet, null) { if (it == null) items.facetNames(facet) else items.facetNames(facet, it) } ?: items.facetNames(facet)
+    }
+
+    /**
+     * What the values [keys] of a facet are SHOWN by, in the language of the request: [names], but a
+     * value of the application's own — a standard value ("finished"), an original character — by
+     * its label. [names] keep one language: the model and the search read them.
+     */
+    fun shownNames(facet: String, keys: Collection<String>): Map<String, String> = names(facet, keys) + labelled(facet, keys)
+
+    /** The name of every value of a facet as it is shown ([shownNames]). */
+    fun shownNames(facet: String): Map<String, String> = names(facet).let { it + labelled(facet, it.keys) }
+
+    private fun labelled(facet: String, keys: Collection<String>): Map<String, String> {
+        val own = schema.facet(facet)?.standard?.values?.associate { it.key to it.label }.orEmpty() + UniverseFacet.ORIGINAL_CHARACTER_LABELS
+        return keys.mapNotNull { k -> own[k]?.let { k to it.text() } }.toMap()
     }
 
     /** The user's word on the sites' free tags of the content type: merged, named, told apart — every source's alike. */

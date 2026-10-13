@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me
 
+import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.FacetValue
@@ -63,13 +64,13 @@ class ScenarioTest {
     /** A site whose pages are "<id>|<title>|<tags>|<annotation>". */
     class TestSource : Source {
         override val id = "test"
-        override val title = "Test"
+        override val title = Label.same("Test")
         override val contentType = "books"
         override val homepage = "https://test.example"
         override val schema = SourceSchema(
-            facets = listOf(FacetDef("tag", "Тег", filter = true, searchWeight = 0.9f, onCard = true)),
-            numbers = listOf(NumberDef("likes", "Лайки", sortable = true, filterable = true)),
-            texts = listOf(TextDef("annotation", "Аннотация", block = "text:annotation")),
+            facets = listOf(FacetDef("tag", Label("Tag", "Тег", "Tag"), filter = true, searchWeight = 0.9f, onCard = true)),
+            numbers = listOf(NumberDef("likes", Label("Likes", "Лайки", "Lajkovi"), sortable = true, filterable = true)),
+            texts = listOf(TextDef("annotation", Label("Annotation", "Аннотация", "Anotacija"), block = "text:annotation")),
         )
         override val modes = setOf(SourceMode.BROWSER)
         override val capturePatterns = listOf(Regex("https://test\\.example/work/.*"))

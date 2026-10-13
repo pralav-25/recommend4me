@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.universe
 
+import io.github.vlsergey.recommend4me.i18n.Label
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.net.URI
@@ -28,7 +29,7 @@ import java.time.format.DateTimeFormatter
  */
 class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue {
     override val id = "wikidata"
-    override val title = "Викиданные"
+    override val title = Label("Wikidata", "Викиданные", "Vikipodaci")
 
     private val http = HttpClient.newBuilder().connectTimeout(TIMEOUT).followRedirects(HttpClient.Redirect.NORMAL).build()
 

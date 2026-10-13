@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.item
 
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.api.model.FacetFilter
 import io.github.vlsergey.recommend4me.api.model.FacetValueUse
 import io.github.vlsergey.recommend4me.api.model.ItemPage
@@ -211,12 +212,12 @@ class ItemList(
             total += s.items.count()
             val corrections = s.corrections.allFacets().groupBy { it.itemId }
             s.schema.facets.filter { it.filter }.forEach { def ->
-                val group = groups.getOrPut(filterId(s, def)) { Group(def.label, def.noneLabel) }
+                val group = groups.getOrPut(filterId(s, def)) { Group(def.label.text(), def.noneLabel?.text()) }
                 valuesOf(s, def, corrections).values.forEach { keys ->
                     if (keys.isNotEmpty()) group.with++
                     keys.forEach { group.uses.merge(it, 1, Int::plus) }
                 }
-                group.names += s.names(def.key, group.uses.keys)
+                group.names += s.shownNames(def.key, group.uses.keys)
                 corrections.values.flatten().filter { it.facet == def.key && it.name != null }.forEach { group.names.putIfAbsent(it.key, it.name!!) }
             }
         }

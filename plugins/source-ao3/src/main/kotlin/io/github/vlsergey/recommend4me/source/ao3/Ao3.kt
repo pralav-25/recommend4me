@@ -1,6 +1,8 @@
 package io.github.vlsergey.recommend4me.source.ao3
 
 import io.github.vlsergey.recommend4me.contenttype.Books
+import io.github.vlsergey.recommend4me.contenttype.StandardNumbers
+import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.CardDecor
 import io.github.vlsergey.recommend4me.source.FacetDecor
@@ -37,7 +39,7 @@ import java.time.Instant
  */
 class Ao3 : Source {
     override val id = ID
-    override val title = "Archive of Our Own"
+    override val title = Label.same("Archive of Our Own")
     override val contentType = "books"
     override val homepage = BASE
     override val modes = setOf(SourceMode.BROWSER, SourceMode.PAGE)
@@ -46,32 +48,36 @@ class Ao3 : Source {
         facets = listOf(
             Books.AUTHOR.asFacet(AUTHOR),
             Books.FANDOM.asFacet(FANDOM),
-            FacetDef(RATING, "Рейтинг", filter = true, onCard = true, role = FacetRole.CONTENT),
-            FacetDef(WARNING, "Предупреждения", filter = true, role = FacetRole.CONTENT),
-            FacetDef(CATEGORY, "Категория", filter = true, onCard = true, role = FacetRole.CONTENT),
+            FacetDef(RATING, Label("Rating", "Рейтинг", "Rejting"), filter = true, onCard = true, role = FacetRole.CONTENT),
+            FacetDef(WARNING, Label("Warnings", "Предупреждения", "Upozorenja"), filter = true, role = FacetRole.CONTENT),
+            FacetDef(CATEGORY, Label("Category", "Категория", "Kategorija"), filter = true, onCard = true, role = FacetRole.CONTENT),
             Books.STATUS.asFacet(STATUS),
-            FacetDef(LANGUAGE, "Язык", filter = true, onCard = true),
+            FacetDef(LANGUAGE, Label("Language", "Язык", "Jezik"), filter = true, onCard = true),
             Books.TAG.asFacet(TAG),
             // The relationships and the characters as the site's tags name them, one field: the
             // application works the characters and pairings of the universes out of them
             Books.PAIRINGS.asFacet(PAIRING),
-            FacetDef(SERIES, "Серия", searchWeight = 0.7f, role = FacetRole.SERIES),
+            FacetDef(SERIES, Label("Series", "Серия", "Serijal"), searchWeight = 0.7f, role = FacetRole.SERIES),
         ),
         numbers = listOf(
-            NumberDef(WORDS, "Слов", NumberScale.LOG, sortable = true, role = NumberRole.SIZE),
-            NumberDef(PARTS, "Глав", NumberScale.LOG, filterable = true),
-            NumberDef(KUDOS, "Kudos", NumberScale.LOG, sortable = true, role = NumberRole.APPROVAL),
-            NumberDef(BOOKMARKS, "Закладки", NumberScale.LOG),
-            NumberDef(HITS, "Просмотры", NumberScale.LOG, sortable = true, role = NumberRole.REACH),
-            NumberDef(COMMENTS, "Комментарии", NumberScale.LOG),
+            NumberDef(WORDS, Label("Words", "Слов", "Reči"), NumberScale.LOG, sortable = true, role = NumberRole.SIZE),
+            Books.PARTS.asNumber(PARTS),
+            // Kudos are the site's likes: one number with every site's
+            StandardNumbers.LIKES.asNumber(KUDOS),
+            NumberDef(BOOKMARKS, Label("Bookmarks", "Закладки", "Obeleživači"), NumberScale.LOG),
+            NumberDef(HITS, Label("Hits", "Просмотры", "Pregledi"), NumberScale.LOG, sortable = true, role = NumberRole.REACH),
+            NumberDef(COMMENTS, Label("Comments", "Комментарии", "Komentari"), NumberScale.LOG),
         ),
         texts = listOf(
-            TextDef(ANNOTATION, "Описание", block = "text:annotation", searchWeight = 0.6f, role = TextRole.DESCRIPTION),
-            TextDef(NOTES, "Примечания", block = "text:notes", searchWeight = 0.5f, role = TextRole.NOTES),
-            TextDef(PAIRINGS_LINE, "Отношения и персонажи на сайте", searchWeight = 0.7f, searchByMeaning = true),
+            TextDef(ANNOTATION, Label("Summary", "Описание", "Opis"), block = "text:annotation", searchWeight = 0.6f, role = TextRole.DESCRIPTION),
+            TextDef(NOTES, Label("Notes", "Примечания", "Beleške"), block = "text:notes", searchWeight = 0.5f, role = TextRole.NOTES),
+            TextDef(
+                PAIRINGS_LINE, Label("Relationships and characters on the site", "Отношения и персонажи на сайте", "Veze i likovi na sajtu"),
+                searchWeight = 0.7f, searchByMeaning = true,
+            ),
         ),
-        reviewsLabel = "Комментарии",
-        partsLabel = "Главы",
+        reviewsLabel = Label("Comments", "Комментарии", "Komentari"),
+        partsLabel = Label("Chapters", "Главы", "Poglavlja"),
         universeLine = PAIRINGS_LINE,
         // A work of the fandom "Original Work" is an original one
         kindFrom = FANDOM,
@@ -84,9 +90,12 @@ class Ao3 : Source {
     override val signals = listOf(
         // Kudos is the site's "I liked it"
         Books.LIKED.asSignal(),
-        SignalDef(SIGNAL_BOOKMARKED, "В закладках", mapOf(Books.YES.key to Books.YES.label)),
-        SignalDef(SIGNAL_SUBSCRIBED, "Подписка на обновления", mapOf(Books.YES.key to Books.YES.label)),
-        SignalDef(SIGNAL_LATER, "Отложено на потом", mapOf(Books.YES.key to Books.YES.label)),
+        SignalDef(SIGNAL_BOOKMARKED, Label("Bookmarked", "В закладках", "U obeleživačima"), mapOf(Books.YES.key to Books.YES.label)),
+        SignalDef(
+            SIGNAL_SUBSCRIBED, Label("Subscribed to updates", "Подписка на обновления", "Pretplata na ažuriranja"),
+            mapOf(Books.YES.key to Books.YES.label),
+        ),
+        SignalDef(SIGNAL_LATER, Label("Marked for later", "Отложено на потом", "Ostavljeno za kasnije"), mapOf(Books.YES.key to Books.YES.label)),
     )
 
     override fun itemUrl(itemId: String) = "$BASE/works/$itemId"

@@ -1,5 +1,7 @@
 package io.github.vlsergey.recommend4me.universe
 
+import io.github.vlsergey.recommend4me.i18n.Label
+
 /**
  * THE TEXTS OF AN ENTRY ARE BY LANGUAGE — language to text, of every language the catalogue was
  * asked for — and what is shown is the text of the first of [languages], the user's, that has one.
@@ -80,7 +82,7 @@ interface UniverseCatalogue {
     val id: String
 
     /** The name shown to the user. */
-    val title: String
+    val title: Label
 
     /** The entries a name of a fandom may stand for, the likeliest first. */
     fun findUniverses(name: String, languages: List<String>): List<UniverseEntry>

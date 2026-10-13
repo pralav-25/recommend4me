@@ -280,8 +280,21 @@ against the English — the same keys, no more and no fewer, every word of a cou
 form of that language — so a translation missing or left over does not compile either. A new
 section's files are registered there.
 
-What the server sends is shown as it comes: the labels of the facets, the titles of the content
-types and of the sources, the names of the catalogue, the server's messages.
+The server words what it sends in the language of the request — `Accept-Language`: the web
+interface sends the one chosen, the browser extension the browser's; English without one. Every
+text a plugin or the application shows the user is a `Label` of the plugin API, English, Russian
+and Serbian all required, so a label missing a language does not compile: the titles of the
+content types and their grades, of the sources, scorers and catalogues; the labels of the facets,
+numbers, texts, signals, settings and of the standard values; the messages of jobs and of refused
+requests. What the model and the search read keeps one language, Russian, whatever the user reads —
+the names of the standard values kept with the works, the original characters — their texts are
+encoded once; they are shown by their labels (`SourceStore.shownNames`). The data itself — the
+works' texts, the sites' tags, the catalogue's names — is shown as it is.
+
+A number every site of a content type tells alike is a standard number (`StandardNumber`): the
+chapters of a book (`Books.PARTS`), the likes of anything — likes, kudos — (`StandardNumbers.LIKES`).
+A source declares its own number as the standard one under its own key; the sources' numbers of
+one standard are one filter, one sorting and one feature of the model.
 
 ## The site as the interface
 

@@ -1,7 +1,16 @@
 import createClient from "openapi-fetch";
+import { currentLocale } from "@/i18n/i18n";
 import type { components, paths } from "./schema";
 
 export const api = createClient<paths>({ baseUrl: "" });
+
+// Every request asks for the language of the interface: the server words its labels in it
+api.use({
+  onRequest({ request }) {
+    request.headers.set("Accept-Language", currentLocale());
+    return request;
+  },
+});
 
 type Schemas = components["schemas"];
 export type ContentTypeInfo = Schemas["ContentTypeInfo"];

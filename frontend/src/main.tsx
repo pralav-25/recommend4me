@@ -5,13 +5,16 @@ import { useTranslation } from "react-i18next";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toast";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import "./i18n/i18n";
+import i18n from "./i18n/i18n";
 import { App } from "./App";
 import "./index.css";
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
 });
+
+// The server words its labels in the language asked: everything read in another is read again
+i18n.on("languageChanged", () => void queryClient.invalidateQueries());
 
 /**
  * The application in the language of the interface: drawn anew, whole, when the user chooses

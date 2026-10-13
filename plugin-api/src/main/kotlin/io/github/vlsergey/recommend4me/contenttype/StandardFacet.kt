@@ -1,7 +1,11 @@
 package io.github.vlsergey.recommend4me.contenttype
 
+import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.FacetRole
+import io.github.vlsergey.recommend4me.source.NumberDef
+import io.github.vlsergey.recommend4me.source.NumberRole
+import io.github.vlsergey.recommend4me.source.NumberScale
 import io.github.vlsergey.recommend4me.source.SignalDef
 
 /**
@@ -14,7 +18,7 @@ import io.github.vlsergey.recommend4me.source.SignalDef
  */
 class StandardFacet(
     val key: String,
-    val label: String,
+    val label: Label,
     /** The only values the facet may have, in their order; null — any. */
     val values: List<StandardValue>? = null,
     val role: FacetRole? = null,
@@ -50,7 +54,26 @@ class StandardFacet(
 }
 
 /** A value of a [StandardFacet] with a closed list of them: its stable key and its name. */
-class StandardValue(val key: String, val label: String)
+class StandardValue(val key: String, val label: Label)
+
+/**
+ * A NUMBER EVERY SOURCE OF A CONTENT TYPE THAT HAS IT TELLS ALIKE — the chapters of a book: one
+ * number for the model and the filters, whichever site a work is from. A source declares its number
+ * as the standard one ([asNumber]) under its own key.
+ */
+class StandardNumber(
+    val key: String,
+    val label: Label,
+    val scale: NumberScale = NumberScale.LOG,
+    val sortable: Boolean = false,
+    val filterable: Boolean = false,
+    val role: NumberRole? = null,
+) {
+    /** The source's number [key] as this one: its label, its scale and use are the standard's. */
+    fun asNumber(key: String = this.key) = NumberDef(
+        key, label, scale, sortable = sortable, shared = this.key, role = role, filterable = filterable,
+    )
+}
 
 /**
  * A USER'S OWN ACTION ON A SITE EVERY SOURCE OF A CONTENT TYPE TELLS ALIKE — read the work, liked
@@ -58,6 +81,6 @@ class StandardValue(val key: String, val label: String)
  * [key] to one of [values], mapping its own marks onto it (a shelf "finished" — read), besides any
  * signal of its own.
  */
-class StandardSignal(val key: String, val label: String, val values: List<StandardValue>) {
+class StandardSignal(val key: String, val label: Label, val values: List<StandardValue>) {
     fun asSignal() = SignalDef(key, label, values.associate { it.key to it.label })
 }

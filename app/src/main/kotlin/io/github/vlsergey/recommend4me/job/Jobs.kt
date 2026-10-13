@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.job
 
+import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.settings.Settings
 import io.github.vlsergey.recommend4me.source.Job
@@ -33,7 +34,8 @@ data class JobProgress(
     val total: Int = 0,
     val newItems: Int = 0,
     val errors: Int = 0,
-    val message: String? = null,
+    /** In every language: shown in the language of whoever asks. */
+    val message: Label? = null,
     val loggedIn: Boolean? = null,
     val startedAt: Instant? = null,
     val finishedAt: Instant? = null,
@@ -82,7 +84,7 @@ class Jobs(
             log.warn("{}: {}", sourceId, message)
             update { it.copy(errors = it.errors + 1) }
         }
-        override fun message(text: String?) = update { it.copy(message = text) }
+        override fun message(text: Label?) = update { it.copy(message = text) }
         override fun session(loggedIn: Boolean?) = update { it.copy(loggedIn = loggedIn) }
         override val cancelled: Boolean get() = cancelRequested
 
@@ -149,7 +151,8 @@ class Jobs(
             run.update { it.copy(state = JobState.CANCELLED, finishedAt = Instant.now()) }
         } catch (e: Exception) {
             log.error("{}: the job failed", run.sourceId, e)
-            run.update { it.copy(state = JobState.FAILED, message = e.message ?: e.javaClass.simpleName, finishedAt = Instant.now()) }
+            // The failure as the code tells it: the same in every language
+            run.update { it.copy(state = JobState.FAILED, message = Label.same(e.message ?: e.javaClass.simpleName), finishedAt = Instant.now()) }
         }
     }
 

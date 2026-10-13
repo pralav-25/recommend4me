@@ -1,5 +1,7 @@
 package io.github.vlsergey.recommend4me.capture
 
+import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.source.Stores
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.beans.factory.annotation.Value
@@ -12,6 +14,13 @@ import tools.jackson.databind.json.JsonMapper
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+
+/** What the script says it does, in the language of the request it is installed by; %s — the application's address. */
+private val DESCRIPTION = Label(
+    "Sends the open pages of books and games to the recommend4me application (%s) and shows the prediction, the grade, the tags and the hints on them",
+    "Отправляет открытые страницы книг и игр в приложение recommend4me (%s) и показывает на них прогноз, оценку, теги и подсказки",
+    "Šalje otvorene stranice knjiga i igara aplikaciji recommend4me (%s) i na njima prikazuje predviđanje, ocenu, tagove i savete",
+)
 
 /**
  * THE USERSCRIPT FOR SAFARI ON THE IPAD — the browser tracking and the site as the application's
@@ -35,7 +44,7 @@ class UserScriptController(
     fun userScript(request: HttpServletRequest): ResponseEntity<String> {
         val folder = extensionDir.takeIf { it.isNotBlank() }?.let { Path.of(it).toAbsolutePath().normalize() }
             ?.takeIf { Files.isRegularFile(it.resolve("page.js")) }
-            ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).contentType(MediaType.TEXT_PLAIN).body("Нет папки расширения")
+            ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).contentType(MediaType.TEXT_PLAIN).body(Label("There is no extension folder", "Нет папки расширения", "Nema fascikle proširenja").text())
         // Every page of the hosts of the sources: the script asks the application which it wants
         val hosts = stores.sources.mapNotNull { s -> runCatching { URI(s.source.homepage).host?.removePrefix("www.") }.getOrNull() }.distinct()
         return ResponseEntity.ok().header("Cache-Control", "no-store").body(assemble(folder, serverOf(request), hosts, json))
@@ -59,7 +68,7 @@ class UserScriptController(
                 appendLine("// @name         recommend4me")
                 appendLine("// @namespace    https://github.com/vlsergey/recommend4me")
                 appendLine("// @version      $version")
-                appendLine("// @description  Отправляет открытые страницы книг и игр в приложение recommend4me ($server) и показывает на них прогноз, оценку, теги и подсказки")
+                appendLine("// @description  " + DESCRIPTION.text().format(server))
                 hosts.forEach { host ->
                     appendLine("// @match        *://$host/*")
                     appendLine("// @match        *://*.$host/*")

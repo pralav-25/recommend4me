@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.source
 
+import io.github.vlsergey.recommend4me.i18n.Label
 import java.time.Instant
 
 /** How a source gets its items. */
@@ -37,8 +38,8 @@ interface Source {
     /** Stable: the name of the source's folder, of its databases and the first half of every item key. */
     val id: String
 
-    /** The name shown to the user. */
-    val title: String
+    /** The name shown to the user: the site's own, as it is known in each language — "Книга Фанфиков", "Ficbook". */
+    val title: Label
 
     /** The content type the source's works belong to: `games`, `books`. */
     val contentType: String

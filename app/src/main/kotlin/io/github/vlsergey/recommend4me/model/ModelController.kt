@@ -1,5 +1,8 @@
 package io.github.vlsergey.recommend4me.model
 
+import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.failure
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.api.ModelApi
 import io.github.vlsergey.recommend4me.api.model.FeatureContribution
 import io.github.vlsergey.recommend4me.api.model.GradeOnScale
@@ -18,7 +21,6 @@ import io.github.vlsergey.recommend4me.source.Stores
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -42,7 +44,11 @@ class ModelController(
 
     override fun chooseScorer(type: String, scorerChoice: ScorerChoice): ResponseEntity<ModelInfo> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        val summary = recommendations.chooseScorer(type, scorerChoice.scorer) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Нет способа оценки «${scorerChoice.scorer}»")
+        val summary = recommendations.chooseScorer(type, scorerChoice.scorer) ?: throw failure(
+            HttpStatus.BAD_REQUEST,
+            Label("There is no scorer “%s”", "Нет способа оценки «%s»", "Ne postoji način ocenjivanja „%s”"),
+            scorerChoice.scorer,
+        )
         return ResponseEntity.ok(summary.toApi())
     }
 
@@ -97,7 +103,7 @@ class ModelController(
             textEncoderReady = textEncoderReady,
             imageEncoderReady = imageEncoderReady,
             scorer = scorer ?: "",
-            scorers = plugins.scorers.map { ScorerInfo(it.id, it.title) },
+            scorers = plugins.scorers.map { ScorerInfo(it.id, it.title.text()) },
             trainedAt = meta?.let { Instant.ofEpochMilli(it.trainedAtMillis).atOffset(ZoneOffset.UTC) },
             parameter = meta?.parameter,
             ladder = meta?.scale()?.grades().orEmpty().toSortedMap().map { (grade, score) ->

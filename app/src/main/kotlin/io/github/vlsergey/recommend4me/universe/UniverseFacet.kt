@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.universe
 
+import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.SourceSchema
 
@@ -23,7 +24,7 @@ object UniverseFacet {
     const val KEY = UniverseFacets.UNIVERSE
 
     /** The values of the kind of a work, with their names. */
-    val KINDS = UniverseFacets.KIND_FACET.values!!.associate { it.key to it.label }
+    val KINDS = UniverseFacets.KIND_FACET.values!!.associate { it.key to it.label.ru }
 
     /**
      * The facets of a source of a type with universes, each with the site's own word on it shown
@@ -37,24 +38,24 @@ object UniverseFacet {
             // site's facet it is told by is shown above it
             UniverseFacets.KIND_FACET.asLayerFacet(examplesFrom = null, originalFacet = schema.kindFrom),
             FacetDef(
-                KEY, "Вселенная",
+                KEY, Label("Universe", "Вселенная", "Univerzum"),
                 filter = true,
                 // One facet across the sources of the type: a universe is one whichever site a work is from
                 shared = KEY, searchWeight = 0.9f, onCard = true, infer = true, editable = true,
                 originalFacet = keyOf(UniverseFacets.FANDOM_FACET),
             ),
             FacetDef(
-                UniverseFacets.CHARACTERS, "Главные персонажи",
+                UniverseFacets.CHARACTERS, Label("Main characters", "Главные персонажи", "Glavni likovi"),
                 shared = UniverseFacets.CHARACTERS, searchWeight = 0.8f, infer = true, original = schema.universeLine, editable = true,
                 originalFacet = keyOf(UniverseFacets.PAIRINGS_FACET),
             ),
             // After the main ones: what the work has of those is left out of these
             FacetDef(
-                UniverseFacets.SECONDARY_CHARACTERS, "Второстепенные персонажи",
+                UniverseFacets.SECONDARY_CHARACTERS, Label("Secondary characters", "Второстепенные персонажи", "Sporedni likovi"),
                 shared = UniverseFacets.SECONDARY_CHARACTERS, searchWeight = 0.6f, infer = true, original = schema.universeLine, editable = true,
             ),
             FacetDef(
-                UniverseFacets.PAIRINGS, "Пэйринги",
+                UniverseFacets.PAIRINGS, Label("Pairings", "Пэйринги", "Parovi"),
                 shared = UniverseFacets.PAIRINGS, searchWeight = 0.7f, infer = true, original = schema.universeLine, editable = true,
             ),
         )
@@ -67,10 +68,13 @@ object UniverseFacet {
     fun parse(value: String): Pair<String, String>? = value.indexOf(':').takeIf { it > 0 }?.let { value.substring(0, it) to value.substring(it + 1) }
 
     /** The original characters of a work, of no universe: the values every work may have besides its universes' characters. */
-    val ORIGINAL_CHARACTERS = mapOf(
-        "oc:female" to "ОЖП (оригинальный женский персонаж)",
-        "oc:male" to "ОМП (оригинальный мужской персонаж)",
+    val ORIGINAL_CHARACTER_LABELS = mapOf(
+        "oc:female" to Label("OFC (original female character)", "ОЖП (оригинальный женский персонаж)", "OŽL (originalni ženski lik)"),
+        "oc:male" to Label("OMC (original male character)", "ОМП (оригинальный мужской персонаж)", "OML (originalni muški lik)"),
     )
+
+    /** Their names as the model and the search read them: one language, whatever the user reads ([ORIGINAL_CHARACTER_LABELS] shown). */
+    val ORIGINAL_CHARACTERS = ORIGINAL_CHARACTER_LABELS.mapValues { it.value.ru }
 
     /** The two facets of a work's characters: a character is in one of them, never in both. */
     val CHARACTER_FACETS = listOf(UniverseFacets.CHARACTERS, UniverseFacets.SECONDARY_CHARACTERS)

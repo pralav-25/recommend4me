@@ -4,6 +4,9 @@ import io.github.vlsergey.recommend4me.api.CorrectionsApi
 import io.github.vlsergey.recommend4me.api.model.FieldCorrection
 import io.github.vlsergey.recommend4me.api.model.ItemDetails
 import io.github.vlsergey.recommend4me.api.model.ItemRef
+import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.failure
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.item.ItemDetailsReader
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.item.ItemsChanged
@@ -19,11 +22,17 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
 import java.time.Instant
 import io.github.vlsergey.recommend4me.api.model.FacetCorrection as ApiFacetCorrection
 
 private val log = LoggerFactory.getLogger(CorrectionsController::class.java)
+
+private val NO_FIELD = Label("The source has no field “%s”", "У источника нет поля «%s»", "Izvor nema polje „%s”")
+private val SITE_FIELD = Label(
+    "The field “%s” is the site's word, it is not corrected",
+    "Поле «%s» — слово сайта, оно не исправляется",
+    "Polje „%s” je reč sajta, ono se ne ispravlja",
+)
 
 /**
  * The user's corrections of an item. Every correction is a change of the item's searchable data —
@@ -68,13 +77,13 @@ class CorrectionsController(
     override fun correctFacet(source: String, item: String, facetCorrection: ApiFacetCorrection): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
         val c = facetCorrection
-        val def = store.schema.facet(c.facet) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "У источника нет поля «${c.facet}»")
+        val def = store.schema.facet(c.facet) ?: throw failure(HttpStatus.BAD_REQUEST, NO_FIELD, c.facet)
         // The site's word is shown and read as it is: only the application's layer over it is corrected
-        if (!def.editable) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Поле «${def.label}» — слово сайта, оно не исправляется")
+        if (!def.editable) throw failure(HttpStatus.BAD_REQUEST, SITE_FIELD, def.label.text())
         val name = c.name?.trim()?.takeIf { it.isNotEmpty() }
         val key = c.key?.trim()?.takeIf { it.isNotEmpty() }
             ?: name?.let { FacetValues.keyOf(store, c.facet, it) }
-            ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Не указано значение")
+            ?: throw failure(HttpStatus.BAD_REQUEST, Label("No value given", "Не указано значение", "Vrednost nije navedena"))
         // The next likeliest values of the facet are offered at once
         return answered(store, item, c.facet) {
             // A name is kept for a value the site does not name: one the user made up
@@ -99,14 +108,14 @@ class CorrectionsController(
     /** The user's word that the item's values of the [facet] are all named, or its taking back; the facet's chances made current at once. */
     private fun complete(source: String, item: String, facet: String, complete: Boolean): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
-        val def = store.schema.facet(facet) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "У источника нет поля «$facet»")
-        if (!def.editable) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Поле «${def.label}» — слово сайта, оно не исправляется")
+        val def = store.schema.facet(facet) ?: throw failure(HttpStatus.BAD_REQUEST, NO_FIELD, facet)
+        if (!def.editable) throw failure(HttpStatus.BAD_REQUEST, SITE_FIELD, def.label.text())
         return answered(store, item, facet) { store.corrections.setComplete(item, facet, complete, Instant.now()) }
     }
 
     override fun correctField(source: String, item: String, field: String, fieldCorrection: FieldCorrection): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
-        if (!knownField(store, field)) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "У источника нет поля «$field»")
+        if (!knownField(store, field)) throw failure(HttpStatus.BAD_REQUEST, NO_FIELD, field)
         store.corrections.setField(item, field, fieldCorrection.content, Instant.now())
         return corrected(store, item)
     }
@@ -127,9 +136,14 @@ class CorrectionsController(
 
     override fun linkItem(source: String, item: String, itemRef: ItemRef): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
-        val other = itemOf(itemRef.source, itemRef.item) ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Такой работы нет")
-        if (other.type != store.type) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Работы разного типа нельзя склеить")
-        if (other.id == store.id && itemRef.item == item) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Работу нельзя склеить с ней самой")
+        val other = itemOf(itemRef.source, itemRef.item)
+            ?: throw failure(HttpStatus.BAD_REQUEST, Label("There is no such work", "Такой работы нет", "Takvo delo ne postoji"))
+        if (other.type != store.type) {
+            throw failure(HttpStatus.BAD_REQUEST, Label("Works of different types cannot be joined", "Работы разного типа нельзя склеить", "Dela različitih vrsta ne mogu da se spoje"))
+        }
+        if (other.id == store.id && itemRef.item == item) {
+            throw failure(HttpStatus.BAD_REQUEST, Label("A work cannot be joined with itself", "Работу нельзя склеить с ней самой", "Delo ne može da se spoji samo sa sobom"))
+        }
         if (other.id == store.id) store.corrections.link(item, itemRef.item, Instant.now())
         else stores.typeOf(source).links.link(ItemKey(source, item), ItemKey(itemRef.source, itemRef.item), Instant.now())
         // One work, one grade and one interest mark: written to each of its items; a link taken back leaves them them

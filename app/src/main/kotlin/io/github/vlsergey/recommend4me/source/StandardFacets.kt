@@ -26,7 +26,7 @@ class StandardFacets(private val stores: Stores) {
                     if ((t.type.facets + t.type.layer).none { it.key == standard.key }) {
                         log.warn("{}: the facet {} is declared standard {}, which the type {} has not", s.id, def.key, standard.key, t.id)
                     }
-                    standard.values?.let { values -> s.items.nameFacetValues(def.key, values.associate { it.key to it.label }) }
+                    standard.values?.let { values -> s.items.nameFacetValues(def.key, values.associate { it.key to it.label.ru }) }
                 }
             }
         }

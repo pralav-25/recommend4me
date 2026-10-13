@@ -12,6 +12,8 @@ import io.github.vlsergey.recommend4me.api.model.TagRef
 import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
 import io.github.vlsergey.recommend4me.api.model.TagRelation as ApiTagRelation
 import io.github.vlsergey.recommend4me.api.model.TagVariantInfo
+import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.failure
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
 import org.springframework.http.HttpStatus
@@ -24,8 +26,9 @@ class TagsController(private val stores: Stores, private val tags: Tags) : TagsA
 
     /** The type and its facet of free tags; 404 for a type without one. */
     private fun of(typeId: String): Pair<TypeStore, String> {
-        val type = stores.type(typeId) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "Нет такого типа")
-        val facet = tags.facetOf(type) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "У этого типа нет тегов сайтов")
+        val type = stores.type(typeId) ?: throw failure(HttpStatus.NOT_FOUND, Label("There is no such type", "Нет такого типа", "Takva vrsta ne postoji"))
+        val facet = tags.facetOf(type)
+            ?: throw failure(HttpStatus.NOT_FOUND, Label("This type has no site tags", "У этого типа нет тегов сайтов", "Ova vrsta nema tagove sajtova"))
         return type to facet
     }
 

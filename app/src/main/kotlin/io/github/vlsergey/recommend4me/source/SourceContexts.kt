@@ -58,7 +58,7 @@ class SourceContexts(private val stores: Stores, private val settings: Settings,
 
         override fun nameFacetValues(facet: String, names: Map<String, String>) {
             val standard = store.schema.facet(facet)?.standard
-            store.items.nameFacetValues(facet, if (standard?.values == null) names else names.mapValues { (key, name) -> standard.value(key)?.label ?: name })
+            store.items.nameFacetValues(facet, if (standard?.values == null) names else names.mapValues { (key, name) -> standard.value(key)?.label?.ru ?: name })
         }
 
         /**
@@ -71,7 +71,8 @@ class SourceContexts(private val stores: Stores, private val settings: Settings,
             return values.mapNotNull { v ->
                 val known = standard.value(v.key)
                 if (known == null) log.warn("{}: «{}» of item {} is no value of the standard facet {}: left out", store.id, v.name ?: v.key, itemId, standard.key)
-                known?.let { FacetValue(it.key, it.label) }
+                // Kept in the language the model reads ([Label]); shown by its label ([SourceStore.shownNames])
+                known?.let { FacetValue(it.key, it.label.ru) }
             }
         }
         override fun facets(itemId: String): Map<String, List<String>> = store.items.facets(itemId)

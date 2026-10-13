@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.scorer
 
+import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.matrix.Matrix
 
 /**
@@ -39,7 +40,7 @@ interface Scorer {
     val id: String
 
     /** The name shown to the user. */
-    val title: String
+    val title: Label
 
     /** The values of the parameter, the most cautious first. */
     val candidates: List<Double>

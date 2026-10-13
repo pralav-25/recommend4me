@@ -7,6 +7,7 @@ import io.github.vlsergey.recommend4me.api.model.FacetValueInfo
 import io.github.vlsergey.recommend4me.api.model.RatingRequest
 import io.github.vlsergey.recommend4me.capture.CaptureController
 import io.github.vlsergey.recommend4me.contenttype.Books
+import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.correction.CorrectionsController
 import io.github.vlsergey.recommend4me.encoder.TextEncoder
 import io.github.vlsergey.recommend4me.encoder.TextKind
@@ -56,10 +57,12 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
+import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.http.HttpStatus
 import org.springframework.web.server.ResponseStatusException
 import java.io.File
 import java.time.Instant
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlin.test.assertEquals
@@ -97,7 +100,7 @@ class SiteTest {
     /** A catalogue of two universes of space opera, each with the same two characters and a station, a place; its texts in English. */
     class FakeCatalogue : UniverseCatalogue {
         override val id = "fake"
-        override val title = "Fake"
+        override val title = Label.same("Fake")
         private fun en(text: String) = mapOf("en" to text)
         private fun entries(languages: List<String>) = listOf(
             UniverseEntry("U1", en("Space opera"), en("Ships and pilots"), "https://fake.example/U1", languages),
@@ -122,19 +125,19 @@ class SiteTest {
      */
     class SiteSource : Source {
         override val id = "site"
-        override val title = "Site"
+        override val title = Label.same("Site")
         override val contentType = "books"
         override val homepage = "https://site.example"
         override val schema = SourceSchema(
             facets = listOf(
                 // The site's tags: its word, the examples of the work's tags
                 Books.TAG.asFacet(),
-                FacetDef("pairing", "Пэйринг", infer = true, original = "pairings"),
-                FacetDef("series", "Серия", role = FacetRole.SERIES),
+                FacetDef("pairing", Label("Pairing", "Пэйринг", "Par"), infer = true, original = "pairings"),
+                FacetDef("series", Label("Series", "Серия", "Serijal"), role = FacetRole.SERIES),
             ),
             texts = listOf(
-                TextDef("annotation", "Аннотация", block = "text:annotation"),
-                TextDef("pairings", "Пэйринги на сайте", searchByMeaning = true),
+                TextDef("annotation", Label("Annotation", "Аннотация", "Anotacija"), block = "text:annotation"),
+                TextDef("pairings", Label("Pairings on the site", "Пэйринги на сайте", "Parovi na sajtu"), searchByMeaning = true),
             ),
             universeLine = "pairings",
         )
@@ -243,8 +246,16 @@ class SiteTest {
         assertEquals(".tags", page.decor.facets.single().after)
         val item = assertNotNull(page.item)
         assertEquals(5, item.grades.size)
-        // A facet the work has no values of comes too, named: the page adds values to it
-        assertEquals("Вселенная", item.facets.single { it.facet == "universe" }.label)
+        // A facet the work has no values of comes too, named: the page adds values to it — in the
+        // language of the request, English without one
+        assertEquals("Universe", item.facets.single { it.facet == "universe" }.label)
+        LocaleContextHolder.setLocale(Locale.of("ru"))
+        try {
+            val russian = pages.getPage("https://site.example/work/x1?from=list").body!!.item!!
+            assertEquals("Вселенная", russian.facets.single { it.facet == "universe" }.label)
+        } finally {
+            LocaleContextHolder.resetLocaleContext()
+        }
 
         // The work's tags are worked out from the site's: the untagged work is given those of its kind
         val given = item.facets.single { it.facet == "tags" }.propertyValues
@@ -282,7 +293,7 @@ class SiteTest {
 
         // The site's word is not corrected
         val refused = assertThrows<ResponseStatusException> { corrections.correctFacet("site", "x1", FacetCorrection(facet = "tag", added = true, key = "space")) }
-        assertTrue(refused.reason!!.contains("слово сайта"), refused.reason)
+        assertTrue(refused.reason!!.contains("the site's word"), refused.reason)
 
         // The work's tags are: a value given and confirmed is the user's, one taken away is shown so
         corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, key = tag("space")))
@@ -312,9 +323,10 @@ class SiteTest {
         recommendations.retrainAndScore("books")
         // What every part is worth: the ranking cross-validated without it, every part measured
         val worth = recommendations.worth("books")!!
-        assertTrue(worth.full != null && worth.parts.any { it.label == Books.TAG.label && it.metrics != null }, "parts ${worth.parts.map { it.label }}")
+        // Outside a request the labels are English
+        assertTrue(worth.full != null && worth.parts.any { it.label == Books.TAG.label.en && it.metrics != null }, "parts ${worth.parts.map { it.label }}")
         val explained = items.getItem("site", "x1").body!!.explanation
-        assertTrue(explained.any { it.label == Books.TAG.label && it.features.isNotEmpty() }, "parts ${explained.map { it.label }}")
+        assertTrue(explained.any { it.label == Books.TAG.label.en && it.features.isNotEmpty() }, "parts ${explained.map { it.label }}")
         assertTrue(explained.zipWithNext().all { (a, b) -> abs(a.contribution) >= abs(b.contribution) }, "strongest first")
         val onPage = items.getExplanation("site", "x1").body!!
         assertTrue(onPage.isNotEmpty() && onPage.all { it.features.isEmpty() }, "on a page $onPage")

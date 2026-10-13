@@ -1,6 +1,8 @@
 package io.github.vlsergey.recommend4me.search
 
 import io.github.vlsergey.recommend4me.correction.Corrected
+import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.plugin.Plugins
@@ -130,21 +132,22 @@ class Search(
             val itemFacets = TagHierarchy.corrected(facets[id].orEmpty(), facetCorrections[id].orEmpty(), hierarchies)
             val itemTexts = Corrected.texts(texts[id].orEmpty(), own)
             val docFields = ArrayList<SearchField>()
-            docFields += SearchField(TITLE, "Название", 1.0f, listOf(Corrected.title(head.title, own)), naming = true)
+            // The fields' names are shown with what was found, in the language of the request: the index is of their keys
+            docFields += SearchField(TITLE, TextVectors.TITLE_LABEL.text(), 1.0f, listOf(Corrected.title(head.title, own)), naming = true)
             searchedFacets.forEach { def ->
                 val keys = itemFacets[def.key].orEmpty()
                 if (keys.isNotEmpty()) docFields += SearchField(
-                    "facet.${def.key}", def.label, def.searchWeight, keys.map { names[def.key]?.get(it) ?: it }, list = true, naming = def.names,
+                    "facet.${def.key}", def.label.text(), def.searchWeight, keys.map { names[def.key]?.get(it) ?: it }, list = true, naming = def.names,
                 )
             }
             schema.texts.filter { it.searchWeight > 0 }.forEach { def ->
-                itemTexts[def.key]?.let { docFields += SearchField(def.key, def.label, def.searchWeight, listOf(it)) }
+                itemTexts[def.key]?.let { docFields += SearchField(def.key, def.label.text(), def.searchWeight, listOf(it)) }
             }
             val docPassages = ArrayList<SearchPassage>()
             docFields.filter { it.key in meaningful }.forEach { f -> docPassages += passagesOf(f, vectors[id]?.get(f.key), windows[id]?.get(f.key)) }
             // The chapters read: searched by their words and by the meaning of every window of them
             parts[id].orEmpty().forEachIndexed { n, (partId, title, content) ->
-                val field = SearchField(PART + partId, title?.takeIf { it.isNotBlank() } ?: "Часть ${n + 1}", partWeight, listOf(content), group = PARTS)
+                val field = SearchField(PART + partId, title?.takeIf { it.isNotBlank() } ?: PART_LABEL.text().format(n + 1), partWeight, listOf(content), group = PARTS)
                 docFields += field
                 val w = partWindows[id]?.get(partId)
                 docPassages += passagesOf(field, w?.singleOrNull(), w)
@@ -254,5 +257,8 @@ class Search(
         /** The fields of the chapters: "part:<part id>", searched as one field of the index, [PARTS]. */
         private const val PART = "part:"
         private const val PARTS = "parts"
+
+        /** The name of a chapter without a title of its own, by its number. */
+        private val PART_LABEL = Label("Part %d", "Часть %d", "Deo %d")
     }
 }

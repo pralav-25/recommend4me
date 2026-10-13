@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.suggestion
 
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.api.SuggestionsApi
 import io.github.vlsergey.recommend4me.api.model.Candidate
 import io.github.vlsergey.recommend4me.api.model.MentionQuote
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController
 
 fun ItemFacetSuggestions.toApi() = ApiFacetSuggestions(
     facet = facet.key,
-    label = facet.label,
+    label = facet.label.text(),
     suggested = suggested.map { SuggestedValue(it.key, names[it.key] ?: it.key, it.chance) },
 )
 

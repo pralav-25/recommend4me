@@ -2,6 +2,7 @@ package io.github.vlsergey.recommend4me.universe
 
 import io.github.vlsergey.recommend4me.contenttype.StandardFacet
 import io.github.vlsergey.recommend4me.contenttype.StandardValue
+import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.source.FacetRole
 
 /**
@@ -38,12 +39,12 @@ object UniverseFacets {
      * alternative history or an original work, nothing else.
      */
     val KIND_FACET = StandardFacet(
-        KIND, "Тип вселенной",
+        KIND, Label("Kind of universe", "Тип вселенной", "Vrsta univerzuma"),
         values = listOf(
-            StandardValue(FANFICTION, "Фанфик"),
-            StandardValue(REALISM, "Реализм"),
-            StandardValue(ALTERNATIVE_HISTORY, "Альтернативная история"),
-            StandardValue(ORIGINAL, "Оригинальная вселенная"),
+            StandardValue(FANFICTION, Label("Fan fiction", "Фанфик", "Fanfikcija")),
+            StandardValue(REALISM, Label("Realism", "Реализм", "Realizam")),
+            StandardValue(ALTERNATIVE_HISTORY, Label("Alternative history", "Альтернативная история", "Alternativna istorija")),
+            StandardValue(ORIGINAL, Label("Original universe", "Оригинальная вселенная", "Originalni univerzum")),
         ),
         filter = true, onCard = true, suggest = true,
     )
@@ -55,13 +56,15 @@ object UniverseFacets {
 
     /** The fandoms as a site writes them: the site's word of what the universes of the work are, shown above them. */
     val FANDOM_FACET = StandardFacet(
-        "fandom", "Фэндомы на сайте", role = FacetRole.ORIGINAL, filter = true, onCard = true, searchWeight = 0.9f,
+        "fandom", Label("Fandoms on the site", "Фэндомы на сайте", "Fandomi na sajtu"), role = FacetRole.ORIGINAL, filter = true, onCard = true, searchWeight = 0.9f,
     )
 
     /**
      * The pairings and characters as a site writes them, one field: every entry of the site's line
-     * as it is — "Брайан/Авелин", "Фрида" — a pairing one whatever the order of its names. The
+     * as it is — "Brian/Aveline", "Frida" — a pairing one whatever the order of its names. The
      * site's word of what the work's characters and pairings are, shown above them.
      */
-    val PAIRINGS_FACET = StandardFacet("pairing", "Пэйринги и персонажи на сайте", role = FacetRole.ORIGINAL, searchWeight = 0.8f)
+    val PAIRINGS_FACET = StandardFacet(
+        "pairing", Label("Pairings and characters on the site", "Пэйринги и персонажи на сайте", "Parovi i likovi na sajtu"), role = FacetRole.ORIGINAL, searchWeight = 0.8f,
+    )
 }

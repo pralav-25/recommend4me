@@ -1,9 +1,14 @@
 package io.github.vlsergey.recommend4me.universe
 
 import io.github.vlsergey.recommend4me.correction.Corrected
+import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.source.SourceStore
 
-/** A text of a work and where in the work it is: "Описание", "Персонажи на сайте", "Глава 3. Встреча". */
+/** The name of a chapter without a title of its own, by its number. */
+private val CHAPTER = Label("Chapter %d", "Глава %d", "Poglavlje %d")
+
+/** A text of a work and where in the work it is, in the language of the request: "Summary", "Characters on the site", "Chapter 3. The meeting". */
 class WorkText(val place: String, val text: String)
 
 /** The names of values of a facet: of the facet, of the keys asked for at least. */
@@ -21,9 +26,9 @@ fun SourceStore.workTexts(itemId: String, names: FacetNames = items::facetNames)
  */
 fun SourceStore.workPassages(itemId: String, names: FacetNames = items::facetNames): Sequence<WorkText> {
     val chapters = ArrayList<WorkText>()
-    parts.forEachContent(itemId) { title, content -> chapters += WorkText(title?.takeIf { it.isNotBlank() } ?: "Глава ${chapters.size + 1}", content) }
-    val labels = schema.texts.associate { it.key to it.label }
-    val facetLabels = schema.facets.associate { it.key to it.label }
+    parts.forEachContent(itemId) { title, content -> chapters += WorkText(title?.takeIf { it.isNotBlank() } ?: CHAPTER.text().format(chapters.size + 1), content) }
+    val labels = schema.texts.associate { it.key to it.label.text() }
+    val facetLabels = schema.facets.associate { it.key to it.label.text() }
     val values = items.facets(itemId).flatMap { (facet, keys) ->
         names(facet, keys).let { named -> keys.mapNotNull { named[it] } }.map { WorkText(facetLabels[facet] ?: facet, it) }
     }

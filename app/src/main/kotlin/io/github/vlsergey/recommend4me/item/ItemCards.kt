@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.item
 
+import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.api.model.FacetValueInfo
 import io.github.vlsergey.recommend4me.api.model.ItemFacet
 import io.github.vlsergey.recommend4me.api.model.ItemSummary
@@ -107,7 +108,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             )
             ItemFacet(
                 facet = def.key,
-                label = def.label,
+                label = def.label.text(),
                 editable = def.editable,
                 propertyValues = keys.map { k ->
                     // Confirmed: the site or the model gave it — the model even when the user's answer
@@ -151,7 +152,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val onCard = store.schema.facets.filter { it.onCard }.map { it.key }.toSet()
             val chances = store.suggestions.ofItems(ids)
             val names = onCard.associateWith { facet ->
-                store.names(facet, ids.flatMap { facets[it]?.get(facet).orEmpty() + chances[it]?.get(facet)?.keys.orEmpty() })
+                store.shownNames(facet, ids.flatMap { facets[it]?.get(facet).orEmpty() + chances[it]?.get(facet)?.keys.orEmpty() })
             }
             val numbers = store.items.numbersOf(ids)
             val pictures = store.pictures.countsOf(ids)

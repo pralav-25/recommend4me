@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.access
 
+import io.github.vlsergey.recommend4me.i18n.Label
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -12,6 +13,12 @@ import java.net.InetAddress
 import java.net.URI
 
 private val log = LoggerFactory.getLogger(Guard::class.java)
+
+private val REFUSED = Label(
+    "Access only from this computer and from the allowed networks",
+    "Доступ только с этого компьютера и из разрешённых сетей",
+    "Pristup samo sa ovog računara i iz dozvoljenih mreža",
+)
 
 /**
  * THE GUARD OF ACCESS, three questions before anything else is done.
@@ -67,7 +74,8 @@ class Guard(settings: AccessSettings) : OncePerRequestFilter() {
         log.info("refused {} {}: {}", request.method, request.requestURI, refusal)
         response.status = HttpServletResponse.SC_FORBIDDEN
         response.contentType = "text/plain;charset=utf-8"
-        response.writer.write("Доступ только с этого компьютера и из разрешённых сетей")
+        // Before the dispatcher: the language read off the request itself
+        response.writer.write(REFUSED.of(request.locale.language))
     }
 
     private fun fromExtension(origin: String): Boolean = EXTENSION_SCHEMES.any { origin.startsWith("$it://") }
