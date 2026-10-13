@@ -322,7 +322,8 @@ function facetValueTitle(facet: ItemFacet, value: FacetValueInfo): string {
     (value.corrected ? CORRECTED_NOTE[value.corrected] : "") +
     (chance !== undefined ? ` · модель: ${percent(chance)}` : "") +
     (unlikely(value) ? " — скорее этого у работы нет" : "") +
-    (value.inferred ? " · вычислено по описанию, главам и другим тегам" : "")
+    (value.inferred ? " · вычислено по описанию, главам и другим тегам" : "") +
+    (value.implied ? " · есть подтег этого тега" : "")
   );
 }
 

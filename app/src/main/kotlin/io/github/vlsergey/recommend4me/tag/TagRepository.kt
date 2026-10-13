@@ -3,6 +3,7 @@ package io.github.vlsergey.recommend4me.tag
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_DISTINCT
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_MERGE
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_NAME
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_PARENT
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import java.time.Instant
@@ -42,6 +43,35 @@ class TagRepository(private val db: DSLContext) {
         }
         // A member's own name is no tag's any more
         tx.deleteFrom(TAG_NAME).where(TAG_NAME.FACET.eq(facet), TAG_NAME.TAG.`in`(all)).execute()
+        // A member's parents and children are the tag's: a link between the tag and a member goes
+        fun of(key: String) = if (key in all) tag else key
+        val p = TAG_PARENT
+        val links = tx.selectFrom(p).where(p.FACET.eq(facet), p.CHILD.`in`(all).or(p.PARENT.`in`(all))).fetch()
+        tx.deleteFrom(p).where(p.FACET.eq(facet), p.CHILD.`in`(all).or(p.PARENT.`in`(all))).execute()
+        links.map { of(it.child!!) to of(it.parent!!) }.filter { (c, par) -> c != par }.distinct().forEach { (c, par) ->
+            tx.insertInto(p).set(p.FACET, facet).set(p.CHILD, c).set(p.PARENT, par).set(p.LINKED_AT, now).onDuplicateKeyIgnore().execute()
+        }
+        val d = TAG_DISTINCT
+        val told = tx.selectFrom(d).where(d.FACET.eq(facet), d.FIRST_TAG.`in`(all).or(d.OTHER_TAG.`in`(all))).fetch()
+        tx.deleteFrom(d).where(d.FACET.eq(facet), d.FIRST_TAG.`in`(all).or(d.OTHER_TAG.`in`(all))).execute()
+        told.map { pair(of(it.firstTag!!), of(it.otherTag!!)) }.filter { (a, b) -> a != b }.distinct().forEach { (a, b) ->
+            tx.insertInto(d).set(d.FACET, facet).set(d.FIRST_TAG, a).set(d.OTHER_TAG, b).set(d.SAID_AT, now).onDuplicateKeyIgnore().execute()
+        }
+    }
+
+    /** Every tag's parents: child to its parents. */
+    fun parents(facet: String): Map<String, Set<String>> =
+        db.select(TAG_PARENT.CHILD, TAG_PARENT.PARENT).from(TAG_PARENT).where(TAG_PARENT.FACET.eq(facet)).fetch()
+            .groupBy({ it.value1()!! }, { it.value2()!! }).mapValues { it.value.toSet() }
+
+    /** [child] put under [parent] — or, [linked] false, taken from under it. */
+    fun setParent(facet: String, child: String, parent: String, linked: Boolean, now: Instant) {
+        val p = TAG_PARENT
+        if (linked) {
+            db.insertInto(p).set(p.FACET, facet).set(p.CHILD, child).set(p.PARENT, parent).set(p.LINKED_AT, now).onDuplicateKeyIgnore().execute()
+        } else {
+            db.deleteFrom(p).where(p.FACET.eq(facet), p.CHILD.eq(child), p.PARENT.eq(parent)).execute()
+        }
     }
 
     /** [member] taken out of the tag it was merged into: a tag of its own again. */

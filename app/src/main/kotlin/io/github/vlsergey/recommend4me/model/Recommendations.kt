@@ -25,6 +25,7 @@ import io.github.vlsergey.recommend4me.setvector.SetVectorsChanged
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.suggestion.FacetChancesChanged
+import io.github.vlsergey.recommend4me.tag.TagsChanged
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import io.github.vlsergey.recommend4me.vector.Vectors
 import jakarta.annotation.PreDestroy
@@ -118,6 +119,10 @@ class Recommendations(
 
     @EventListener
     fun interestChanged(event: InterestChanged) = scheduleRetrain(event.type)
+
+    /** Tags merged, or put above and under others: the works' tags, features of the works, changed. */
+    @EventListener
+    fun tagsChanged(event: TagsChanged) = scheduleRetrain(event.type)
 
     /** The reranker read more works against the graded ones: features of the works. */
     @EventListener

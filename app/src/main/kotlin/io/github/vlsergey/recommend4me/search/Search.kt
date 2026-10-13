@@ -6,6 +6,7 @@ import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
+import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.suggestion.FacetChancesChanged
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
@@ -96,6 +97,7 @@ class Search(
         val chances = s.suggestions.ofItems(ids)
         val facets = s.items.facetsOf(ids).mapValues { (id, site) -> ModelValues.of(schema, site, chances[id]) }
         val facetCorrections = s.corrections.facetsOf(ids)
+        val hierarchies = s.hierarchies()
         val fields = s.corrections.fieldsOf(ids)
         val texts = s.items.textsOf(ids)
         val searchedFacets = schema.facets.filter { it.searchWeight > 0 }
@@ -125,7 +127,7 @@ class Search(
 
         return heads.mapNotNull { (id, head) ->
             val own = fields[id].orEmpty()
-            val itemFacets = Corrected.facets(facets[id].orEmpty(), facetCorrections[id].orEmpty())
+            val itemFacets = TagHierarchy.corrected(facets[id].orEmpty(), facetCorrections[id].orEmpty(), hierarchies)
             val itemTexts = Corrected.texts(texts[id].orEmpty(), own)
             val docFields = ArrayList<SearchField>()
             docFields += SearchField(TITLE, "Название", 1.0f, listOf(Corrected.title(head.title, own)), naming = true)

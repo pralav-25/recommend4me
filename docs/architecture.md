@@ -169,6 +169,13 @@ so a value the site gave it that nothing else supports comes out unlikely, and a
 work does not move its own chances. The rank and the penalty are chosen by the held-out loss —
 the strongest penalty within one standard error of the least.
 
+The facets the model works out — the universes, the main and the secondary characters, the
+pairings, the tags — read each other in a circle: each is learnt and worked out with every other
+one's values as its context, the values the model gave besides the site's and the user's, as it
+gave them last; what the model gave of another facet since is part of what a facet is fitted on,
+so it is fitted again at the next refresh. An answer on any of them makes the work's chances of
+all of them current, from the facet answered on round the circle.
+
 The chances are kept in the model database with what each was made of (a fingerprint of the
 work's values, the user's answers, its texts and chapters). The suggester is fitted again
 whenever anything it learns from changes, and every work is then worked out again; a work a page
@@ -186,6 +193,15 @@ again. A merge points the member's key at the tag's (`tag_merge`, in the databas
 corrections); the user's answers on the members become answers on the tag, the newest standing of
 a work answered on more than one. A member taken out is a tag of its own again; the answers stay
 with the tag.
+
+The user also puts a tag of the application under another (`tag_parent`; the graph is of the tags
+of the application, never of the sites' tags): a work with the child has the parent — shown on its
+card as given by the child — and a work the user said has not the parent has not the child either,
+which is then not shown; the "has not" of a tag above wins over a "has" of one under it. The model
+of the grades reads the works' tags so, and the suggester of the tags learns from the answers so
+(`TagHierarchy`). No tag is put under one of its own descendants. On a tag's page every alike tag,
+and every tag the user said something of to it, has four words to press and press again: the same
+tag (merged), a tag under it, a tag above it, a different one.
 
 A tag is shown by the name the user gave it; else by its name on the sites most used by the works
 the user liked (graded above the middle of the scale), by the works graded, by all its works;

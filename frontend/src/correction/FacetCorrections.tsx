@@ -192,9 +192,11 @@ export function FacetValue({ facet, value, corrections }: { facet: string; value
         open && value.offered && "border-dashed",
         !corrections && "bg-muted/40",
       )}
-      title={value.corrected ? CORRECTED_TITLE[value.corrected] : undefined}
+      title={value.corrected ? CORRECTED_TITLE[value.corrected] : value.implied ? "Есть у работы, потому что есть его подтег" : undefined}
     >
       {mine && <CheckIcon className="size-3 text-yes" aria-label="ваш ответ: есть" />}
+      {/* Given by a tag under it: marked as such, not by a chance of its own */}
+      {value.implied && !value.corrected && <span className="text-muted-foreground" aria-label="из подтега">↑</span>}
       <span className={cn(removed && "line-through")}>{value.name}</span>
       <ChanceMark value={value} />
       {corrections && <FacetAnswers facet={facet} value={value} corrections={corrections} />}

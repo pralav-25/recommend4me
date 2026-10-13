@@ -12,6 +12,7 @@ import io.github.vlsergey.recommend4me.source.NumberScale
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
+import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.work.WorkClusters
 import io.github.vlsergey.recommend4me.work.Works
 import org.slf4j.LoggerFactory
@@ -132,10 +133,12 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
         val numbers = HashMap<String, HashMap<String, Double>>()
         s.items.forEachNumber { id, key, value -> if (key in numberDefs) numbers.getOrPut(id) { HashMap() }[key] = value }
         val fields = s.corrections.allFields()
+        // A tag under another gives the work the other too; a tag the user said it has not, none under it
+        val hierarchies = s.hierarchies()
         return s.items.keys().map { k ->
             val categorical = LinkedHashSet<String>()
             val base = ModelValues.of(s.schema, facets[k.id].orEmpty(), chances[k.id])
-            Corrected.facets(base, facetCorrections[k.id].orEmpty()).forEach { (facet, keys) ->
+            TagHierarchy.corrected(base, facetCorrections[k.id].orEmpty(), hierarchies).forEach { (facet, keys) ->
                 val facetId = facetIds[facet] ?: return@forEach
                 keys.forEach { categorical += FeatureNames.facet(facetId, it) }
             }
@@ -155,7 +158,7 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
         val facetIds = s.schema.facets.filter { it.feature }.associate { it.key to FeatureNames.facetId(s.source, it) }
         val categorical = LinkedHashSet<String>()
         val base = ModelValues.of(s.schema, s.items.facets(key.id), s.suggestions.ofItems(listOf(key.id))[key.id])
-        Corrected.facets(base, s.corrections.facetsOf(key.id)).forEach { (facet, keys) ->
+        TagHierarchy.corrected(base, s.corrections.facetsOf(key.id), s.hierarchies()).forEach { (facet, keys) ->
             val facetId = facetIds[facet] ?: return@forEach
             keys.forEach { categorical += FeatureNames.facet(facetId, it) }
         }

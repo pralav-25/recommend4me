@@ -13,6 +13,7 @@ import io.github.vlsergey.recommend4me.setvector.SetKind
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
+import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
 import io.github.vlsergey.recommend4me.universe.CharacterSex
@@ -715,7 +716,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             val made = try {
                 val facets = facetsOf(store).filter { it.infer }
                 if (store.items.find(itemId) != null) {
-                    ensure(store, itemId, facets.drop(from), store.items.facets(itemId), store.corrections.facetsOf(itemId), now = true, stop = stop)
+                    // From the facet answered on round the circle: every facet the model works out reads the others
+                    ensure(store, itemId, facets.drop(from) + facets.take(from), store.items.facets(itemId), store.corrections.facetsOf(itemId), now = true, stop = stop)
                 }
                 true
             } catch (e: CancellationException) {
@@ -864,6 +866,10 @@ internal class FacetData(
             val site = HashMap<String, HashMap<String, MutableList<String>>>()
             store.items.forEachFacetValue { id, f, key -> site.getOrPut(id) { HashMap() }.getOrPut(f) { ArrayList() } += key }
             val corrections = store.corrections.allFacets().groupBy { it.itemId }
+            // Of a facet of tags, the user's answers with what they say of the tags above and under them
+            val hierarchy = store.hierarchies()[facet.key]
+            val answers = if (hierarchy == null) corrections else corrections.mapValues { hierarchy.expand(facet.key, it.value) }
+            val within = hierarchy?.let { mapOf(facet.key to it) }.orEmpty()
             val complete = store.corrections.allComplete()
             // The examples are the facet's values as far as the model learns, the user's answers over
             // them — the facet the user corrects; the site's facet they come from is among the item's inputs
@@ -873,18 +879,25 @@ internal class FacetData(
                     if (own.isNotEmpty()) all[id] = HashMap(site[id].orEmpty()).apply { this[facet.key] = (this[facet.key].orEmpty() + own).distinct().toMutableList() }
                 }
             }
-            val corrected = ids.associateWith { id -> Corrected.facets(learnt[id].orEmpty(), corrections[id].orEmpty()) }
+            val corrected = ids.associateWith { id -> TagHierarchy.corrected(learnt[id].orEmpty(), corrections[id].orEmpty(), within) }
 
             // Every value of the facet the site or the user gave any item, and every value known besides
             val values = (corrected.values.flatMap { it[facet.key].orEmpty() } +
-                corrections.values.flatten().filter { it.facet == facet.key }.map { it.key } + known.keys).distinct().sorted()
+                answers.values.flatten().filter { it.facet == facet.key }.map { it.key } + known.keys).distinct().sorted()
             val index = values.withIndex().associate { (i, k) -> k to i }
 
-            // The other facets' values as the context — of the facets the source has now, the site's own among them
+            // The other facets' values as the context — of the facets the source has now, the site's own among them.
+            // THE FACETS THE MODEL WORKS OUT READ EACH OTHER, IN A CIRCLE — the universes, the main and the
+            // secondary characters, the pairings, the tags: of every other one, the values the model gives
+            // the item besides the site's and the user's, as it gave them last; the tags with those above them
+            val others = schema.facets.filter { it.infer && it.key != facet.key }.map { it.key }
+            val modelled = if (others.isEmpty()) emptyMap() else store.suggestions.ofFacets(others)
+            val hierarchies = store.hierarchies()
             val facets = schema.facets.map { it.key }.toSet()
             val contextIndex = HashMap<String, Int>()
             val context = ids.map { id ->
-                corrected[id].orEmpty().filterKeys { it != facet.key && it in facets }
+                TagHierarchy.corrected(ModelValues.of(schema, learnt[id].orEmpty(), modelled[id]), corrections[id].orEmpty(), hierarchies)
+                    .filterKeys { it != facet.key && it in facets }
                     .flatMap { (f, keys) -> keys.map { "$f\u0001$it" } }
                     .map { contextIndex.getOrPut(it) { contextIndex.size } }.distinct().toIntArray()
             }
@@ -915,10 +928,10 @@ internal class FacetData(
                 values = names,
                 valueKeys = values,
                 assigned = assigned,
-                confirmed = ids.map { id -> indices(corrections[id].orEmpty().filter { it.facet == facet.key && it.added }.map { it.key }) },
+                confirmed = ids.map { id -> indices(answers[id].orEmpty().filter { it.facet == facet.key && it.added }.map { it.key }) },
                 rejected = ids.mapIndexed { i, id ->
                     if (allNamed[i]) assigned[i].toHashSet().let { own -> values.indices.filter { it !in own }.toIntArray() }
-                    else indices(corrections[id].orEmpty().filter { it.facet == facet.key && !it.added }.map { it.key })
+                    else indices(answers[id].orEmpty().filter { it.facet == facet.key && !it.added }.map { it.key })
                 },
                 context = context,
                 contextKeys = contextIndex.entries.sortedBy { it.value }.map { it.key },
@@ -956,10 +969,17 @@ internal class FacetData(
             val basis = Vectors.keyOf(
                 ids.indices.sortedBy { ids[it] }.joinToString(",") { "${ids[it]}:${fingerprints[it]}" } + "\u0002" + values.joinToString("\u0001") +
                     "\u0002" + grouped.joinToString("\u0001") { g -> g.name + "=" + g.of.joinToString(",") { groups -> groups.joinToString("+") { g.groups[it] } } } + "\u0002" + KEPT +
-                    "\u0002" + Vectors.keyOf(hintNames.entries.sortedBy { it.key }.joinToString("\u0001") { (v, names) -> v + "=" + names.joinToString("|") }),
+                    "\u0002" + Vectors.keyOf(hintNames.entries.sortedBy { it.key }.joinToString("\u0001") { (v, names) -> v + "=" + names.joinToString("|") }) +
+                    // The tags under others: a tag put under another is learnt again
+                    "\u0002" + (hierarchy?.signature() ?: "") +
+                    // The other facets' values: what the model gave of another facet since is learnt from again
+                    "\u0002" + Vectors.keyOf(
+                        contextIndex.entries.sortedBy { it.value }.joinToString("\u0001") { it.key } + "\u0002" +
+                            ids.indices.sortedBy { ids[it] }.joinToString(",") { i -> ids[i] + ":" + context[i].sorted().joinToString("+") },
+                    ),
             )
             val held = if (examples == null) task.assigned else ids.map { id ->
-                indices(Corrected.facets(site[id].orEmpty(), corrections[id].orEmpty())[facet.key].orEmpty())
+                indices(TagHierarchy.corrected(site[id].orEmpty(), corrections[id].orEmpty(), within)[facet.key].orEmpty())
             }
             return FacetData(ids, values, task, held, allNamed, fingerprints, basis)
         }

@@ -26,6 +26,7 @@ import io.github.vlsergey.recommend4me.suggestion.SuggestionRepository
 import io.github.vlsergey.recommend4me.suggestion.ValueNameRepository
 import io.github.vlsergey.recommend4me.textvector.TextVectorRepository
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
+import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.tag.TagRepository
 import io.github.vlsergey.recommend4me.universe.UniverseNames
 import io.github.vlsergey.recommend4me.universe.UniverseRepository
@@ -118,7 +119,10 @@ class SourceStore(
     val tags = TagRepository(databases.typeCorrections(contentType.id))
 
     /** The facets of the layer learnt from the sites' tags by their names: the tags the user merges and names. */
-    private val tagFacets = schema.facets.filter { it.editable && it.examplesFrom != null }.map { it.key }.toSet()
+    val tagFacets = schema.facets.filter { it.editable && it.examplesFrom != null }.map { it.key }.toSet()
+
+    /** The tags under other tags of every facet of tags that has any, read now: facet to its hierarchy. */
+    fun hierarchies(): Map<String, TagHierarchy> = tagFacets.associateWith { TagHierarchy(tags.parents(it)) }.filterValues { !it.empty }
 
     /** The source database, for the source's own tables. */
     val sourceDsl = dbs.source.dsl

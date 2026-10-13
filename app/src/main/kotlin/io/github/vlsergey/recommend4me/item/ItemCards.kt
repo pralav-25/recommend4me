@@ -17,6 +17,7 @@ import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.suggestion.Chance
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
+import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.work.WorkClusters
 import io.github.vlsergey.recommend4me.work.Works
 import org.springframework.stereotype.Component
@@ -58,9 +59,16 @@ class ItemCards(private val stores: Stores, private val works: Works) {
     ): List<ItemFacet> {
         val schema = store.schema
         val base = ModelValues.of(schema, site, chances)
-        val corrected = Corrected.facets(base, corrections)
+        // A tag under another gives the work the other too, shown as such; a tag the user said it has
+        // not hides every tag under it ([TagHierarchy]) — read only of the facets of tags asked for
+        val hierarchies = if (schema.facets.none { only(it.key) && it.key in store.tagFacets }) emptyMap() else store.hierarchies()
+        val plain = Corrected.facets(base, corrections)
+        val corrected = TagHierarchy.corrected(base, corrections, hierarchies)
         val said = corrections.filter { it.added }.groupBy({ it.facet }, { it.key })
         return schema.facets.filter { only(it.key) }.mapNotNull { def ->
+            val hierarchy = hierarchies[def.key]
+            val negated = hierarchy?.let { h -> corrections.filter { it.facet == def.key && !it.added }.flatMap { listOf(it.key) + h.descendants(it.key) }.toSet() }.orEmpty()
+            val implied = corrected[def.key].orEmpty().toSet() - plain[def.key].orEmpty().toSet()
             // A character of the work's other facet of characters is not shown here at all
             val out = UniverseFacet.leftOut(def.key, { corrected[it].orEmpty() }, { said[it].orEmpty() })
             val keys = corrected[def.key].orEmpty() - out
@@ -81,7 +89,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     store.names(from, keys).let { n -> keys.map { LayerValues.keyOf(n[it] ?: it, merges) } }
                 }.orEmpty()
                 ModelValues.offered(
-                    own.filterValues { !it.had && it.key !in out }.mapValues { it.value.chance },
+                    own.filterValues { !it.had && it.key !in out && it.key !in negated }.mapValues { it.value.chance },
                     shown = keys.toSet(), answered = corrections.filter { it.facet == def.key }.map { it.key }.toSet(), fromSite = fromSite,
                 )
             }
@@ -94,6 +102,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                 chance = own[key]?.chance,
                 inferred = (key in had && key !in siteKeys).takeIf { it },
                 offered = offer.takeIf { it },
+                implied = (key in implied).takeIf { it },
             )
             ItemFacet(
                 facet = def.key,

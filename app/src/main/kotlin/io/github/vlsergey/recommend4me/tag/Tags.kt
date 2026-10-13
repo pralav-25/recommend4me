@@ -30,6 +30,9 @@ class Uses {
     var liked = 0
 }
 
+/** The user merged, named, linked or told apart tags of a content type: what the works have changed. */
+data class TagsChanged(val type: String)
+
 /** A name of a tag as a site writes it, and its works there. */
 class TagVariant(val source: String, val name: String, val uses: Uses)
 
@@ -42,13 +45,41 @@ class TagStats(val key: String) {
     val liked = HashSet<ItemKey>()
 
     fun variant(source: String, name: String) = variants.getOrPut(source to name) { TagVariant(source, name, Uses()) }
+
+    /** Its works: of a tag merged into another, counted by its names — its works are the other's. */
+    fun works(): Int = if (items.isNotEmpty()) items.size else variants.values.sumOf { it.uses.works }
+    fun gradedWorks(): Int = if (items.isNotEmpty()) graded.size else variants.values.sumOf { it.uses.graded }
+    fun likedWorks(): Int = if (items.isNotEmpty()) liked.size else variants.values.sumOf { it.uses.liked }
 }
 
-/** A tag with what it is shown by. */
-class NamedTag(val stats: TagStats, val name: ShownName, val explicit: String?)
+/** A tag named, with the tags directly above and under it, named. */
+class NamedTag(
+    val stats: TagStats,
+    val name: ShownName,
+    val explicit: String?,
+    val parents: List<Pair<String, String>> = emptyList(),
+    val children: List<Pair<String, String>> = emptyList(),
+)
 
-/** A tag alike another by the meaning of their names, 0..1. */
-class SimilarTag(val tag: NamedTag, val similarity: Double)
+/** What the user said a tag is to another. */
+enum class TagRelation {
+    NONE,
+
+    /** Merged into it: one tag. */
+    MERGED,
+
+    /** Under it: a work with this one has the other. */
+    CHILD,
+
+    /** Above it: a work with the other has this one. */
+    PARENT,
+
+    /** A different tag, not offered as alike. */
+    DIFFERENT,
+}
+
+/** A tag alike another by the meaning of their names, 0..1, and what the user said it is to the other. */
+class SimilarTag(val tag: NamedTag, val similarity: Double, val relation: TagRelation)
 
 /**
  * THE SITES' FREE TAGS OF A CONTENT TYPE, EVERY SITE'S TOGETHER, AS THE USER MERGES AND NAMES THEM.
@@ -118,33 +149,58 @@ class Tags(private val stores: Stores, private val phrases: PhraseVectors, priva
         return out
     }
 
+    /** What every tag of one reading is named: the stats, the user's names, the tags above and under them. */
+    private class Naming(val stats: Map<String, TagStats>, val explicit: Map<String, String>, val hierarchy: TagHierarchy) {
+        fun shown(key: String): String = stats[key]?.let { TagNaming.name(it, explicit[key]).name } ?: explicit[key] ?: key
+
+        fun named(t: TagStats) = NamedTag(
+            t, TagNaming.name(t, explicit[t.key]), explicit[t.key],
+            parents = hierarchy.parentsOf(t.key).map { it to shown(it) }.sortedBy { it.second.lowercase() },
+            children = hierarchy.childrenOf(t.key).map { it to shown(it) }.sortedBy { it.second.lowercase() },
+        )
+    }
+
+    private fun naming(type: TypeStore, facet: String, stats: Map<String, TagStats> = stats(type, facet)) =
+        Naming(stats, type.tags.explicitNames(facet), TagHierarchy(type.tags.parents(facet)))
+
     /** The tags of a type with their names, the most used first; [query] — of a name of theirs on a site, any case. */
     fun list(type: TypeStore, facet: String, query: String?): List<NamedTag> {
-        val stats = stats(type, facet)
-        val explicit = type.tags.explicitNames(facet)
+        val n = naming(type, facet)
         val wanted = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
-        return stats.values
-            .filter { t -> wanted == null || t.key.contains(wanted) || t.variants.keys.any { it.second.lowercase().contains(wanted) } || explicit[t.key]?.lowercase()?.contains(wanted) == true }
-            .map { t -> NamedTag(t, TagNaming.name(t, explicit[t.key]), explicit[t.key]) }
+        return n.stats.values
+            .filter { t -> wanted == null || t.key.contains(wanted) || t.variants.keys.any { it.second.lowercase().contains(wanted) } || n.explicit[t.key]?.lowercase()?.contains(wanted) == true }
+            .map(n::named)
             .sortedWith(compareByDescending<NamedTag> { it.stats.items.size }.thenBy { it.name.name.lowercase() })
     }
 
     fun one(type: TypeStore, facet: String, tag: String): NamedTag? {
-        val stats = stats(type, facet)[tag] ?: return null
-        val explicit = type.tags.explicitNames(facet)[tag]
-        return NamedTag(stats, TagNaming.name(stats, explicit), explicit)
+        val n = naming(type, facet)
+        return n.stats[tag]?.let(n::named)
     }
 
     /**
-     * The tags most alike [tag] by the meaning of their names — of one site or of another — but those
-     * the user said are different: a tag's names on the sites encoded as the search encodes short
-     * texts, a tag the mean of its names' directions, alike by the cosine.
+     * The tags most alike [tag] by the meaning of their names, of one site or of another — a tag's
+     * names on the sites encoded as the search encodes short texts, a tag the mean of its names'
+     * directions, alike by the cosine — with every tag the user said something of to it besides
+     * (merged into it, under or above it, different): those stay among them, marked, whatever their
+     * likeness.
      */
     fun similar(type: TypeStore, facet: String, tag: String, limit: Int): List<SimilarTag> {
         val stats = stats(type, facet)
         val own = stats[tag] ?: return emptyList()
+        val n = naming(type, facet, stats)
         val distinct = type.tags.distinct(facet)
-        val explicit = type.tags.explicitNames(facet)
+        // A tag merged into this one is shown by its own names among the tag's
+        val members = own.members.map { m ->
+            TagStats(m).also { s -> own.variants.forEach { (k, v) -> if (LayerValues.keyOf(v.name) == m) s.variants[k] = v } }
+        }
+        fun relation(key: String): TagRelation = when {
+            key in own.members -> TagRelation.MERGED
+            key in n.hierarchy.childrenOf(tag) -> TagRelation.CHILD
+            key in n.hierarchy.parentsOf(tag) -> TagRelation.PARENT
+            TagRepository.pair(tag, key) in distinct -> TagRelation.DIFFERENT
+            else -> TagRelation.NONE
+        }
         // Every name of every tag, encoded once and kept in the database of the source it is of
         val vectors = HashMap<Pair<String, String>, FloatArray>()
         type.sources.forEach { s ->
@@ -162,14 +218,47 @@ class Tags(private val stores: Stores, private val phrases: PhraseVectors, priva
             val n = norm(sum).takeIf { it > 0 } ?: return null
             return FloatArray(sum.size) { sum[it] / n }
         }
-        val target = direction(own) ?: return emptyList()
-        return stats.values.asSequence()
-            .filter { it.key != tag && TagRepository.pair(tag, it.key) !in distinct }
-            .mapNotNull { t -> direction(t)?.let { d -> t to d.indices.sumOf { (d[it] * target[it]).toDouble() } } }
+        val target = direction(own)
+        fun likeness(t: TagStats): Double = target?.let { tv -> direction(t)?.let { d -> d.indices.sumOf { (d[it] * tv[it]).toDouble() } } } ?: 0.0
+        val all = (stats.values.filter { it.key != tag } + members).map { t -> Triple(t, likeness(t), relation(t.key)) }
+        val shown = all.sortedByDescending { it.second }.take(limit).map { it.first.key }.toSet()
+        return all.filter { it.first.key in shown || it.third != TagRelation.NONE }
             .sortedByDescending { it.second }
-            .take(limit)
-            .map { (t, s) -> SimilarTag(NamedTag(t, TagNaming.name(t, explicit[t.key]), explicit[t.key]), s) }
-            .toList()
+            .map { (t, s, r) -> SimilarTag(n.named(t), s, r) }
+    }
+
+    /**
+     * What the user says [other] is to [tag] — merged into it, under it, above it, different, or
+     * nothing — in place of what was said of the two before. A tag is never put above or under one of
+     * its own descendants or ancestors.
+     */
+    fun relate(type: TypeStore, facet: String, tag: String, other: String, relation: TagRelation): NamedTag? {
+        require(tag != other) { "Тег не может быть связан сам с собой" }
+        val before = stats(type, facet)
+        val now = Instant.now()
+        val merged = type.tags.merges(facet)[other] == tag
+        if (merged && relation == TagRelation.MERGED) return one(type, facet, tag)
+        if (merged) type.tags.split(facet, other)
+        type.tags.setParent(facet, other, tag, false, now)
+        type.tags.setParent(facet, tag, other, false, now)
+        type.tags.setDistinct(facet, tag, other, false, now)
+        val hierarchy = TagHierarchy(type.tags.parents(facet))
+        when (relation) {
+            TagRelation.MERGED -> return merge(type, facet, listOf(tag, other), null)
+            TagRelation.CHILD -> {
+                require(other !in hierarchy.ancestors(tag)) { "Этот тег уже выше — подтегом он стал бы своим же надтегом" }
+                type.tags.setParent(facet, other, tag, true, now)
+            }
+            TagRelation.PARENT -> {
+                require(other !in hierarchy.descendants(tag)) { "Этот тег уже ниже — надтегом он стал бы своим же подтегом" }
+                type.tags.setParent(facet, tag, other, true, now)
+            }
+            TagRelation.DIFFERENT -> type.tags.setDistinct(facet, tag, other, true, now)
+            TagRelation.NONE -> Unit
+        }
+        log.info("{}: {} is {} to {}", type.id, other, relation, tag)
+        changed(type, facet, before[tag]?.items.orEmpty() + before[other]?.items.orEmpty())
+        return one(type, facet, tag)
     }
 
     // --- The user's word ---
@@ -216,10 +305,11 @@ class Tags(private val stores: Stores, private val phrases: PhraseVectors, priva
     fun setDistinct(type: TypeStore, facet: String, a: String, b: String, different: Boolean) =
         type.tags.setDistinct(facet, a, b, different, Instant.now())
 
-    /** The tags changed: their names worked out again now, their works read again — their chances, their search. */
+    /** The tags changed: their names worked out again now, their works read again — their chances, their search — and the model of the grades trained again. */
     private fun changed(type: TypeStore, facet: String, items: Collection<ItemKey>) {
         rename(type, facet)
         items.groupBy({ it.source }, { it.id }).forEach { (source, ids) -> events.publishEvent(ItemsChanged(source, ids)) }
+        events.publishEvent(TagsChanged(type.id))
     }
 
     // --- The names worked out ---

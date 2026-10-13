@@ -1198,6 +1198,31 @@ paths:
         '404':
           description: Not merged into any tag
 
+  /api/types/{type}/tags/relation:
+    put:
+      tags: [tags]
+      operationId: relateTags
+      summary: |
+        What the user says the other tag is to the tag - merged into it, under it, above it, different, or nothing -
+        in place of what was said of the two before
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagRelationRequest'
+      responses:
+        '200':
+          description: The tag as it is now
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagInfo'
+        '400':
+          description: A tag put above or under one of its own ancestors or descendants
+
   /api/types/{type}/tags/distinct:
     put:
       tags: [tags]
@@ -1789,6 +1814,9 @@ components:
           description: |
             Not the work's: one of the likeliest other values of a facet of the layer, offered for the
             user to answer on so that a work is offered at least three the site does not give
+        implied:
+          type: boolean
+          description: The work's only as a tag above a tag of it (TagInfo.parents); not answered on by itself
 
     ItemFacet:
       type: object
@@ -3275,7 +3303,7 @@ components:
 
     TagInfo:
       type: object
-      required: [key, name, rule, works, graded, liked, variants, members]
+      required: [key, name, rule, works, graded, liked, variants, members, parents, children]
       properties:
         key:
           type: string
@@ -3304,6 +3332,43 @@ components:
           description: The keys of the tags merged into this one
           items:
             type: string
+        parents:
+          type: array
+          description: The tags right above this one - a work with this tag has them too
+          items:
+            $ref: '#/components/schemas/TagRef'
+        children:
+          type: array
+          description: The tags right under this one - a work said not to have this tag has none of them
+          items:
+            $ref: '#/components/schemas/TagRef'
+
+    TagRef:
+      type: object
+      required: [key, name]
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+
+    TagRelation:
+      type: string
+      description: |
+        What a tag is to another: NONE; MERGED - merged into it; CHILD - under it; PARENT - above it;
+        DIFFERENT - a different tag
+      enum: [NONE, MERGED, CHILD, PARENT, DIFFERENT]
+
+    TagRelationRequest:
+      type: object
+      required: [tag, other, relation]
+      properties:
+        tag:
+          type: string
+        other:
+          type: string
+        relation:
+          $ref: '#/components/schemas/TagRelation'
 
     TagVariantInfo:
       type: object
@@ -3322,7 +3387,7 @@ components:
 
     SimilarTag:
       type: object
-      required: [tag, similarity]
+      required: [tag, similarity, relation]
       properties:
         tag:
           $ref: '#/components/schemas/TagInfo'
@@ -3330,6 +3395,8 @@ components:
           type: number
           format: double
           description: The cosine of the meaning of their names, up to 1
+        relation:
+          $ref: '#/components/schemas/TagRelation'
 
     TagMergeRequest:
       type: object

@@ -8,6 +8,9 @@ import io.github.vlsergey.recommend4me.api.model.TagMergeRequest
 import io.github.vlsergey.recommend4me.api.model.TagNameRequest
 import io.github.vlsergey.recommend4me.api.model.TagNameRule
 import io.github.vlsergey.recommend4me.api.model.TagPage
+import io.github.vlsergey.recommend4me.api.model.TagRef
+import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
+import io.github.vlsergey.recommend4me.api.model.TagRelation as ApiTagRelation
 import io.github.vlsergey.recommend4me.api.model.TagSplitRequest
 import io.github.vlsergey.recommend4me.api.model.TagVariantInfo
 import io.github.vlsergey.recommend4me.source.Stores
@@ -40,7 +43,20 @@ class TagsController(private val stores: Stores, private val tags: Tags) : TagsA
 
     override fun listSimilarTags(type: String, tag: String, limit: Int): ResponseEntity<List<ApiSimilarTag>> {
         val (t, facet) = of(type)
-        return ResponseEntity.ok(tags.similar(t, facet, tag, limit.coerceIn(1, 200)).map { ApiSimilarTag(it.tag.toApi(), it.similarity) })
+        return ResponseEntity.ok(
+            tags.similar(t, facet, tag, limit.coerceIn(1, 200)).map { ApiSimilarTag(it.tag.toApi(), it.similarity, ApiTagRelation.valueOf(it.relation.name)) },
+        )
+    }
+
+    override fun relateTags(type: String, tagRelationRequest: TagRelationRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = of(type)
+        val r = tagRelationRequest
+        val related = try {
+            tags.relate(t, facet, r.tag, r.other, TagRelation.valueOf(r.relation.name))
+        } catch (e: IllegalArgumentException) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message)
+        }
+        return related?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 
     override fun mergeTags(type: String, tagMergeRequest: TagMergeRequest): ResponseEntity<TagInfo> {
@@ -72,11 +88,13 @@ class TagsController(private val stores: Stores, private val tags: Tags) : TagsA
         name = name.name,
         rule = TagNameRule.valueOf(name.rule.name),
         explicitName = explicit,
-        works = stats.items.size,
-        graded = stats.graded.size,
-        liked = stats.liked.size,
+        works = stats.works(),
+        graded = stats.gradedWorks(),
+        liked = stats.likedWorks(),
         variants = stats.variants.values.sortedByDescending { it.uses.works }
             .map { TagVariantInfo(it.source, it.name, it.uses.works, it.uses.graded, it.uses.liked) },
         members = stats.members.sorted(),
+        parents = parents.map { (key, name) -> TagRef(key, name) },
+        children = children.map { (key, name) -> TagRef(key, name) },
     )
 }

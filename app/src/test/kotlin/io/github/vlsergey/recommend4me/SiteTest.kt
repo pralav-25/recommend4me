@@ -39,6 +39,8 @@ import io.github.vlsergey.recommend4me.api.model.TagDistinctRequest
 import io.github.vlsergey.recommend4me.api.model.TagMergeRequest
 import io.github.vlsergey.recommend4me.api.model.TagNameRequest
 import io.github.vlsergey.recommend4me.api.model.TagNameRule
+import io.github.vlsergey.recommend4me.api.model.TagRelation
+import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
 import io.github.vlsergey.recommend4me.api.model.TagSplitRequest
 import io.github.vlsergey.recommend4me.tag.TagsController
 import io.github.vlsergey.recommend4me.universe.UniverseCatalogue
@@ -571,10 +573,40 @@ class SiteTest {
         assertEquals(1, tagsApi.getTag("books", "starhulls").body!!.works)
         assertEquals(emptyList(), tagsApi.getTag("books", "hulls").body!!.members)
 
-        // Told apart: not offered as alike again
+        // Told apart: stays among the alike, marked, whatever its likeness
         tagsApi.setTagsDistinct("books", TagDistinctRequest("starhulls", "hulls", true))
-        assertTrue(tagsApi.listSimilarTags("books", "hulls", 50).body!!.none { it.tag.key == "starhulls" })
+        fun relationOf(other: String) = tagsApi.listSimilarTags("books", "hulls", 1).body!!.singleOrNull { it.tag.key == other }?.relation
+        assertEquals(TagRelation.DIFFERENT, relationOf("starhulls"))
         tagsApi.setTagsDistinct("books", TagDistinctRequest("hulls", "starhulls", false))
-        assertTrue(tagsApi.listSimilarTags("books", "hulls", 50).body!!.any { it.tag.key == "starhulls" })
+        assertEquals(TagRelation.NONE, tagsApi.listSimilarTags("books", "hulls", 50).body!!.single { it.tag.key == "starhulls" }.relation)
+
+        // Merged by the relation, then taken out by it again; a member stays among the alike, marked
+        tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.MERGED))
+        assertEquals(TagRelation.MERGED, relationOf("starhulls"))
+        tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.NONE))
+        assertEquals(emptyList(), tagsApi.getTag("books", "hulls").body!!.members)
+
+        // Under a tag: a work with the child has the parent, shown as given by it
+        val hull = tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.CHILD)).body!!
+        assertEquals(listOf("starhulls"), hull.children.map { it.key })
+        assertEquals(TagRelation.CHILD, relationOf("starhulls"))
+        fun tagsOf(id: String) = items.getItem("site", id).body!!.allFacets.single { it.facet == "tags" }.propertyValues
+        // The child confirmed: the parent given by it — unless the model gives it the work by itself
+        corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = true, key = "starhulls"))
+        val parent = tagsOf("t2").single { it.key == "hulls" }
+        assertTrue(parent.implied == true || (parent.chance ?: 0.0) > 0.5, "hulls of t2 $parent")
+        assertTrue(parent.offered != true, "hulls of t2 $parent")
+        // A tag never under its own descendant: starhulls under hulls under cargo, and cargo not under starhulls
+        tagsApi.relateTags("books", TagRelationRequest("cargo", "hulls", TagRelation.CHILD))
+        assertThrows<ResponseStatusException> { tagsApi.relateTags("books", TagRelationRequest("starhulls", "cargo", TagRelation.CHILD)) }
+        tagsApi.relateTags("books", TagRelationRequest("cargo", "hulls", TagRelation.NONE))
+        // The parent taken away: the child goes with it, not shown at all
+        corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = "hulls"))
+        assertTrue(tagsOf("t2").none { it.key == "starhulls" }, "tags ${tagsOf("t2")}")
+        assertEquals(io.github.vlsergey.recommend4me.api.model.FacetValueInfo.Corrected.REMOVED, tagsOf("t2").single { it.key == "hulls" }.corrected)
+        // The other way round: above it
+        assertEquals(listOf("starhulls"), tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.PARENT)).body!!.parents.map { it.key })
+        tagsApi.relateTags("books", TagRelationRequest("hulls", "starhulls", TagRelation.NONE))
+        assertEquals(TagRelation.NONE, relationOf("starhulls") ?: TagRelation.NONE)
     }
 }

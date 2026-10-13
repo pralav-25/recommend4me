@@ -1,13 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, CombineIcon, Loader2Icon, SearchIcon, SplitIcon, TagsIcon, XIcon } from "lucide-react";
-import { api, ensureOk, unwrap, type ContentTypeInfo, type TagInfo, type TagNameRule } from "@/api/client";
+import { api, ensureOk, unwrap, type ContentTypeInfo, type TagInfo, type TagNameRule, type TagRef, type TagRelation } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { plural } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { followLink, navigate, screenHref } from "@/screen/screens";
+import { followLink, screenHref } from "@/screen/screens";
 
 /** The cache key of everything of the tags of a type: ["tags", type, …]. */
 const TAGS = "tags";
@@ -172,12 +172,43 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
             </p>
           </header>
           <TagName type={type} tag={t} />
+          <Related tag={t} />
           <Variants type={type} tag={t} />
           {t.members.length > 0 && <Members type={type} tag={t} />}
           <Similar type={type} tag={t} />
         </>
       )}
     </section>
+  );
+}
+
+/** The tags right above and under this one, each a link to its own page. */
+function Related({ tag }: { tag: TagInfo }) {
+  if (tag.parents.length === 0 && tag.children.length === 0) return null;
+  const links = (list: TagRef[]) =>
+    list.map((r, i) => (
+      <span key={r.key}>
+        {i > 0 && ", "}
+        <a href={screenHref({ kind: "tags", tag: r.key })} onClick={(e) => followLink(e, { kind: "tags", tag: r.key })} className="underline-offset-2 hover:underline">
+          {r.name}
+        </a>
+      </span>
+    ));
+  return (
+    <div className="flex flex-col gap-0.5 text-sm">
+      {tag.parents.length > 0 && (
+        <div title="Работа с этим тегом получает и надтеги">
+          <span className="text-muted-foreground">Надтеги: </span>
+          {links(tag.parents)}
+        </div>
+      )}
+      {tag.children.length > 0 && (
+        <div title="Отрицание этого тега у работы отрицает и подтеги">
+          <span className="text-muted-foreground">Подтеги: </span>
+          {links(tag.children)}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -280,53 +311,100 @@ function Members({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   );
 }
 
+type Said = Exclude<TagRelation, "NONE">;
+
+/** What the user may say another tag is to this one: a button of every row, and a filter of the rows said so. */
+const RELATIONS: { relation: Said; label: string; title: string; filter: string }[] = [
+  { relation: "MERGED", label: "Объединить", title: "Это тот же тег: его названия на сайтах — названия этого", filter: "объединённые" },
+  { relation: "CHILD", label: "Подтег", title: "Это подтег: работа с ним получает и этот тег; «нет» этого тега — «нет» и ему", filter: "подтеги" },
+  { relation: "PARENT", label: "Надтег", title: "Это надтег: работа с этим тегом получает и его; «нет» ему — «нет» и этому", filter: "надтеги" },
+  { relation: "DIFFERENT", label: "Разные", title: "Это другой тег, просто похоже назван", filter: "разные" },
+];
+
+/** How long the rows move to their places after an answer, and how long the buttons stay locked after that. */
+const MOVE_MS = 1000;
+const SETTLE_MS = 1000;
+
 /**
- * The tags alike this one by the meaning of their names, of one site or another — offered only: the
- * user ticks the ones that are this tag and merges them, or says a tag is a different one.
+ * The tags alike this one by the meaning of their names, of one site or another — offered only —
+ * and every tag the user said something of to this one. Every row has the user's four words on it:
+ * the same tag (merged), a tag under it, a tag above it, a different one; pressed again, taken back.
+ * A word said keeps the row in its place among the others; the filters above hide the rows said so.
+ *
+ * AN ANSWER MOVES THE ROWS SLOWLY, AND LOCKS THE BUTTONS: a merge changes what this tag means, and
+ * the order of the alike with it. The buttons are locked at the press, the rows move to their new
+ * places for a second once the answer is back, and the buttons are free a second after — so a row
+ * that moved is never pressed by the click meant for the one that was there.
  */
 function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   const changed = useTagsChanged(type.id);
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
-  const [name, setName] = useState("");
+  const [shown, setShown] = useState<Record<Said, boolean>>({ MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true });
+  const [locked, setLocked] = useState(false);
+  const rows = useRef(new Map<string, HTMLLIElement>());
+  /** Where every row was before the answer, by tag: what the rows move from. */
+  const before = useRef<Map<string, number> | null>(null);
+  const unlock = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(unlock.current), []);
   const similar = useQuery({
     queryKey: [TAGS, type.id, "similar", tag.key],
     queryFn: async () =>
       unwrap(await api.GET("/api/types/{type}/tags/similar", { params: { path: { type: type.id }, query: { tag: tag.key, limit: SIMILAR } } })),
   });
-  const merge = useMutation({
-    mutationFn: async () =>
-      unwrap(
-        await api.POST("/api/types/{type}/tags/merge", {
-          params: { path: { type: type.id } },
-          body: { tags: [tag.key, ...chosen], name: name.trim() || undefined },
-        }),
-      ),
-    onSuccess: async (t) => {
-      setChosen(new Set());
-      setName("");
-      await changed();
-      navigate({ kind: "tags", tag: t.key });
+  const relate = useMutation({
+    mutationFn: async ({ other, relation }: { other: string; relation: TagRelation }) =>
+      unwrap(await api.PUT("/api/types/{type}/tags/relation", { params: { path: { type: type.id } }, body: { tag: tag.key, other, relation } })),
+    onMutate: () => {
+      setLocked(true);
+      before.current = new Map([...rows.current].map(([key, el]) => [key, el.getBoundingClientRect().top]));
+    },
+    onSuccess: () => changed(),
+    onError: () => {
+      before.current = null;
+      setLocked(false);
     },
   });
-  const distinct = useMutation({
-    mutationFn: async (other: string) =>
-      ensureOk(
-        await api.PUT("/api/types/{type}/tags/distinct", { params: { path: { type: type.id } }, body: { first: tag.key, other, different: true } }),
-      ),
-    onSuccess: (_, other) => {
-      setChosen((c) => new Set([...c].filter((k) => k !== other)));
-      return similar.refetch();
-    },
-  });
-  const toggle = (key: string) => setChosen((c) => (c.has(key) ? new Set([...c].filter((k) => k !== key)) : new Set([...c, key])));
+
+  // The rows read anew after an answer: each moved from where it was to where it is, a new one faded in
+  useLayoutEffect(() => {
+    const was = before.current;
+    if (!was || similar.isFetching || !similar.data) return;
+    before.current = null;
+    rows.current.forEach((el, key) => {
+      const top = was.get(key);
+      el.style.transition = "none";
+      if (top === undefined) el.style.opacity = "0";
+      else el.style.transform = `translateY(${top - el.getBoundingClientRect().top}px)`;
+    });
+    requestAnimationFrame(() =>
+      rows.current.forEach((el) => {
+        el.style.transition = `transform ${MOVE_MS}ms ease, opacity ${MOVE_MS}ms ease`;
+        el.style.transform = "";
+        el.style.opacity = "";
+      }),
+    );
+    clearTimeout(unlock.current);
+    unlock.current = setTimeout(() => setLocked(false), MOVE_MS + SETTLE_MS);
+  }, [similar.data, similar.isFetching]);
+
+  const visible = similar.data?.filter((s) => s.relation === "NONE" || shown[s.relation]);
 
   return (
     <section className="flex flex-col gap-1.5 text-sm">
       <h2 className="font-semibold">Похожие по смыслу названия</h2>
       <p className="text-xs text-muted-foreground">
-        Только предложение: объединяете вы. Отметьте теги, которые означают то же самое, — или нажмите «Разные», и тег больше
-        не будет предлагаться для этого.
+        Только предложение: решаете вы. «Объединить» — это тот же тег; «Подтег» — более узкий, работа с ним получает и этот тег;
+        «Надтег» — более широкий; «Разные» — просто похоже названы. Нажатая кнопка снимается повторным нажатием.
       </p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="text-muted-foreground">Показывать:</span>
+        {RELATIONS.map((r) => (
+          <label key={r.relation} className="flex items-center gap-1">
+            <input type="checkbox" checked={shown[r.relation]} onChange={() => setShown({ ...shown, [r.relation]: !shown[r.relation] })} className="size-3.5" />
+            {r.filter}
+          </label>
+        ))}
+        {locked && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
+      </div>
       {similar.isLoading && (
         <p className="flex items-center gap-2 text-muted-foreground">
           <Loader2Icon className="size-4 animate-spin" /> Ищу похожие — в первый раз названия всех тегов переводятся в векторы, это
@@ -335,11 +413,18 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
       )}
       {similar.isError && <p className="text-destructive">Похожие не нашлись: {similar.error.message}</p>}
       {similar.data && similar.data.length === 0 && <p className="text-muted-foreground">Похожих нет.</p>}
-      {similar.data && similar.data.length > 0 && (
-        <ul className="flex flex-col divide-y rounded-lg border">
-          {similar.data.map(({ tag: s, similarity }) => (
-            <li key={s.key} className="flex items-center gap-2 px-3 py-1.5">
-              <input type="checkbox" checked={chosen.has(s.key)} onChange={() => toggle(s.key)} aria-label={`Объединить с «${s.name}»`} className="size-4" />
+      {relate.isError && <p className="text-destructive">Не сохранилось: {relate.error.message}</p>}
+      {visible && visible.length > 0 && (
+        <ul className={cn("flex flex-col divide-y rounded-lg border", locked && "pointer-events-none")} aria-busy={locked}>
+          {visible.map(({ tag: s, similarity, relation }) => (
+            <li
+              key={s.key}
+              ref={(el) => {
+                if (el) rows.current.set(s.key, el);
+                else rows.current.delete(s.key);
+              }}
+              className={cn("flex flex-wrap items-center gap-x-2 gap-y-1 bg-background px-3 py-1.5", relation !== "NONE" && "bg-muted/40")}
+            >
               <a
                 href={screenHref({ kind: "tags", tag: s.key })}
                 onClick={(e) => followLink(e, { kind: "tags", tag: s.key })}
@@ -355,30 +440,28 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
               <span className="w-12 text-right text-xs tabular-nums text-muted-foreground" title="Сходство смысла названий">
                 {Math.round(similarity * 100)}%
               </span>
-              <Button variant="ghost" size="xs" onClick={() => distinct.mutate(s.key)} disabled={distinct.isPending} title="Это другой тег: больше не предлагать">
-                Разные
-              </Button>
+              <div className="flex gap-1">
+                {RELATIONS.map((r) => {
+                  const pressed = relation === r.relation;
+                  return (
+                    <Button
+                      key={r.relation}
+                      variant={pressed ? "default" : "outline"}
+                      size="xs"
+                      aria-pressed={pressed}
+                      disabled={locked}
+                      onClick={() => relate.mutate({ other: s.key, relation: pressed ? "NONE" : r.relation })}
+                      title={pressed ? `${r.title}. Нажмите ещё раз, чтобы снять` : r.title}
+                    >
+                      {r.label}
+                    </Button>
+                  );
+                })}
+              </div>
             </li>
           ))}
         </ul>
       )}
-      {chosen.size > 0 && (
-        <form
-          className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 p-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            merge.mutate();
-          }}
-        >
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Своё название (необязательно)" className="max-w-xs" />
-          <Button type="submit" size="sm" disabled={merge.isPending}>
-            {merge.isPending ? <Loader2Icon className="animate-spin" /> : <CombineIcon />}
-            Объединить {chosen.size + 1} в «{name.trim() || tag.name}»
-          </Button>
-          {merge.isError && <span className="w-full text-destructive">Не объединилось: {merge.error.message}</span>}
-        </form>
-      )}
-      {distinct.isError && <p className="text-destructive">Не сохранилось: {distinct.error.message}</p>}
     </section>
   );
 }
