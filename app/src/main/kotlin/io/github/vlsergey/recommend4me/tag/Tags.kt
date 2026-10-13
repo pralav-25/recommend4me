@@ -375,12 +375,25 @@ class Tags(
 /**
  * WHAT A TAG IS SHOWN BY, the user's order: the name the user gave it; else its name on the sites
  * most used by the works the user liked (graded above the middle of the scale), by the works graded,
- * by all its works; else the first by the alphabet. Of names used equally, the first by the alphabet.
+ * by all its works; else the first by the alphabet. One order of all its names ([names]): by the
+ * liked works, of those used equally by the graded, then by all, then by the alphabet — its first
+ * the name, the interface lists the others after it in the same order.
  */
 object TagNaming {
     fun name(t: TagStats, explicit: String?): ShownName {
         if (explicit != null) return ShownName(explicit, NameRule.EXPLICIT)
-        // A name as written, of every site together
+        val (first, uses) = names(t).firstOrNull() ?: return ShownName(t.key, NameRule.ALPHABET)
+        val rule = when {
+            uses.liked > 0 -> NameRule.LIKED
+            uses.graded > 0 -> NameRule.GRADED
+            uses.works > 0 -> NameRule.ALL
+            else -> NameRule.ALPHABET
+        }
+        return ShownName(first, rule)
+    }
+
+    /** The tag's names on the sites, each as written with its uses of every site together, in the order of the name. */
+    fun names(t: TagStats): List<Pair<String, Uses>> {
         val byName = HashMap<String, Uses>()
         t.variants.values.forEach { v ->
             val u = byName.getOrPut(v.name) { Uses() }
@@ -388,11 +401,9 @@ object TagNaming {
             u.graded += v.uses.graded
             u.liked += v.uses.liked
         }
-        fun most(rule: NameRule, of: (Uses) -> Int): ShownName? {
-            val best = byName.maxOfOrNull { of(it.value) }?.takeIf { it > 0 } ?: return null
-            return ShownName(byName.filter { of(it.value) == best }.keys.min(), rule)
-        }
-        return most(NameRule.LIKED) { it.liked } ?: most(NameRule.GRADED) { it.graded } ?: most(NameRule.ALL) { it.works }
-            ?: ShownName(byName.keys.minOrNull() ?: t.key, NameRule.ALPHABET)
+        return byName.toList().sortedWith(
+            compareByDescending<Pair<String, Uses>> { it.second.liked }.thenByDescending { it.second.graded }.thenByDescending { it.second.works }
+                .thenBy { it.first },
+        )
     }
 }

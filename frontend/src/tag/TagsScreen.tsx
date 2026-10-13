@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, CombineIcon, Loader2Icon, SearchIcon, TagsIcon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -41,6 +41,31 @@ function ruleKey(rule: TagNameRule) {
   return `Rule.${rule}` as const;
 }
 
+/**
+ * The names of the sites' tags merged into a tag other than the one it is shown by, each once, any
+ * case, in the order the name is chosen by (TagInfo.names): without a name the user gave, the first
+ * is the tag's name, the rest follow it; with one, the first leads the rest.
+ */
+function otherNames(tag: TagInfo): string[] {
+  const seen = new Set([tag.name.toLowerCase()]);
+  return tag.names.filter((n) => !seen.has(n.toLowerCase()) && seen.add(n.toLowerCase()));
+}
+
+/**
+ * A tag's name, then the other names merged into it in brackets in a fainter type — cut with an
+ * ellipsis where the row ends, every one of them in the title.
+ */
+function TagNames({ tag, className, children }: { tag: TagInfo; className?: string; children?: ReactNode }) {
+  const others = otherNames(tag);
+  return (
+    <span className={cn("flex min-w-0 items-baseline gap-1", className)} title={[tag.name, ...others].join(" · ")}>
+      {/* The name first, whole as far as the row allows; the others in what is left */}
+      {children ?? <span className="max-w-full shrink-0 truncate">{tag.name}</span>}
+      {others.length > 0 && <span className="min-w-0 truncate text-muted-foreground">({others.join(", ")})</span>}
+    </span>
+  );
+}
+
 /** The sites a tag is used on, each once. */
 function sitesOf(tag: TagInfo): string[] {
   return [...new Set(tag.variants.map((v) => v.source))];
@@ -56,7 +81,7 @@ function sitesOf(tag: TagInfo): string[] {
 export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected?: string }) {
   const { t } = useTranslation("tag");
   return (
-    <div className="mx-auto grid max-w-[1800px] gap-4 px-4 py-4 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
+    <div className="mx-auto grid max-w-[1800px] grid-cols-[minmax(0,1fr)] gap-4 px-4 py-4 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
       <div className={cn(selected && "hidden lg:block")}>
         <TagList type={type} selected={selected} />
       </div>
@@ -114,15 +139,16 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
               aria-current={row.key === selected ? "page" : undefined}
               className={cn("flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted/50", row.key === selected && "bg-muted")}
             >
-              <span className="min-w-0 flex-1 truncate" title={row.variants.map((v) => v.name).join(" · ")}>
-                {row.name}
-              </span>
+              {/* The names come first: at least half the row, the sites cut before them */}
+              <TagNames tag={row} className="min-w-[50%] flex-1" />
               {row.variants.length > 1 && (
-                <Badge variant="secondary" title={t("TagList.siteTags", { names: row.variants.map((v) => v.name).join(", ") })}>
+                <Badge variant="secondary" className="shrink-0" title={t("TagList.siteTags", { names: row.variants.map((v) => v.name).join(", ") })}>
                   <CombineIcon /> {row.variants.length}
                 </Badge>
               )}
-              <span className="text-xs text-muted-foreground">{sitesOf(row).map((s) => sourceTitle(s)).join(", ")}</span>
+              <span className="min-w-0 truncate text-xs text-muted-foreground" title={sitesOf(row).map((s) => sourceTitle(s)).join(", ")}>
+                {sitesOf(row).map((s) => sourceTitle(s)).join(", ")}
+              </span>
               <span className="w-10 text-right text-xs tabular-nums text-muted-foreground" title={t("TagList.works")}>
                 {row.works}
               </span>
@@ -541,14 +567,16 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                     {site.name}
                   </span>
                 ) : (
-                  <a
-                    href={screenHref({ kind: "tags", tag: s.key })}
-                    onClick={(e) => followLink(e, { kind: "tags", tag: s.key })}
-                    className="break-words underline-offset-2 hover:underline"
-                    title={s.variants.map((v) => `${sourceTitle(v.source)}: ${v.name}`).join(" · ")}
-                  >
-                    {s.name}
-                  </a>
+                  <TagNames tag={s}>
+                    <a
+                      href={screenHref({ kind: "tags", tag: s.key })}
+                      onClick={(e) => followLink(e, { kind: "tags", tag: s.key })}
+                      className="max-w-full shrink-0 break-words underline-offset-2 hover:underline"
+                      title={s.variants.map((v) => `${sourceTitle(v.source)}: ${v.name}`).join(" · ")}
+                    >
+                      {s.name}
+                    </a>
+                  </TagNames>
                 )}
                 <span className="truncate text-xs text-muted-foreground">
                   {site ? t("Similar.siteTagOf", { site: sourceTitle(site.source) }) : sitesOf(s).map((x) => sourceTitle(x)).join(", ")}

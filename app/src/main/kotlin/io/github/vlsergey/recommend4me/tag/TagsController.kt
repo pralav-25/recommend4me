@@ -83,6 +83,7 @@ class TagsController(private val stores: Stores, private val tags: Tags) : TagsA
         graded = stats.graded.size,
         liked = stats.liked.size,
         variants = stats.variants.values.sortedByDescending { it.uses.works }.map { it.toApi() },
+        names = TagNaming.names(stats).map { it.first },
         parents = parents.map { (key, name) -> TagRef(key, name) },
         children = children.map { (key, name) -> TagRef(key, name) },
     )

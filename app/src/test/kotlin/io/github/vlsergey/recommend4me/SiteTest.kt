@@ -676,6 +676,8 @@ class SiteTest {
         // Named by the name of the liked work: t2, graded 5, has "Starhulls"
         assertEquals("Starhulls", merged.name)
         assertEquals(TagNameRule.LIKED, merged.rule)
+        // Its names in the order the name is chosen by: the liked work's first, the tag's name
+        assertEquals(listOf("Starhulls", "Hulls"), merged.names)
         // The answer on the tag merged is the tag's now
         val t3 = stores.source("site")!!.corrections.facetsOf("t3").filter { it.facet == "tags" }
         assertEquals(listOf(hulls to true), t3.map { it.key to it.added })
@@ -683,6 +685,8 @@ class SiteTest {
         val named = tagsApi.nameTag("books", TagNameRequest(hulls, "Корпуса")).body!!
         assertEquals("Корпуса", named.name)
         assertEquals(TagNameRule.EXPLICIT, named.rule)
+        // Named by the user: the sites' names all follow it, in the same order
+        assertEquals(listOf("Starhulls", "Hulls"), named.names)
         val shown = items.getItem("site", "t3").body!!.allFacets.single { it.facet == "tags" }.propertyValues.single { it.key == hulls }
         assertEquals("Корпуса", shown.name)
         // The name taken back: the sites' names decide again

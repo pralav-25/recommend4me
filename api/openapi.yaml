@@ -3371,7 +3371,7 @@ components:
 
     TagInfo:
       type: object
-      required: [key, name, rule, works, graded, liked, variants, parents, children]
+      required: [key, name, rule, works, graded, liked, variants, names, parents, children]
       properties:
         key:
           type: string
@@ -3395,6 +3395,14 @@ components:
           description: The sites' tags bound to this one, with their works, the most used first
           items:
             $ref: '#/components/schemas/TagVariantInfo'
+        names:
+          type: array
+          description: |
+            The names of its sites' tags, each once as written, in the order the name is chosen by: the most
+            used by the liked works first, of those used equally by the graded works, then by all, then by
+            the alphabet. Without a name the user gave, the first is the tag's name
+          items:
+            type: string
         parents:
           type: array
           description: The tags right above this one - a work with this tag has them too
