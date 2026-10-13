@@ -138,10 +138,13 @@ class Tags(
                 }
             }
             s.items.forEachFacet(siteFacet) { id, keys ->
-                keys.forEach { k ->
+                // Every site's tag of the work counted, two of one tag both: each is a variant of it with
+                // its works; the tag's works are a set, the work one of them once
+                keys.distinct().forEach { k ->
                     val site = SiteTagRef(s.id, k)
                     val tag = bindings[site]?.let(TagRepository::key) ?: return@forEach
-                    if (fromSite.getOrPut(id) { HashSet() }.add(tag)) count(id, tag, site, (names[k] ?: k).trim())
+                    fromSite.getOrPut(id) { HashSet() } += tag
+                    count(id, tag, site, (names[k] ?: k).trim())
                 }
             }
             // A tag the user gave a work the site does not

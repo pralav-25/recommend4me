@@ -647,6 +647,8 @@ class SiteTest {
         capture("t1|Hull one|hulls,cargo|Ships carry cargo between stations|")
         capture("t2|Hull two|starhulls|Freighters carry cargo between stations|")
         capture("t3|Hull three|hulls|A hull breach in deep space|")
+        // A work with both site's tags that will be one tag
+        capture("t4|Hull four|hulls,starhulls|Two hulls docked in deep space|")
         val type = stores.type("books")!!
         // Every site's tag bound as it is captured, each to a normalized tag of its own name
         fun tagOf(site: String) = TagRepository.key(type.tags.bindings().getValue(SiteTagRef("site", site)))
@@ -670,7 +672,9 @@ class SiteTest {
         val merged = tagsApi.relateTags("books", TagRelationRequest(hulls, starhulls, TagRelation.MERGED)).body!!
         assertEquals(hulls, merged.key)
         assertEquals(setOf("hulls", "starhulls"), merged.variants.map { it.tag }.toSet())
-        assertEquals(3, merged.works)
+        assertEquals(4, merged.works)
+        // Each site's tag with its own works: the work with both counted in both, once in the tag
+        assertEquals(mapOf("hulls" to 3, "starhulls" to 2), merged.variants.associate { it.tag to it.works })
         assertEquals(hulls, tagOf("starhulls"))
         assertEquals(404, tagsApi.getTag("books", starhulls).statusCode.value())
         // Named by the name of the liked work: t2, graded 5, has "Starhulls"
@@ -697,7 +701,7 @@ class SiteTest {
         assertEquals(setOf("hulls", "starhulls"), rows().filter { it.site != null }.onEach { assertEquals(TagRelation.MERGED, it.relation) }.map { it.site!!.tag }.toSet())
         val out = tagsApi.bindSiteTag("books", TagBindingRequest("site", "starhulls")).body!!
         assertTrue(out.key != hulls && out.key != starhulls, "a new tag ${out.key}")
-        assertEquals(1, out.works)
+        assertEquals(2, out.works)
         assertEquals(listOf("hulls"), tagsApi.getTag("books", hulls).body!!.variants.map { it.tag })
         assertEquals(listOf(hulls to true), stores.source("site")!!.corrections.facetsOf("t3").filter { it.facet == "tags" }.map { it.key to it.added })
         val other = out.key
