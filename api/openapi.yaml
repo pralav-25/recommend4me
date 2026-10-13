@@ -1336,6 +1336,13 @@ paths:
         were chosen without it, and by one of every weight 1 the same way. Takes hundreds of trainings
       parameters:
         - $ref: '#/components/parameters/Type'
+        - name: cautious
+          in: query
+          required: false
+          description: Of the weights within the error of the best, the nearest to 1 (true); the best measured (false)
+          schema:
+            type: boolean
+            default: true
       responses:
         '200':
           description: The quality of both fold by fold, the gain, and the weights chosen on every grade

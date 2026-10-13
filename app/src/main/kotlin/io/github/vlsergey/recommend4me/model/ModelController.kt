@@ -86,9 +86,9 @@ class ModelController(
         )
     }
 
-    override fun measureWeighing(type: String): ResponseEntity<ApiWeighing> {
+    override fun measureWeighing(type: String, cautious: Boolean): ResponseEntity<ApiWeighing> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        val w = recommendations.weighing(type) ?: return ResponseEntity.notFound().build()
+        val w = recommendations.weighing(type, cautious) ?: return ResponseEntity.notFound().build()
         val (baseline, baselineSe) = GroupWeights.meanAndError(w.folds.map { it.baseline })
         val (weighed, weighedSe) = GroupWeights.meanAndError(w.folds.map { it.weighed })
         val (gain, gainSe) = GroupWeights.meanAndError(w.folds.map { it.weighed - it.baseline })

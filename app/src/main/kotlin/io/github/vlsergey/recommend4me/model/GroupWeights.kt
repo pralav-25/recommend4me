@@ -70,8 +70,11 @@ object GroupWeights {
         return CrossValidation.choose(CrossValidation.measureAll(weighed, scorer, weighedFor))
     }
 
-    /** The weights of the [groups] chosen on [task] (see the class), from every weight 1. */
-    fun tune(task: RankingTask, xFor: ((Set<Long>) -> Matrix)?, scorer: Scorer, groups: List<ColumnGroup>): TunedWeights {
+    /**
+     * The weights of the [groups] chosen on [task] (see the class), from every weight 1. [cautious]
+     * false: the best measured, the error not minded — to see whether caution costs what it saves.
+     */
+    fun tune(task: RankingTask, xFor: ((Set<Long>) -> Matrix)?, scorer: Scorer, groups: List<ColumnGroup>, cautious: Boolean = true): TunedWeights {
         val weights = DoubleArray(groups.size) { 1.0 }
         var current = measure(task, xFor, scorer, groups, weights)?.metrics ?: return TunedWeights(weights, null)
         repeat(PASSES) {
@@ -82,7 +85,7 @@ object GroupWeights {
                     else measure(task, xFor, scorer, groups, weights.copyOf().also { it[g] = w })?.metrics
                 }.filterValues { it != null }.mapValues { it.value!! }
                 val best = tried.values.maxOf { it.concordance }
-                val limit = best - (tried.values.maxBy { it.concordance }.concordanceSe)
+                val limit = if (cautious) best - tried.values.maxBy { it.concordance }.concordanceSe else best
                 // Of those within the error of the best, the nearest to 1 — the weight of no choice
                 val chosen = tried.filterValues { it.concordance >= limit }.keys.minBy { distanceFromOne(it) }
                 if (chosen != weights[g]) {
@@ -110,7 +113,7 @@ object GroupWeights {
      * test left out of what depends on them ([Prepared.xFor] of the model; the task's own rows when
      * nothing does).
      */
-    fun nested(task: RankingTask, base: ((Set<Long>) -> Matrix)?, scorer: Scorer, groups: List<ColumnGroup>): List<NestedFold> {
+    fun nested(task: RankingTask, base: ((Set<Long>) -> Matrix)?, scorer: Scorer, groups: List<ColumnGroup>, cautious: Boolean = true): List<NestedFold> {
         val grades = task.grades
         val works = task.works
         val folds = CrossValidation.folds(grades, works)
@@ -134,7 +137,7 @@ object GroupWeights {
                 return CrossValidation.concordance(grades, works, test, scores) ?: 0.5
             }
             val baseline = ranked(DoubleArray(groups.size) { 1.0 })
-            val tuned = tune(innerTask, innerFor, scorer, groups)
+            val tuned = tune(innerTask, innerFor, scorer, groups, cautious)
             NestedFold(baseline, ranked(tuned.weights), tuned.weights)
         }
     }

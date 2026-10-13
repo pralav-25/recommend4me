@@ -804,9 +804,9 @@ class Recommendations(
      * WHETHER WEIGHING THE PARTS OF THE INPUT WOULD RANK BETTER ([GroupWeights]): every fold of the
      * works ranked by a model whose weights were chosen without it, against every weight 1 the same
      * way — and the weights chosen on every grade. The rows are read under the type's lock, the
-     * trainings — hundreds of them — run without it. Nothing is kept.
+     * trainings — hundreds of them — run without it. Nothing is kept. [cautious]: [GroupWeights.tune].
      */
-    fun weighing(typeId: String): Weighing? {
+    fun weighing(typeId: String, cautious: Boolean = true): Weighing? {
         val type = type(typeId)
         val scorer = plugins.scorer(typeId) ?: return null
         val p = lock(typeId).withLock { prepare(reader.read(type)) } ?: return null
@@ -815,8 +815,8 @@ class Recommendations(
         val columns = partColumns(p.layout)
         val groups = GroupWeights.groups(columns)
         val labels = FeatureNames.partLabels(columns.keys, type.sources)
-        val folds = GroupWeights.nested(p.task, p.xFor, scorer, groups)
-        val onAll = GroupWeights.tune(p.task, p.xFor, scorer, groups)
+        val folds = GroupWeights.nested(p.task, p.xFor, scorer, groups, cautious)
+        val onAll = GroupWeights.tune(p.task, p.xFor, scorer, groups, cautious)
         log.info(
             "{}: the weighing of {} groups measured on {} grades in {} ms: {} folds, every weight 1 {} against weighed {}; on every grade {}",
             typeId, groups.size, p.grades.size, System.currentTimeMillis() - started, folds.size,
