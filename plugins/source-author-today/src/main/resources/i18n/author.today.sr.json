@@ -25,5 +25,6 @@
   "signal.reaction.value.Wisely": "navodi na razmišljanje",
   "text.annotation": "Sinopsis",
   "text.notes": "Napomene autora",
-  "title": "Author.Today"
+  "title": "Author.Today",
+  "title.short": "AT"
 }

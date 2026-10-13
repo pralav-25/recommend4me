@@ -1,5 +1,6 @@
 {
   "title": "Test",
+  "title.short": "T",
   "facet.tag": "Tag",
   "number.likes": "Likes",
   "text.annotation": "Annotation"

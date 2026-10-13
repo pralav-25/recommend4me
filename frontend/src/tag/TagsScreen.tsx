@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
 import { typeTitle } from "@/contenttype/types";
-import { sourceTitle } from "@/i18n/label";
+import { sourceShort, sourceTitle } from "@/i18n/label";
 import { usePref } from "@/lib/usePref";
 import { cn } from "@/lib/utils";
 import { followLink, screenHref } from "@/screen/screens";
@@ -62,6 +62,16 @@ function TagNames({ tag, className, children }: { tag: TagInfo; className?: stri
       {/* The name first, whole as far as the row allows; the others in what is left */}
       {children ?? <span className="max-w-full shrink-0 truncate">{tag.name}</span>}
       {others.length > 0 && <span className="min-w-0 truncate text-muted-foreground">({others.join(", ")})</span>}
+    </span>
+  );
+}
+
+/** The sites a tag is used on, by their short titles ("КФ, AO3"), the full ones in the title. */
+function SiteNames({ tag, className }: { tag: TagInfo; className?: string }) {
+  const sites = sitesOf(tag);
+  return (
+    <span className={cn("truncate text-xs text-muted-foreground", className)} title={sites.map(sourceTitle).join(", ")}>
+      {sites.map(sourceShort).join(", ")}
     </span>
   );
 }
@@ -146,9 +156,7 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
                   <CombineIcon /> {row.variants.length}
                 </Badge>
               )}
-              <span className="min-w-0 truncate text-xs text-muted-foreground" title={sitesOf(row).map((s) => sourceTitle(s)).join(", ")}>
-                {sitesOf(row).map((s) => sourceTitle(s)).join(", ")}
-              </span>
+              <SiteNames tag={row} className="min-w-0" />
               <span className="w-10 text-right text-xs tabular-nums text-muted-foreground" title={t("TagList.works")}>
                 {row.works}
               </span>
@@ -578,9 +586,11 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                     </a>
                   </TagNames>
                 )}
-                <span className="truncate text-xs text-muted-foreground">
-                  {site ? t("Similar.siteTagOf", { site: sourceTitle(site.source) }) : sitesOf(s).map((x) => sourceTitle(x)).join(", ")}
-                </span>
+                {site ? (
+                  <span className="truncate text-xs text-muted-foreground">{t("Similar.siteTagOf", { site: sourceTitle(site.source) })}</span>
+                ) : (
+                  <SiteNames tag={s} />
+                )}
               </div>
               <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                 <span title={t("Similar.works")}>{site ? site.works : s.works}</span>

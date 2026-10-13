@@ -32,6 +32,9 @@ object I18nKeys {
     // --- Within a plugin's namespace ---
 
     const val TITLE = "title"
+
+    /** A source's title cut short — "КФ", "AO3" — where many sites are named in little room: a list of a tag's sites. */
+    const val SHORT_TITLE = "title.short"
     const val REVIEWS = "reviews"
     const val PARTS = "parts"
 
@@ -91,6 +94,7 @@ object I18nKeys {
         val schema = source.schema
         val keys = LinkedHashSet<String>()
         keys += TITLE
+        keys += SHORT_TITLE
         schema.facets.filter { it.standard == null && !it.editable }.forEach { keys += facet(it.key) }
         schema.facets.filter { it.none }.forEach { keys += facetNone(it.key) }
         schema.numbers.filter { it.standard == null }.forEach { keys += number(it.key) }

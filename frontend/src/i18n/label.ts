@@ -20,6 +20,14 @@ export function sourceTitle(source: string): string {
   return translate(`${source}:title`, { defaultValue: source });
 }
 
+/**
+ * A source's title cut short — "КФ", "AO3" — "<source>:title.short", where many sites are named in
+ * little room; its full title until its words come or when it has none. Shown with the full titles in a title.
+ */
+export function sourceShort(source: string): string {
+  return translate(`${source}:title.short`, { defaultValue: sourceTitle(source) });
+}
+
 /** A scorer's title, "<scorer>:title"; its id until its words come. */
 export function scorerTitle(scorer: string): string {
   return translate(`${scorer}:title`, { defaultValue: scorer });

@@ -25,5 +25,6 @@
   "signal.reaction.value.Wisely": "заставляет задуматься",
   "text.annotation": "Аннотация",
   "text.notes": "Примечания автора",
-  "title": "Author.Today"
+  "title": "Author.Today",
+  "title.short": "AT"
 }
