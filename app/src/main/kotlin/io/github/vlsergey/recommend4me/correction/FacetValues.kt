@@ -24,6 +24,8 @@ object FacetValues {
         }
         // A value named but on no item yet — a universe of the dictionary — is a value all the same
         names.keys.forEach { uses.putIfAbsent(it, 0) }
+        // Of a facet of tags, the normalized tags alone: a key of a site's tag is of the time before them
+        if (facet in store.tagFacets) uses.keys.removeIf { TagRepository.idOf(it) == null }
         return uses.map { (key, n) -> FacetValueUse(key, names[key] ?: key, n.coerceAtLeast(0), store.nameKey(facet, key)) }
             .sortedWith(compareByDescending<FacetValueUse> { it.items }.thenBy { it.name.lowercase() })
     }

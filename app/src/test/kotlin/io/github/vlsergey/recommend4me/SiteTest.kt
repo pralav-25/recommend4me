@@ -699,6 +699,9 @@ class SiteTest {
         assertEquals(listOf("Starhulls", "Hulls"), named.names)
         val shown = items.getItem("site", "t3").body!!.allFacets.single { it.facet == "tags" }.propertyValues.single { it.key == hulls }
         assertEquals("Корпуса", shown.name)
+        // Found by the name of a site's tag of it, not its own; once, by its own name
+        val found = items.listFacetValues("site", "tags", "starhull", 10).body!!
+        assertEquals(listOf(hulls to "Корпуса"), found.map { it.key to it.name })
         // The name taken back: the sites' names decide again
         assertEquals(TagNameRule.LIKED, tagsApi.nameTag("books", TagNameRequest(hulls)).body!!.rule)
 

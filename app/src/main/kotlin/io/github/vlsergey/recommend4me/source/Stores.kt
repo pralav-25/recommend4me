@@ -116,7 +116,8 @@ class SourceStore(
 
     /** The name of every value of a facet the source or the dictionary names. */
     fun names(facet: String): Map<String, String> {
-        if (facet in tagFacets) return items.facetNames(facet) + tags.shown(null)
+        // The normalized tags alone: the source's names of the facet are of the sites' keys it had before them
+        if (facet in tagFacets) return tags.shown(null)
         return dictionaryNames?.of(facet, null) { if (it == null) items.facetNames(facet) else items.facetNames(facet, it) } ?: items.facetNames(facet)
     }
 
