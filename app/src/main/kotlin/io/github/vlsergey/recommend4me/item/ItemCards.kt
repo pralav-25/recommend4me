@@ -94,7 +94,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                 )
             }
             if (!empty && keys.isEmpty() && removed.isEmpty() && offered.isEmpty() && original == null) return@mapNotNull null
-            fun name(key: String) = added[key] ?: names[def.key]?.get(key) ?: key
+            // The value's own name — a tag's as the user and the sites name it — the name the answer was given with only of a value nothing else names
+            fun name(key: String) = names[def.key]?.get(key) ?: added[key] ?: key
             fun info(key: String, corrected: FacetValueInfo.Corrected?, offer: Boolean = false) = FacetValueInfo(
                 key = key,
                 name = name(key),

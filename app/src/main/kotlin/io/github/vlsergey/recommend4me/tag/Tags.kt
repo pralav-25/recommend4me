@@ -115,21 +115,21 @@ class Tags(private val stores: Stores, private val phrases: PhraseVectors, priva
             // The latest grade of every item, of any version: the work as the user graded it last
             val grades = s.ratings.all().groupBy { it.itemId }.mapValues { (_, r) -> r.maxBy { it.ratedAt }.grade }
             val fromSite = HashMap<String, MutableSet<String>>()
-            fun count(id: String, written: String, tag: String) {
+            /** A work of [tag]; of its name [written] when it is one of the tag's — not the name of an answer moved from a tag taken out since. */
+            fun count(id: String, written: String?, tag: String) {
                 val stats = out.getOrPut(tag) { TagStats(tag) }
                 val key = ItemKey(s.id, id)
-                val uses = stats.variant(s.id, written).uses
-                uses.works++
+                val uses = written?.let { stats.variant(s.id, it).uses }
+                uses?.let { it.works++ }
                 stats.items += key
                 grades[id]?.let { g ->
-                    uses.graded++
+                    uses?.let { it.graded++ }
                     stats.graded += key
                     if (liked(g)) {
-                        uses.liked++
+                        uses?.let { it.liked++ }
                         stats.liked += key
                     }
                 }
-                LayerValues.keyOf(written).takeIf { it != tag }?.let { stats.members += it }
             }
             s.items.forEachFacet(siteFacet) { id, keys ->
                 keys.forEach { k ->
@@ -141,10 +141,11 @@ class Tags(private val stores: Stores, private val phrases: PhraseVectors, priva
             // A tag the user gave a work the site does not: of the user's own words
             s.corrections.allFacets().filter { it.facet == facet && it.added }.forEach { c ->
                 val tag = merges[c.key] ?: c.key
-                if (fromSite[c.itemId]?.contains(tag) != true) count(c.itemId, (c.name ?: c.key).trim(), tag)
+                val written = (c.name ?: c.key).trim()
+                if (fromSite[c.itemId]?.contains(tag) != true) count(c.itemId, written.takeIf { LayerValues.keyOf(it, merges) == tag }, tag)
             }
         }
-        // A tag merged into another that no work has now is still one of its members
+        // The tags merged into another are the user's merges alone, whatever names the works have
         merges.forEach { (member, tag) -> out[tag]?.members?.add(member) }
         return out
     }
@@ -220,7 +221,8 @@ class Tags(private val stores: Stores, private val phrases: PhraseVectors, priva
         }
         val target = direction(own)
         fun likeness(t: TagStats): Double = target?.let { tv -> direction(t)?.let { d -> d.indices.sumOf { (d[it] * tv[it]).toDouble() } } } ?: 0.0
-        val all = (stats.values.filter { it.key != tag } + members).map { t -> Triple(t, likeness(t), relation(t.key)) }
+        // A row a tag: a member is shown by its names among this tag's, never besides as a tag of its own too
+        val all = (stats.values.filter { it.key != tag && it.key !in own.members } + members).map { t -> Triple(t, likeness(t), relation(t.key)) }
         val shown = all.sortedByDescending { it.second }.take(limit).map { it.first.key }.toSet()
         return all.filter { it.first.key in shown || it.third != TagRelation.NONE }
             .sortedByDescending { it.second }

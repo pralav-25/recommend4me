@@ -554,7 +554,8 @@ class SiteTest {
         capture("t3|Hull three|hulls|A hull breach in deep space|")
         // The user's answer on a tag that will be merged
         corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = "cargo"))
-        corrections.correctFacet("site", "t3", FacetCorrection(facet = "tags", added = true, key = "starhulls"))
+        // Named as the tag is named: the answer moved on a merge keeps its name, and is no member of the tag for it
+        corrections.correctFacet("site", "t3", FacetCorrection(facet = "tags", added = true, key = "starhulls", name = "Starhulls"))
         items.rateItem("site", "t2", RatingRequest(5))
         textVectors.refresh(stores.source("site")!!)
 
@@ -587,6 +588,8 @@ class SiteTest {
         assertEquals(204, tagsApi.splitTag("books", TagSplitRequest("starhulls")).statusCode.value())
         assertEquals(1, tagsApi.getTag("books", "starhulls").body!!.works)
         assertEquals(emptyList(), tagsApi.getTag("books", "hulls").body!!.members)
+        // One row of it among the alike, not merged — though the answer moved keeps its name
+        assertEquals(listOf(TagRelation.NONE), tagsApi.listSimilarTags("books", "hulls", 50).body!!.filter { it.tag.key == "starhulls" }.map { it.relation })
 
         // Told apart: stays among the alike, marked, whatever its likeness
         tagsApi.setTagsDistinct("books", TagDistinctRequest("starhulls", "hulls", true))
