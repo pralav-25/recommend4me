@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import {
   ArrowDownWideNarrowIcon,
   ChevronDownIcon,
@@ -46,21 +47,10 @@ import { useScreen } from "@/screen/screens";
 import { TagsScreen } from "@/tag/TagsScreen";
 import { UniversesScreen } from "@/universe/Universes";
 
-const VIEWS: { view: ItemView; label: string }[] = [
-  { view: "UNRATED", label: "Без оценки" },
-  { view: "RATED", label: "Оценённые" },
-  { view: "ALL", label: "Все" },
-];
+const VIEWS: ItemView[] = ["UNRATED", "RATED", "ALL"];
 
-const HOTKEYS: [string, string][] = [
-  ["/", "поиск"],
-  ["← → ↑ ↓ / h j k l", "выбор работы"],
-  ["Enter / Пробел", "открыть работу"],
-  ["1 … 5", "оценка: не нравится … хочу ещё"],
-  ["в окне работы: ← →", "предыдущая · следующая"],
-  ["в окне работы: o", "открыть на сайте"],
-  ["Esc", "закрыть окно"],
-];
+/** The hotkeys, every one by its keys' words and what it does. */
+const HOTKEYS = ["search", "choose", "open", "grade", "neighbours", "site", "close"] as const;
 
 /**
  * The pause in the typing after which the line is searched: the user's choice of a second — the
@@ -70,6 +60,7 @@ const SEARCH_SETTLE_MS = 1000;
 
 /** The content types as tabs; the chosen one is remembered, and the whole screen below is its own. */
 export function App() {
+  const { t } = useTranslation();
   const types = useTypes();
   const [chosen, setChosen] = usePref<string>("type", "");
   const list = types.data ?? [];
@@ -87,9 +78,9 @@ export function App() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-2 text-muted-foreground">
         <TelescopeIcon className="size-12 opacity-50" />
         {types.isError ? (
-          <div className="text-destructive">Приложение не отвечает: {types.error.message}</div>
+          <div className="text-destructive">{t("App.notResponding", { error: types.error.message })}</div>
         ) : (
-          <div>Нет ни одного источника: установите плагин сайта и перезапустите приложение.</div>
+          <div>{t("App.noSources")}</div>
         )}
       </div>
     );
@@ -99,6 +90,7 @@ export function App() {
 }
 
 function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: ContentTypeInfo[]; onType: (id: string) => void }) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [view, setView] = usePref<ItemView>("view", "UNRATED");
   const [storedSort, setSort] = usePref<SortChoice>(`sort:${type.id}`, BY_SCORE);
@@ -127,7 +119,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
 
   // The line searched once the typing has paused for SEARCH_SETTLE_MS — at once on Enter: a line
   // searched is a second or two of the reranker reading every work found, and every half-typed word
-  // was one ("г", "голы", "голыш" — each read whole)
+  // was one ("s", "spa", "space" — each read whole)
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), SEARCH_SETTLE_MS);
     return () => clearTimeout(t);
@@ -179,20 +171,27 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
             <TelescopeIcon className="hidden size-5 sm:block" />
             <span className="hidden 2xl:inline">recommend4me</span>
           </div>
-          <ErrorBoundary compact resetKey={type.id} title="Меню">
+          <ErrorBoundary compact resetKey={type.id} title={t("App.failed.menu")}>
             <ScreenBar {...menu} />
           </ErrorBoundary>
           {/* On a phone the progress takes what the icons leave; on a wide screen it sits in the middle */}
           <div className="mx-1 min-w-0 flex-1 sm:mx-auto sm:flex-none">
-            <ErrorBoundary compact resetKey={type.id} title="Задания не показываются">
+            <ErrorBoundary compact resetKey={type.id} title={t("App.failed.jobs")}>
               <JobControl type={type} onNeedSettings={() => setSettingsOpen(true)} />
             </ErrorBoundary>
           </div>
-          <ErrorBoundary compact title="Ход работы не показывается">
+          <ErrorBoundary compact title={t("App.failed.progress")}>
             <WorkProgress />
           </ErrorBoundary>
           <ThemeToggle />
-          <Button variant="ghost" size="icon" onClick={() => setSettingsOpen(true)} aria-label="Настройки" title="Настройки" className="relative">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setSettingsOpen(true)}
+            aria-label={t("App.settings")}
+            title={t("App.settings")}
+            className="relative"
+          >
             <SettingsIcon />
             {notLoggedIn && <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-maybe" />}
           </Button>
@@ -200,12 +199,12 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
       </header>
 
       {screen.kind === "universes" && type.universes && (
-        <ErrorBoundary resetKey={type.id} title="Вселенные не показываются">
+        <ErrorBoundary resetKey={type.id} title={t("App.failed.universes")}>
           <UniversesScreen type={type} selected={screen.catalogue && screen.universe ? { catalogue: screen.catalogue, universe: screen.universe } : undefined} />
         </ErrorBoundary>
       )}
       {screen.kind === "tags" && (
-        <ErrorBoundary resetKey={type.id} title="Теги не показываются">
+        <ErrorBoundary resetKey={type.id} title={t("App.failed.tags")}>
           <TagsScreen type={type} selected={screen.tag} />
         </ErrorBoundary>
       )}
@@ -215,9 +214,9 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
           <Tabs value={view} onValueChange={(v) => setView(v as ItemView)}>
             <TabsList>
               {VIEWS.map((v) => (
-                <TabsTrigger key={v.view} value={v.view} className="px-3">
-                  {v.label}
-                  {view === v.view && total !== undefined && <span className="ml-1 text-xs tabular-nums text-muted-foreground">{total}</span>}
+                <TabsTrigger key={v} value={v} className="px-3">
+                  {t(`App.view.${v}`)}
+                  {view === v && total !== undefined && <span className="ml-1 text-xs tabular-nums text-muted-foreground">{total}</span>}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -237,7 +236,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
                 // Enter: the line as typed, not waiting for the pause
                 if (e.key === "Enter") setSearch(searchInput.trim());
               }}
-              placeholder="Поиск по смыслу и словам: «космос и романтика», имя автора…"
+              placeholder={t("App.searchPlaceholder")}
               className="pr-8 pl-8"
               type="search"
             />
@@ -260,26 +259,26 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
               <TabsList>
                 {search && (
                   <TabsTrigger value="RELEVANCE" className="px-3">
-                    <SearchIcon /> По релевантности
+                    <SearchIcon /> {t("App.sort.relevance")}
                   </TabsTrigger>
                 )}
                 {/* A phone's width holds them only with short names; while searching, the others are off and hidden there */}
                 <TabsTrigger value="SCORE" className={cn("px-2 sm:px-3", search && "hidden sm:inline-flex")} disabled={!!search}>
-                  <SparklesIcon /> <span className="sm:hidden">Прогноз</span>
-                  <span className="hidden sm:inline">По прогнозу</span>
+                  <SparklesIcon /> <span className="sm:hidden">{t("App.sort.score.short")}</span>
+                  <span className="hidden sm:inline">{t("App.sort.score")}</span>
                 </TabsTrigger>
                 <TabsTrigger value="UPDATED" className={cn("px-2 sm:px-3", search && "hidden sm:inline-flex")} disabled={!!search}>
-                  <ArrowDownWideNarrowIcon /> <span className="sm:hidden">Дата</span>
-                  <span className="hidden sm:inline">По дате</span>
+                  <ArrowDownWideNarrowIcon /> <span className="sm:hidden">{t("App.sort.updated.short")}</span>
+                  <span className="hidden sm:inline">{t("App.sort.updated")}</span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="SURPRISE"
                   className={cn("px-2 sm:px-3", search && "hidden sm:inline-flex")}
                   disabled={!!search}
-                  title="Сначала оценённые работы, которые модель, не видевшая их, ставит дальше всего от вашей оценки"
+                  title={t("App.sort.surprise.title")}
                 >
-                  <ZapIcon /> <span className="sm:hidden">Сюрпризы</span>
-                  <span className="hidden sm:inline">Неожиданные</span>
+                  <ZapIcon /> <span className="sm:hidden">{t("App.sort.surprise.short")}</span>
+                  <span className="hidden sm:inline">{t("App.sort.surprise")}</span>
                 </TabsTrigger>
                 {numberTabs.map((n) => (
                   <TabsTrigger
@@ -287,7 +286,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
                     value={`NUMBER:${n.id}`}
                     className={cn("px-2 sm:px-3", search && "hidden sm:inline-flex")}
                     disabled={!!search}
-                    title={`Сначала больше: ${n.label}`}
+                    title={t("App.sort.number.title", { number: n.label })}
                   >
                     <HashIcon /> {n.label}
                   </TabsTrigger>
@@ -306,7 +305,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
                     />
                   }
                 >
-                  <HashIcon /> {sort.sort === "NUMBER" && chosenNumber ? chosenNumber.label : "По числу"}
+                  <HashIcon /> {sort.sort === "NUMBER" && chosenNumber ? chosenNumber.label : t("App.sort.number")}
                   <ChevronDownIcon className="opacity-60" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent className="w-auto min-w-48">
@@ -327,12 +326,12 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
 
           {fresh && (
             <Button variant="secondary" size="sm" onClick={resort}>
-              <RefreshCcwIcon /> Прогнозы обновились — пересортировать
+              <RefreshCcwIcon /> {t("App.resort")}
             </Button>
           )}
 
           {/* The filters flow on with everything else, one by one, not as a block of their own */}
-          <ErrorBoundary compact resetKey={type.id} title="Фильтры не показываются">
+          <ErrorBoundary compact resetKey={type.id} title={t("App.failed.filters")}>
             <SourceFilter type={type} hidden={hiddenSources} onChange={setHiddenSources} />
             <FacetFilters type={type.id} value={facets} onChange={setFacets} />
             <NumberFilters type={type} value={storedRanges} onChange={setRanges} />
@@ -341,16 +340,18 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
           <div className="ml-auto flex items-center gap-1">
             <Tooltip>
               {/* No keyboard on a touch screen, no hotkeys to show */}
-              <TooltipTrigger render={<Button variant="ghost" size="icon" aria-label="Горячие клавиши" className="hidden pointer-fine:inline-flex" />}>
+              <TooltipTrigger
+                render={<Button variant="ghost" size="icon" aria-label={t("App.hotkeys")} className="hidden pointer-fine:inline-flex" />}
+              >
                 <KeyboardIcon />
               </TooltipTrigger>
               <TooltipContent side="bottom" className="block">
                 <table>
                   <tbody>
-                    {HOTKEYS.map(([keys, what]) => (
-                      <tr key={keys}>
-                        <td className="pr-3 font-mono">{keys}</td>
-                        <td>{what}</td>
+                    {HOTKEYS.map((h) => (
+                      <tr key={h}>
+                        <td className="pr-3 font-mono">{t(`App.hotkey.${h}.keys`)}</td>
+                        <td>{t(`App.hotkey.${h}`)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -359,10 +360,10 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
             </Tooltip>
             <Tabs value={layout} onValueChange={(v) => setLayout(v as Layout)}>
               <TabsList>
-                <TabsTrigger value="grid" aria-label="Карточки" title="Карточки">
+                <TabsTrigger value="grid" aria-label={t("App.layout.grid")} title={t("App.layout.grid")}>
                   <LayoutGridIcon />
                 </TabsTrigger>
-                <TabsTrigger value="list" aria-label="Список" title="Список">
+                <TabsTrigger value="list" aria-label={t("App.layout.list")} title={t("App.layout.list")}>
                   <ListIcon />
                 </TabsTrigger>
               </TabsList>
@@ -372,7 +373,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
 
         <main className="pb-10">
           {/* Drawn anew when what it lists changes: another type, view, sorting, search or filter */}
-          <ErrorBoundary resetKey={JSON.stringify([type.id, view, sort, search, facets, sources, layout])} title="Список работ не отрисовался">
+          <ErrorBoundary resetKey={JSON.stringify([type.id, view, sort, search, facets, sources, layout])} title={t("App.failed.list")}>
             <ItemBoard type={type} view={view} sort={sort} search={search} facets={facets} sources={sources} ranges={ranges} layout={layout} onTotal={onTotal} />
           </ErrorBoundary>
         </main>

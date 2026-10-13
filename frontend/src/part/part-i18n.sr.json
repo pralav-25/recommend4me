@@ -1,0 +1,10 @@
+{
+  "PartText.failed": "Tekst se nije učitao",
+  "Parts.influence": "Predviđanje kakvo jeste minus predviđanje bez teksta ovog poglavlja, u bodovima vaše skale",
+  "Parts.more": "Još {{n, number}}",
+  "Parts.noText": "Tekst nije sačuvan",
+  "Parts.showText": "Prikaži tekst",
+  "Parts.upDown": "<up>podižu {{up, number}}</up>, <down>spuštaju {{down, number}}</down>",
+  "Parts.upDownHint": "Koliko sačuvanih poglavlja podiže predviđanje, a koliko ga spušta — svako samo za sebe",
+  "Parts.withText": "tekst sačuvan za {{n, number}}"
+}

@@ -1,12 +1,13 @@
 import { Component, type ReactNode } from "react";
 import { TriangleAlertIcon } from "lucide-react";
+import i18n from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
 
 type Props = {
   children: ReactNode;
   /** When it changes (another work opened, another type chosen), the part is drawn anew. */
   resetKey?: string;
-  /** What failed, for the user: "Карточка работы не открылась". */
+  /** What failed, for the user: "The work's card did not open". */
   title?: string;
   /** A small part — a section of a card, a button of the header: one line in its place. */
   compact?: boolean;
@@ -39,7 +40,7 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     const { error } = this.state;
     if (!error) return this.props.children;
-    const title = this.props.title ?? "Не удалось показать";
+    const title = this.props.title ?? i18n.t("ErrorBoundary.failed");
     if (this.props.compact)
       return (
         <span className={cn("inline-flex items-center gap-1 text-xs text-destructive", this.props.className)} title={error.message}>

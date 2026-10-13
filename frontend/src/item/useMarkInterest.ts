@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, type ContentTypeInfo, type ItemRef, type ItemSummary } from "@/api/client";
 import { toast } from "@/components/ui/toast";
 import { findSource } from "@/contenttype/types";
+import i18n from "@/i18n/i18n";
 import { applyInterest, itemKey } from "./lists";
 
 type Mark = { summary: ItemSummary; interesting: boolean | null };
@@ -14,7 +15,7 @@ async function send(ref: ItemRef, interesting: boolean | null): Promise<ItemSumm
 }
 
 export function interestLabel(interesting: boolean | null | undefined): string {
-  return interesting === true ? "Интересно" : interesting === false ? "Неинтересно" : "Отметка интереса снята";
+  return i18n.t(interesting === true ? "MarkInterest.interesting" : interesting === false ? "MarkInterest.dull" : "MarkInterest.cleared", { ns: "item" });
 }
 
 /**
@@ -41,11 +42,11 @@ export function useMarkInterest() {
         description: `${summary.title} ${summary.version}`.trim(),
         timeout: 5000,
         actionProps: {
-          children: "Отменить",
+          children: i18n.t("MarkInterest.undo", { ns: "item" }),
           onClick: async () => apply(await send(summary, previous)),
         },
       });
     },
-    onError: (error) => toast.add({ title: "Не удалось сохранить отметку интереса", description: error.message, type: "error" }),
+    onError: (error) => toast.add({ title: i18n.t("MarkInterest.failed", { ns: "item" }), description: error.message, type: "error" }),
   });
 }

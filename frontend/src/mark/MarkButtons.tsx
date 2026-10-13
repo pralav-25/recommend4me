@@ -1,5 +1,6 @@
 import { CheckIcon, ThumbsDownIcon, ThumbsUpIcon, XIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, ensureOk, type ItemRef } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { toast } from "@/components/ui/toast";
@@ -19,11 +20,12 @@ export function MarkButtons({
   onMark: (value: number | null) => Promise<unknown>;
   className?: string;
 }) {
+  const { t } = useTranslation("mark");
   const button = (value: number, title: string, Icon: typeof ThumbsUpIcon, on: string) => (
     <AsyncButton
       variant="ghost"
       size="icon-xs"
-      title={mark === value ? "Снять отметку" : title}
+      title={mark === value ? t("MarkButtons.clear") : title}
       onClick={() => onMark(mark === value ? null : value)}
       icon={<Icon className="size-3.5" />}
       className={cn("bg-black/60 text-white hover:bg-black/80 hover:text-white", mark === value && on)}
@@ -31,8 +33,8 @@ export function MarkButtons({
   );
   return (
     <span className={cn("flex gap-1", className)}>
-      {button(1, "Из-за этого выбрал бы", ThumbsUpIcon, "bg-yes! hover:bg-yes/90!")}
-      {button(-1, "Из-за этого отбросил бы", ThumbsDownIcon, "bg-no! hover:bg-no/90!")}
+      {button(1, t("MarkButtons.for"), ThumbsUpIcon, "bg-yes! hover:bg-yes/90!")}
+      {button(-1, t("MarkButtons.against"), ThumbsDownIcon, "bg-no! hover:bg-no/90!")}
     </span>
   );
 }
@@ -59,6 +61,7 @@ export function MatchVerdict({
   matchRef: string;
   verdict?: number;
 }) {
+  const { t } = useTranslation("mark");
   const queryClient = useQueryClient();
   const send = async (value: number) => {
     ensureOk(
@@ -81,10 +84,10 @@ export function MatchVerdict({
     await send(value);
     if (value !== -1) return;
     toast.add({
-      title: "Похоже, но не в том смысле",
-      description: "Отметка учтёт это при следующем пересчёте",
+      title: t("MatchVerdict.otherSense"),
+      description: t("MatchVerdict.recountNote"),
       timeout: 5000,
-      actionProps: { children: "Отменить", onClick: () => send(0) },
+      actionProps: { children: t("MatchVerdict.undo"), onClick: () => send(0) },
     });
   };
   // Big enough for a finger: a tablet has no pointer to aim with
@@ -92,7 +95,7 @@ export function MatchVerdict({
     <AsyncButton
       variant="outline"
       size="icon-sm"
-      title={verdict === value ? "Забрать ответ" : title}
+      title={verdict === value ? t("MatchVerdict.takeBack") : title}
       onClick={() => give(verdict === value ? 0 : value)}
       icon={<Icon className="size-4" />}
       className={cn("text-muted-foreground", verdict === value && on)}
@@ -101,8 +104,8 @@ export function MatchVerdict({
   return (
     <span className="flex shrink-0 gap-1">
       {/* "!": the outline button's own dark-theme background and border would cover the chosen one */}
-      {button(1, "Похоже в том самом смысле", CheckIcon, "border-yes! bg-yes! text-white! hover:bg-yes/90!")}
-      {button(-1, "Похоже, но не в том смысле", XIcon, "border-no! bg-no! text-white! hover:bg-no/90!")}
+      {button(1, t("MatchVerdict.sameSense"), CheckIcon, "border-yes! bg-yes! text-white! hover:bg-yes/90!")}
+      {button(-1, t("MatchVerdict.otherSense"), XIcon, "border-no! bg-no! text-white! hover:bg-no/90!")}
     </span>
   );
 }

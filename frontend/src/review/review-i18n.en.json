@@ -1,0 +1,12 @@
+{
+  "ReviewCard.influence": "The prediction as it is minus the prediction without this review, in points of your scale",
+  "ReviewMatches.explanation": "A review of this work and under it — a review of another work you marked. The number is how far the likeness is from chance, as with pictures; ✓ and ✕ — also as with pictures.",
+  "ReviewMatches.heading": "Similar to reviews you marked",
+  "ReviewMatches.likeDrop": "Similar to a review that would make you drop the work",
+  "ReviewMatches.likePick": "Similar to a review that would make you pick the work",
+  "Reviews.explanationMark": "Mark with 👍 or 👎 a review that says why you would pick the work or drop it — the model will look for similar ones in other works.",
+  "Reviews.explanationPoints": "The number is how many points of your scale: the prediction as it is minus the prediction without this review.",
+  "Reviews.more": "{{n, number}} more",
+  "Reviews.mostMoving": "moving the prediction most",
+  "Reviews.newest": "newest"
+}

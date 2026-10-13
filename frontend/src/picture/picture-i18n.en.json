@@ -1,0 +1,14 @@
+{
+  "PictureMatches.explanation": "On the left, a picture of this work; on the right, the one you marked in another. The number is how far the likeness is from chance: by chance it comes out around 1, 3 for one work in twenty, 5 for one in a hundred and fifty. ✓ — alike in that sense, ✕ — alike, but not in that sense: the mark takes it into account and becomes more precise.",
+  "PictureMatches.heading": "Similar to pictures you marked",
+  "PictureMatches.likeDrop": "Similar to a picture that would make you drop the work",
+  "PictureMatches.likePick": "Similar to a picture that would make you pick the work",
+  "Pictures.cover": "cover",
+  "Pictures.error": "error",
+  "Pictures.explanation": "The number on a picture is how many points of your scale it moves the work by: the prediction as it is minus the prediction without it. Mark with 👍 or 👎 a picture that would make you pick the work or drop it — the model will look for similar ones.",
+  "Pictures.heading": "Pictures",
+  "Pictures.headingWithCover": "Cover and pictures",
+  "Pictures.influence": "The prediction as it is minus the prediction without this picture, in points of your scale",
+  "Pictures.notAnalyzed": "not analyzed",
+  "Pictures.notAnalyzedHint": "The picture model hasn't analyzed it yet: it doesn't affect the prediction so far"
+}

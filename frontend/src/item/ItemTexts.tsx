@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronDownIcon, PlusIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { SourceInfo, TextValue } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { CorrectedMark, EditButton, FieldEditor } from "@/correction/FieldEditor";
@@ -73,6 +74,7 @@ export function ItemTexts({
 }
 
 function ItemText({ text, folded, corrections, editing }: { text: TextValue; folded: boolean; corrections: Corrections; editing: boolean }) {
+  const { t } = useTranslation("item");
   const [open, setOpen] = useState(!folded && !text.spoiler);
   const [whole, setWhole] = useState(false);
   const [editingText, setEditingText] = useState(false);
@@ -86,7 +88,7 @@ function ItemText({ text, folded, corrections, editing }: { text: TextValue; fol
           <button className="inline-flex items-center gap-1 text-sm font-semibold hover:underline" onClick={() => setOpen(!open)} aria-expanded={open}>
             <ChevronDownIcon className={open ? "size-4" : "size-4 -rotate-90"} />
             {text.label}
-            {text.spoiler && <span className="font-normal text-muted-foreground">· спойлер</span>}
+            {text.spoiler && <span className="font-normal text-muted-foreground">· {t("ItemText.spoiler")}</span>}
           </button>
         ) : (
           <h4 className="text-sm font-semibold">{text.label}</h4>
@@ -95,7 +97,7 @@ function ItemText({ text, folded, corrections, editing }: { text: TextValue; fol
         {editing && !editingText && (
           <EditButton
             onClick={() => setEditingText(true)}
-            title="Исправить текст"
+            title={t("ItemText.edit")}
             className="opacity-0 transition-opacity group-hover/text:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
           />
         )}
@@ -114,7 +116,7 @@ function ItemText({ text, folded, corrections, editing }: { text: TextValue; fol
           <p
             className={cn("text-sm leading-relaxed whitespace-pre-line text-foreground/90", long && !whole && "line-clamp-6 cursor-pointer")}
             onClick={() => long && setWhole(!whole)}
-            title={long && !whole ? "Показать целиком" : undefined}
+            title={long && !whole ? t("ItemText.showWhole") : undefined}
           >
             {text.content}
           </p>

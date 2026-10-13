@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { InboxIcon, Loader2Icon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, ensureOk, refKey, unwrap, type ContentTypeInfo, type Grade, type ItemSummary, type ItemView } from "@/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { facetQuery, isFiltered, useFacets, type FacetSelection } from "@/facet/FacetFilters";
@@ -32,6 +33,7 @@ type Props = {
 };
 
 export function ItemBoard({ type, view, sort, search, facets, sources, ranges, layout, onTotal }: Props) {
+  const { t } = useTranslation("item");
   const [selected, setSelected] = useState(0);
   const [opened, setOpened] = useState<number | null>(null);
   const cards = useRef(new Map<string, HTMLElement>());
@@ -172,14 +174,14 @@ export function ItemBoard({ type, view, sort, search, facets, sources, ranges, l
       </div>
     );
   }
-  if (list.isError) return <div className="py-20 text-center text-destructive">Ошибка загрузки: {list.error.message}</div>;
+  if (list.isError) return <div className="py-20 text-center text-destructive">{t("ItemBoard.loadFailed", { message: list.error.message })}</div>;
   if (items.length === 0) {
     const allRated = view === "UNRATED" && !search && !isFiltered(facets) && sources.length === 0 && Object.keys(ranges).length === 0;
     return (
       <div className="flex flex-col items-center gap-3 py-24 text-muted-foreground">
         <InboxIcon className="size-12 opacity-50" />
-        <div className="text-lg">{allRated ? "Всё оценено" : "Ничего не найдено"}</div>
-        {allRated && <div className="text-sm">Загрузите новое кнопкой вверху или откройте страницы сайтов в браузере со слежением</div>}
+        <div className="text-lg">{allRated ? t("ItemBoard.allRated") : t("ItemBoard.nothingFound")}</div>
+        {allRated && <div className="text-sm">{t("ItemBoard.allRatedHint")}</div>}
       </div>
     );
   }

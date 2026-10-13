@@ -1,0 +1,14 @@
+{
+  "PictureMatches.explanation": "Levo je slika ovog dela, desno — ona koju ste označili u drugom. Broj pokazuje koliko sličnost nije slučajna: slučajno izlazi oko 1, 3 — kod jednog dela od dvadeset, 5 — kod jednog od sto pedeset. ✓ — slično u tom smislu, ✕ — slično, ali ne u tom smislu: oznaka će to uzeti u obzir i postati preciznija.",
+  "PictureMatches.heading": "Slično slikama koje ste označili",
+  "PictureMatches.likeDrop": "Slično slici zbog koje biste odbacili delo",
+  "PictureMatches.likePick": "Slično slici zbog koje biste izabrali delo",
+  "Pictures.cover": "korice",
+  "Pictures.error": "greška",
+  "Pictures.explanation": "Broj na slici pokazuje za koliko bodova vaše skale ona pomera delo: predviđanje kakvo jeste minus predviđanje bez nje. Sliku zbog koje biste izabrali delo ili ga odbacili označite sa 👍 ili 👎 — model će tražiti slične.",
+  "Pictures.heading": "Slike",
+  "Pictures.headingWithCover": "Korice i slike",
+  "Pictures.influence": "Predviđanje kakvo jeste minus predviđanje bez ove slike, u bodovima vaše skale",
+  "Pictures.notAnalyzed": "nije analizirana",
+  "Pictures.notAnalyzedHint": "Model slika je još nije analizirao: zasad ne utiče na predviđanje"
+}

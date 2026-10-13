@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { CheckIcon, Loader2Icon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { Candidate, ContentTypeInfo, FacetValueInfo, ItemDetails, ItemRef, SourceInfo, SuggestedValue, UniverseInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,8 @@ import { FacetValue, MoreCandidates } from "@/correction/FacetCorrections";
 import type { Corrections } from "@/correction/useCorrections";
 import { useStableOrder } from "@/facet/valueOrder";
 import { OriginalOf } from "@/item/WorkFacts";
-import { percent, plural } from "@/i18n";
+import { percent } from "@/i18n/format";
+import i18n from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { SuggestedChip } from "@/suggestion/Suggestions";
 import { useCandidates, useSuggestions } from "@/suggestion/useSuggestions";
@@ -34,13 +36,13 @@ const REALISM = "realism";
 const ALTERNATIVE_HISTORY = "alternative-history";
 const ORIGINAL = "original";
 
-/** The kinds of a work, as the control names them. */
+/** The kinds of a work, each with the key of its name in the control. */
 const KINDS = [
-  { key: FANFICTION, name: "Фанфик" },
-  { key: REALISM, name: "Реализм" },
-  { key: ALTERNATIVE_HISTORY, name: "Альтернативная история" },
-  { key: ORIGINAL, name: "Оригинал" },
-];
+  { key: FANFICTION, label: "Kind.fanfiction" },
+  { key: REALISM, label: "Kind.realism" },
+  { key: ALTERNATIVE_HISTORY, label: "Kind.alternativeHistory" },
+  { key: ORIGINAL, label: "Kind.original" },
+] as const;
 
 /** The kinds of a work of no universe of another's: our world, ours changed, or a world of its own. */
 const UNIVERSELESS: readonly string[] = [REALISM, ALTERNATIVE_HISTORY, ORIGINAL];
@@ -50,9 +52,12 @@ const universeless = (kinds: FacetValueInfo[]) => kinds.length > 0 && kinds.ever
 
 /** The original characters, of no universe: every work may have them besides its universes' characters. */
 const ORIGINAL_CHARACTERS = [
-  { key: "oc:female", name: "ОЖП (оригинальный женский персонаж)" },
-  { key: "oc:male", name: "ОМП (оригинальный мужской персонаж)" },
-];
+  { key: "oc:female", label: "OriginalCharacter.female" },
+  { key: "oc:male", label: "OriginalCharacter.male" },
+] as const;
+
+/** Which values a "No other …" button is about: it picks the button's text and hints. */
+type AllNamedKind = "universes" | "mainCharacters" | "secondaryCharacters" | "pairings";
 
 /** The key of the pairing of two characters: one whatever their order. */
 const pairingKey = (a: string, b: string) => "pair:" + [a, b].sort().join("|");
@@ -82,6 +87,7 @@ export function FanficSection({
   details: ItemDetails;
   corrections: Corrections;
 }) {
+  const { t } = useTranslation("universe");
   const ref = { source: d.summary.source, item: d.summary.item };
   const suggestions = useSuggestions(ref, source);
   const facetOf = (key: string) => d.allFacets.find((f) => f.facet === key);
@@ -98,14 +104,14 @@ export function FanficSection({
     <section className="flex flex-col gap-4">
       <div>
         <OriginalOf source={source} facets={d.allFacets} facet={KIND} />
-        <KindChoice label={labelOf(KIND, "Тип вселенной")} values={valuesOf(KIND)} suggested={suggestedOf(KIND)} corrections={corrections} />
+        <KindChoice label={labelOf(KIND, t("Facet.kind"))} values={valuesOf(KIND)} suggested={suggestedOf(KIND)} corrections={corrections} />
       </div>
       <div>
         {universeSite && <OriginalOf source={source} facets={d.allFacets} facet={UNIVERSE} />}
         {!original && (
           <Universes
             type={type}
-            label={labelOf(UNIVERSE, "Вселенная")}
+            label={labelOf(UNIVERSE, t("Facet.universe"))}
             values={valuesOf(UNIVERSE)}
             complete={facetOf(UNIVERSE)?.complete === true}
             suggested={suggestedOf(UNIVERSE)}
@@ -118,9 +124,8 @@ export function FanficSection({
         type={type}
         item={ref}
         facet={CHARACTERS}
-        label={labelOf(CHARACTERS, "Главные персонажи")}
-        what="главные персонажи"
-        others="Других главных нет"
+        label={labelOf(CHARACTERS, t("Facet.mainCharacters"))}
+        named="mainCharacters"
         values={valuesOf(CHARACTERS)}
         complete={facetOf(CHARACTERS)?.complete === true}
         elsewhere={valuesOf(SECONDARY_CHARACTERS).filter(has)}
@@ -131,9 +136,8 @@ export function FanficSection({
         type={type}
         item={ref}
         facet={SECONDARY_CHARACTERS}
-        label={labelOf(SECONDARY_CHARACTERS, "Второстепенные персонажи")}
-        what="второстепенные персонажи"
-        others="Других второстепенных нет"
+        label={labelOf(SECONDARY_CHARACTERS, t("Facet.secondaryCharacters"))}
+        named="secondaryCharacters"
         values={valuesOf(SECONDARY_CHARACTERS)}
         complete={facetOf(SECONDARY_CHARACTERS)?.complete === true}
         elsewhere={valuesOf(CHARACTERS).filter(has)}
@@ -144,7 +148,7 @@ export function FanficSection({
         type={type}
         item={ref}
         universes={valuesOf(UNIVERSE).filter(has)}
-        label={labelOf(PAIRINGS, "Пэйринги")}
+        label={labelOf(PAIRINGS, t("Facet.pairings"))}
         values={valuesOf(PAIRINGS)}
         complete={facetOf(PAIRINGS)?.complete === true}
         characters={valuesOf(CHARACTERS).filter(has)}
@@ -161,6 +165,7 @@ export function FanficSection({
  * opens the marking ([onMark]).
  */
 export function FanficSummary({ source, details: d, onMark }: { source: SourceInfo; details: ItemDetails; onMark: () => void }) {
+  const { t } = useTranslation("universe");
   const ref = { source: d.summary.source, item: d.summary.item };
   const suggestions = useSuggestions(ref, source);
   const valuesOf = (key: string) => (d.allFacets.find((f) => f.facet === key)?.values ?? []).filter(has);
@@ -177,7 +182,7 @@ export function FanficSummary({ source, details: d, onMark }: { source: SourceIn
         <div className="text-xs text-muted-foreground">{label}</div>
         <div className="flex flex-wrap gap-1">
           {values.map((v) => (
-            <Badge key={v.key} variant="secondary" className={cn("font-normal", v.corrected && "border-yes/50 bg-yes/15")} title={v.corrected ? undefined : "Вы не отвечали"}>
+            <Badge key={v.key} variant="secondary" className={cn("font-normal", v.corrected && "border-yes/50 bg-yes/15")} title={v.corrected ? undefined : t("FanficSummary.notAnswered")}>
               {v.corrected && <CheckIcon className="size-3 text-yes" />}
               {v.name}
             </Badge>
@@ -187,21 +192,24 @@ export function FanficSummary({ source, details: d, onMark }: { source: SourceIn
     );
 
   if (original) {
-    return <section className="text-sm text-muted-foreground">{kinds.map((k) => KINDS.find((x) => x.key === k.key)?.name ?? k.name).join(", ")}</section>;
+    return <section className="text-sm text-muted-foreground">{kinds.map((k) => {
+          const known = KINDS.find((x) => x.key === k.key);
+          return known ? t(known.label) : k.name;
+        }).join(", ")}</section>;
   }
   if (kinds.length === 0 && valuesOf(UNIVERSE).length === 0) return null;
   return (
     <section className="flex flex-col gap-2">
-      <h4 className="text-sm font-semibold">Фанфик</h4>
+      <h4 className="text-sm font-semibold">{t("FanficSummary.heading")}</h4>
       <OriginalOf source={source} facets={d.allFacets} facet={UNIVERSE} />
-      {line("Вселенная", valuesOf(UNIVERSE))}
+      {line(t("Facet.universe"), valuesOf(UNIVERSE))}
       <OriginalOf source={source} facets={d.allFacets} facet={CHARACTERS} />
-      {line("Главные персонажи", valuesOf(CHARACTERS))}
-      {line("Второстепенные персонажи", valuesOf(SECONDARY_CHARACTERS))}
-      {line("Пэйринги", valuesOf(PAIRINGS))}
+      {line(t("Facet.mainCharacters"), valuesOf(CHARACTERS))}
+      {line(t("Facet.secondaryCharacters"), valuesOf(SECONDARY_CHARACTERS))}
+      {line(t("Facet.pairings"), valuesOf(PAIRINGS))}
       {open > 0 && (
         <Button variant="link" size="sm" className="h-auto self-start p-0 text-xs" onClick={onMark}>
-          Без вашего ответа: {open} — разобрать
+          {t("FanficSummary.unanswered", { n: open })}
         </Button>
       )}
     </section>
@@ -269,6 +277,7 @@ function KindChoice({
   suggested: SuggestedValue[];
   corrections: Corrections;
 }) {
+  const { t } = useTranslation("universe");
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const valueOf = (key: string) => values.find((v) => v.key === key);
@@ -309,7 +318,10 @@ function KindChoice({
     }
   };
 
-  const none = given.length > 0 ? `Не выбран — ${given.map((k) => k.name.toLowerCase()).join(", ")} без вашего ответа` : "Не выбран";
+  const none =
+    given.length > 0
+      ? t("KindChoice.noneGiven", { kinds: given.map((k) => t(k.label).toLowerCase()).join(", ") })
+      : t("KindChoice.none");
 
   // One line: the label, the user's mark and the list
   return (
@@ -322,18 +334,18 @@ function KindChoice({
           onChange={(e) => change(e.target.value)}
           disabled={saving}
           aria-label={label}
-          title={chosen ? "Ваш ответ. Выберите «не выбран», чтобы снять его" : "Выберите, чтобы ответить"}
+          title={chosen ? t("KindChoice.chosenHint") : t("KindChoice.chooseHint")}
           className={SELECT}
         >
-          <option value="">{chosen ? "Не выбран (снять ответ)" : none}</option>
+          <option value="">{chosen ? t("KindChoice.takeBack") : none}</option>
           {KINDS.map((k) => {
             const v = valueOf(k.key);
             const chance = v?.corrected ? null : chanceOf(k.key);
             return (
               <option key={k.key} value={k.key}>
-                {k.name}
+                {t(k.label)}
                 {chance != null ? ` · ${percent(chance)}` : ""}
-                {v?.corrected === "REMOVED" ? " · вы ответили «нет»" : ""}
+                {v?.corrected === "REMOVED" ? ` · ${t("KindChoice.answeredNo")}` : ""}
               </option>
             );
           })}
@@ -366,7 +378,7 @@ function Universes({
   corrections: Corrections;
 }) {
   const own = values.filter(has);
-  const allNamed = own.length > 0 && <AllNamed facet={UNIVERSE} what="вселенные" others="Других вселенных нет" complete={complete} corrections={corrections} />;
+  const allNamed = own.length > 0 && <AllNamed facet={UNIVERSE} named="universes" complete={complete} corrections={corrections} />;
   if (complete)
     return (
       <Block label={label}>
@@ -378,24 +390,22 @@ function Universes({
 }
 
 /**
- * "Других … нет": the user's word that the work's values of the facet are all named — the others
+ * "No other …": the user's word that the work's values of the facet are all named — the others
  * are taken from it, not offered and rejected for the model; pressed again, taken back.
  */
 function AllNamed({
   facet,
-  what,
-  others,
+  named,
   complete,
   corrections,
 }: {
   facet: string;
-  /** The values in the plural: "вселенные", "пэйринги". */
-  what: string;
-  /** The button's text: "Других вселенных нет". */
-  others: string;
+  /** What the values are, for the button's text and hints: "No other universes". */
+  named: AllNamedKind;
   complete: boolean;
   corrections: Corrections;
 }) {
+  const { t } = useTranslation("universe");
   return (
     <AsyncButton
       size="sm"
@@ -403,13 +413,9 @@ function AllNamed({
       aria-pressed={complete}
       onClick={() => corrections.setComplete(facet, !complete)}
       icon={complete ? <CheckIcon /> : undefined}
-      title={
-        complete
-          ? `Названы все ${what} работы: остальные не предлагаются и для модели отклонены. Нажмите, чтобы снять`
-          : `Все ${what} работы уже названы: остальные не предлагать и считать отклонёнными`
-      }
+      title={complete ? t(`AllNamed.${named}CompleteHint`) : t(`AllNamed.${named}OpenHint`)}
     >
-      {others}
+      {t(`AllNamed.${named}`)}
     </AsyncButton>
   );
 }
@@ -431,6 +437,7 @@ function OpenUniverses({
   /** The button saying there are no others. */
   allNamed: ReactNode;
 }) {
+  const { t } = useTranslation("universe");
   const dictionary = useUniverses(type.id);
   const linked = (value: string) => values.some((v) => v.key === value && has(v));
   const link = (value: string) => corrections.setFacet(UNIVERSE, { key: value }, true);
@@ -447,22 +454,22 @@ function OpenUniverses({
       <Chips facet={UNIVERSE} values={values} suggested={suggested} corrections={corrections} />
       <div className="flex flex-wrap items-start gap-1">
         <Picker
-          label="Добавить вселенную"
-          placeholder="Найти вселенную словаря"
+          label={t("OpenUniverses.add")}
+          placeholder={t("OpenUniverses.placeholder")}
           options={options}
           loading={dictionary.isLoading}
           error={dictionary.error?.message}
-          empty="Словарь вселенных пуст: найдите вселенную в Викиданных"
+          empty={t("OpenUniverses.empty")}
           onPick={link}
         />
         <Dialog>
-          <DialogTrigger render={<Button variant="ghost" size="sm" title="Найти вселенную в Викиданных, добавить её в словарь и связать с работой" />}>
-            <SearchIcon /> Найти в Викиданных…
+          <DialogTrigger render={<Button variant="ghost" size="sm" title={t("OpenUniverses.searchHint")} />}>
+            <SearchIcon /> {t("OpenUniverses.search")}
           </DialogTrigger>
           <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Найти вселенную в Викиданных</DialogTitle>
-              <DialogDescription>Найденная вселенная добавляется в словарь вместе с персонажами и сразу связывается с этой работой.</DialogDescription>
+              <DialogTitle>{t("OpenUniverses.searchTitle")}</DialogTitle>
+              <DialogDescription>{t("OpenUniverses.searchDescription")}</DialogDescription>
             </DialogHeader>
             {/* The keys of the work's dialog (grades, steps) stay out of the search; Escape still closes it */}
             <div onKeyDown={(e) => e.key !== "Escape" && e.stopPropagation()}>
@@ -486,8 +493,7 @@ function Characters({
   item,
   facet,
   label,
-  what,
-  others,
+  named,
   values,
   complete,
   elsewhere,
@@ -498,10 +504,8 @@ function Characters({
   item: ItemRef;
   facet: string;
   label: string;
-  /** The characters in the plural, for the hint of [others]: "главные персонажи". */
-  what: string;
-  /** The text of the button saying there are no others: "Других главных нет". */
-  others: string;
+  /** Which characters these are, for the button saying there are no others: "No other main characters". */
+  named: "mainCharacters" | "secondaryCharacters";
   values: FacetValueInfo[];
   complete: boolean;
   /** The characters the work has in its other facet of characters: a character is in one of them only. */
@@ -511,7 +515,7 @@ function Characters({
   corrections: Corrections;
 }) {
   const own = values.filter(has);
-  const allNamed = own.length > 0 && <AllNamed facet={facet} what={what} others={others} complete={complete} corrections={corrections} />;
+  const allNamed = own.length > 0 && <AllNamed facet={facet} named={named} complete={complete} corrections={corrections} />;
   if (complete)
     return (
       <Block label={label}>
@@ -561,6 +565,7 @@ function OpenCharacters({
   /** The button saying there are no others. */
   allNamed: ReactNode;
 }) {
+  const { t } = useTranslation("universe");
   const dictionary = useUniverses(type.id, universes.length > 0);
   const linked = universes
     .map((v) => dictionary.data?.find((u) => u.value === v.key))
@@ -595,7 +600,7 @@ function OpenCharacters({
       ...o,
       note: [o.names.slice(1).join(", "), o.universes.join(", ")].filter((x) => x !== "").join(" — "),
     })),
-    ...ORIGINAL_CHARACTERS.map((c) => ({ key: c.key, name: c.name, names: [c.name], taken: taken(c.key) })),
+    ...ORIGINAL_CHARACTERS.map((c) => ({ key: c.key, name: t(c.label), names: [t(c.label)], taken: taken(c.key) })),
   ];
   const candidates = useCandidates(item, facet, true);
   const failed = characters.find((q) => q.isError)?.error?.message ?? dictionary.error?.message ?? candidates.error?.message;
@@ -606,12 +611,12 @@ function OpenCharacters({
       <Named type={type} item={item} facet={facet} candidates={candidates.data} universes={universes} corrections={corrections} />
       <div className="flex flex-wrap items-start gap-1">
         <Picker
-          label="Добавить персонажа"
-          placeholder="Найти персонажа по любому имени или по Q-номеру"
+          label={t("OpenCharacters.add")}
+          placeholder={t("OpenCharacters.placeholder")}
           options={ranked(options, candidates.data)}
           loading={dictionary.isLoading || characters.some((q) => q.isLoading) || candidates.isLoading}
           error={failed}
-          empty={universes.length === 0 ? "Работа не связана ни с одной вселенной: есть только оригинальные персонажи" : undefined}
+          empty={universes.length === 0 ? t("OpenCharacters.noUniverse") : undefined}
           onPick={(key) => corrections.setFacet(facet, { key }, true)}
           onName={(name) => corrections.setFacet(facet, { name }, true)}
         />
@@ -648,7 +653,7 @@ function Pairings({
   corrections: Corrections;
 }) {
   const own = values.filter(has);
-  const allNamed = own.length > 0 && <AllNamed facet={PAIRINGS} what="пэйринги" others="Других пэйрингов нет" complete={complete} corrections={corrections} />;
+  const allNamed = own.length > 0 && <AllNamed facet={PAIRINGS} named="pairings" complete={complete} corrections={corrections} />;
   if (complete)
     return (
       <Block label={label}>
@@ -682,13 +687,14 @@ function OpenPairings({
   /** The button saying there are no others. */
   allNamed: ReactNode;
 }) {
+  const { t } = useTranslation("universe");
   const [adding, setAdding] = useState(false);
   const [a, setA] = useState("");
   const [b, setB] = useState("");
   // The work's characters and the original ones: they pair with anyone, listed among the main ones or not
   const members = [
     ...characters.map((c) => ({ key: c.key, name: c.name })),
-    ...ORIGINAL_CHARACTERS.filter((o) => !characters.some((c) => c.key === o.key)),
+    ...ORIGINAL_CHARACTERS.filter((o) => !characters.some((c) => c.key === o.key)).map((o) => ({ key: o.key, name: t(o.label) })),
   ];
   const known = (key: string) => members.some((c) => c.key === key);
   const ready = known(a) && known(b) && a !== b;
@@ -705,7 +711,7 @@ function OpenPairings({
 
   const select = (value: string, onChange: (value: string) => void, other: string) => (
     <select value={value} onChange={(e) => onChange(e.target.value)} className={SELECT}>
-      <option value="">Персонаж…</option>
+      <option value="">{t("OpenPairings.character")}</option>
       {members.map((c) => (
         <option key={c.key} value={c.key} disabled={c.key === other}>
           {c.name}
@@ -720,27 +726,27 @@ function OpenPairings({
       <Named type={type} item={item} facet={PAIRINGS} candidates={candidates.data} universes={universes} corrections={corrections} />
       {characters.length > 0 && (
         <Picker
-          label="Выбрать пэйринг"
-          placeholder="Найти пару по имени персонажа"
+          label={t("OpenPairings.choose")}
+          placeholder={t("OpenPairings.placeholder")}
           options={ranked(pairs, candidates.data)}
           loading={candidates.isLoading}
           error={candidates.error?.message}
-          empty="Все пары персонажей работы уже отвечены"
+          empty={t("OpenPairings.allAnswered")}
           onPick={(key) => corrections.setFacet(PAIRINGS, { key }, true)}
         />
       )}
       {!adding ? (
         <div className="flex flex-wrap items-start gap-1">
           <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
-            <PlusIcon /> Составить пэйринг
+            <PlusIcon /> {t("OpenPairings.compose")}
           </Button>
           {allNamed}
         </div>
       ) : (
         <div className="flex flex-col gap-2 rounded-lg border border-dashed p-2" onKeyDown={(e) => e.stopPropagation()}>
           <div className="flex items-center justify-between text-xs text-muted-foreground">
-            Добавить пэйринг: два персонажа работы или ОМП / ОЖП
-            <Button variant="ghost" size="icon-xs" onClick={() => setAdding(false)} title="Закрыть">
+            {t("OpenPairings.composeHint")}
+            <Button variant="ghost" size="icon-xs" onClick={() => setAdding(false)} title={t("OpenPairings.close")}>
               <XIcon />
             </Button>
           </div>
@@ -748,7 +754,7 @@ function OpenPairings({
             {select(a, setA, b)}
             <span className="text-muted-foreground">/</span>
             {select(b, setB, a)}
-            <AsyncButton size="icon" variant="outline" onClick={add} disabled={!ready} title="Добавить пэйринг" icon={<PlusIcon />} />
+            <AsyncButton size="icon" variant="outline" onClick={add} disabled={!ready} title={t("OpenPairings.add")} icon={<PlusIcon />} />
           </div>
         </div>
       )}
@@ -762,14 +768,14 @@ function OpenPairings({
  */
 type Option = { key: string; name: string; mark?: string; description?: string; note?: string; names: string[]; taken: boolean };
 
-/** "упоминается 3 раза" — how often the work's texts name a candidate; nothing when they were not counted. */
+/** "mentioned 3 times" — how often the work's texts name a candidate; nothing when they were not counted. */
 function mentionsText(c: Candidate): string | undefined {
   if (c.mentions == null) return undefined;
-  if (c.mentions === 0) return "не упоминается";
-  return `упоминается ${plural(c.mentions, "раз", "раза", "раз")}`;
+  if (c.mentions === 0) return i18n.t("Mentions.none", { ns: "universe" });
+  return i18n.t("Mentions.count", { ns: "universe", count: c.mentions });
 }
 
-/** "87% · упоминается 3 раза" */
+/** "87% · mentioned 3 times" */
 function candidateMark(c: Candidate): string {
   return [c.chance != null ? percent(c.chance) : undefined, mentionsText(c)].filter((x) => x !== undefined).join(" · ");
 }
@@ -816,12 +822,13 @@ function Named({
   universes: FacetValueInfo[];
   corrections: Corrections;
 }) {
+  const { t } = useTranslation("universe");
   const named = (candidates ?? []).filter((c) => (c.mentions ?? 0) > 0);
   if (named.length === 0) return null;
   const shown = named.slice(0, NAMED_SHOWN);
   return (
     <div className="flex flex-col gap-1">
-      <div className="text-xs text-muted-foreground">Упоминаются в текстах работы</div>
+      <div className="text-xs text-muted-foreground">{t("Named.heading")}</div>
       <div className="flex flex-wrap items-center gap-1">
         {shown.map((c) => (
           <Badge key={c.key} variant="outline" className="border-dashed pr-0.5 font-normal">
@@ -832,7 +839,7 @@ function Named({
             <FacetAnswers facet={facet} value={{ key: c.key }} corrections={corrections} />
           </Badge>
         ))}
-        {named.length > shown.length && <span className="text-xs text-muted-foreground">и ещё {named.length - shown.length} в списке ниже</span>}
+        {named.length > shown.length && <span className="text-xs text-muted-foreground">{t("Named.more", { n: named.length - shown.length })}</span>}
       </div>
     </div>
   );
@@ -863,6 +870,7 @@ function Picker({
   onPick: (key: string) => Promise<unknown>;
   onName?: (name: string) => Promise<unknown>;
 }) {
+  const { t } = useTranslation("universe");
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const close = () => {
@@ -890,7 +898,7 @@ function Picker({
     <div className="flex w-full flex-col gap-2 rounded-lg border border-dashed p-2" onKeyDown={(e) => e.stopPropagation()}>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
         {label}
-        <Button variant="ghost" size="icon-xs" onClick={close} title="Закрыть">
+        <Button variant="ghost" size="icon-xs" onClick={close} title={t("Picker.close")}>
           <XIcon />
         </Button>
       </div>
@@ -904,10 +912,10 @@ function Picker({
           placeholder={placeholder}
           className="h-8"
         />
-        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{needle === "" ? options.length : `${shown.length} из ${options.length}`}</span>
+        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{needle === "" ? options.length : t("Picker.shownOf", { shown: shown.length, total: options.length })}</span>
       </div>
       {loading && <Loader2Icon className="size-4 animate-spin text-muted-foreground" />}
-      {error && <p className="text-xs text-destructive">Не удалось загрузить: {error}</p>}
+      {error && <p className="text-xs text-destructive">{t("Picker.loadFailed", { error })}</p>}
       {!loading && options.length === 0 && empty && <p className="text-xs text-muted-foreground">{empty}</p>}
       {shown.length > 0 && (
         <ul className="flex max-h-72 flex-col divide-y overflow-y-auto rounded-lg border">
@@ -920,13 +928,13 @@ function Picker({
                   close();
                 }}
                 disabled={o.taken}
-                title={o.taken ? "Уже у работы" : "Добавить работе"}
+                title={o.taken ? t("Picker.takenHint") : t("Picker.add")}
                 className="h-auto w-full flex-col items-start gap-0 rounded-none px-2 py-1 text-left whitespace-normal"
               >
                 <span>
                   {o.name}
                   {o.mark && <span className="ml-1 text-xs font-normal text-muted-foreground tabular-nums">{o.mark}</span>}
-                  {o.taken &&<span className="ml-1 text-xs font-normal text-muted-foreground">· уже у работы</span>}
+                  {o.taken &&<span className="ml-1 text-xs font-normal text-muted-foreground">· {t("Picker.taken")}</span>}
                 </span>
                 {o.description && <span className="text-xs font-normal">{o.description}</span>}
                 {o.note && <span className="text-xs font-normal text-muted-foreground">{o.note}</span>}
@@ -944,10 +952,10 @@ function Picker({
             await onName(typed);
             close();
           }}
-          title="Добавить персонажа под этим именем: его нет среди персонажей вселенных работы"
+          title={t("Picker.addNameHint")}
           icon={<PlusIcon />}
         >
-          Добавить своё имя «{typed}»
+          {t("Picker.addName", { name: typed })}
         </AsyncButton>
       )}
     </div>

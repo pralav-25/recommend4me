@@ -6,6 +6,7 @@ import { Dialog as DialogPrimitive } from "@base-ui/react/dialog"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ErrorBoundary } from "@/components/ErrorBoundary"
+import i18n from "@/i18n/i18n"
 import { XIcon } from "lucide-react"
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
@@ -68,7 +69,7 @@ function DialogContent({
         {...props}
       >
         {/* A dialog that fails to draw says so, and can still be closed */}
-        <ErrorBoundary title="Окно не смогло отрисоваться">{children}</ErrorBoundary>
+        <ErrorBoundary title={i18n.t("Dialog.failed")}>{children}</ErrorBoundary>
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
@@ -81,7 +82,7 @@ function DialogContent({
             }
           >
             <XIcon />
-            <span className="sr-only">Close</span>
+            <span className="sr-only">{i18n.t("Dialog.close")}</span>
           </DialogPrimitive.Close>
         )}
       </DialogPrimitive.Popup>

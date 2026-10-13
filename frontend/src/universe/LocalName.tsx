@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { CheckIcon, Loader2Icon, PencilIcon, Undo2Icon, XIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, ensureOk } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 /**
- * The name the user gives a universe or a character over the catalogue's — "Северус Снейп" over
- * "Северус Снегг": shown everywhere in its place, read in the works' texts as one more name of it.
+ * The name the user gives a universe or a character over the catalogue's — the "Severus Snape" the
+ * reader knows over the catalogue's translation of it: shown everywhere in its place, read in the
+ * works' texts as one more name of it.
  * A pencil by the name opens a field; an empty one, or ↺, gives the catalogue's name back.
  */
 export function LocalNameEdit({
@@ -25,6 +27,7 @@ export function LocalNameEdit({
   catalogueName: string;
   onSaved: () => Promise<unknown>;
 }) {
+  const { t } = useTranslation("universe");
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(localName ?? "");
   const save = useMutation({
@@ -51,8 +54,8 @@ export function LocalNameEdit({
             setName(localName ?? "");
             setEditing(true);
           }}
-          title={localName ? `Своё имя; в Викиданных — «${catalogueName}»` : "Задать своё имя вместо имени из Викиданных"}
-          aria-label="Своё имя"
+          title={localName ? t("LocalName.ownNameHint", { name: catalogueName }) : t("LocalName.setOwnName")}
+          aria-label={t("LocalName.ownName")}
         >
           <PencilIcon />
         </Button>
@@ -62,8 +65,8 @@ export function LocalNameEdit({
             size="icon-xs"
             onClick={() => save.mutate(null)}
             disabled={save.isPending}
-            title={`Вернуть имя из Викиданных: «${catalogueName}»`}
-            aria-label="Вернуть имя из Викиданных"
+            title={t("LocalName.resetHint", { name: catalogueName })}
+            aria-label={t("LocalName.reset")}
           >
             {save.isPending ? <Loader2Icon className="animate-spin" /> : <Undo2Icon />}
           </Button>
@@ -86,12 +89,12 @@ export function LocalNameEdit({
         onKeyDown={(e) => e.key === "Escape" && setEditing(false)}
         placeholder={catalogueName}
         className="h-7 w-56"
-        aria-label="Своё имя"
+        aria-label={t("LocalName.ownName")}
       />
-      <Button type="submit" size="icon-xs" disabled={save.isPending} title="Сохранить; пустое — имя из Викиданных" aria-label="Сохранить">
+      <Button type="submit" size="icon-xs" disabled={save.isPending} title={t("LocalName.saveHint")} aria-label={t("LocalName.save")}>
         {save.isPending ? <Loader2Icon className="animate-spin" /> : <CheckIcon />}
       </Button>
-      <Button type="button" variant="ghost" size="icon-xs" onClick={() => setEditing(false)} title="Отмена" aria-label="Отмена">
+      <Button type="button" variant="ghost" size="icon-xs" onClick={() => setEditing(false)} title={t("LocalName.cancel")} aria-label={t("LocalName.cancel")}>
         <XIcon />
       </Button>
       {save.isError && <span className="text-xs text-destructive">{save.error.message}</span>}

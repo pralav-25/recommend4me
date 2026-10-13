@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDownIcon, SearchIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, unwrap, type FacetFilter } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -107,6 +108,7 @@ export function FacetFilters({ type, value, onChange }: { type: string; value: F
 }
 
 function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: FacetSelection; onChange: (v: FacetSelection) => void }) {
+  const { t } = useTranslation("facet");
   const [find, setFind] = useState("");
   const hasWithout = facet.noneLabel !== undefined && facet.noneLabel !== "";
   const withoutLabel = facet.noneLabel ?? "";
@@ -118,7 +120,13 @@ function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: 
   const shown = shownValues.length + (hasWithout && withoutShown ? 1 : 0);
   // All shown says nothing; one shown is named; else how many of how many
   const summary =
-    shown === total ? null : shown === 0 ? "ничего" : shown === 1 ? (shownValues[0]?.name ?? withoutLabel) : `${shown} из ${total}`;
+    shown === total
+      ? null
+      : shown === 0
+        ? t("FacetDropdown.summaryNone")
+        : shown === 1
+          ? (shownValues[0]?.name ?? withoutLabel)
+          : t("FacetDropdown.summaryCount", { shown, total });
 
   // The facet's own choice written anew, the shorter list; the other facets' kept
   const choose = (visible: Set<string>, withoutHidden: boolean) => {
@@ -154,10 +162,10 @@ function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: 
       <DropdownMenuContent className="max-h-[70vh] w-auto min-w-56">
         <div className="flex gap-1">
           <DropdownMenuItem className="flex-1 justify-center" onClick={all} closeOnClick={false} disabled={shown === total}>
-            Всё
+            {t("FacetDropdown.all")}
           </DropdownMenuItem>
           <DropdownMenuItem className="flex-1 justify-center" onClick={none} closeOnClick={false} disabled={shown === 0}>
-            Ничего
+            {t("FacetDropdown.none")}
           </DropdownMenuItem>
         </div>
         {facet.values.length > FINDABLE && (
@@ -168,7 +176,7 @@ function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: 
               onChange={(e) => setFind(e.target.value)}
               // The menu's own keys (type-ahead, arrows) must not take the letters typed here
               onKeyDown={(e) => e.key !== "Escape" && e.stopPropagation()}
-              placeholder="Найти…"
+              placeholder={t("FacetDropdown.findPlaceholder")}
               className="h-7 w-full rounded-md border border-input bg-transparent pr-2 pl-7 text-sm outline-none focus-visible:border-ring"
             />
           </div>

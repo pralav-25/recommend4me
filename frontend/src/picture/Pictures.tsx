@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { TriangleAlertIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, ensureOk, pictureSrc, type ItemRef, type PictureInfo, type PictureMatch } from "@/api/client";
 import { itemKey } from "@/item/lists";
 import { InfluenceBadge, MarkButtons, MatchVerdict, StrengthBadge } from "@/mark/MarkButtons";
@@ -12,16 +13,12 @@ import { cn } from "@/lib/utils";
  * mean is told above them in the marking ([explained]).
  */
 export function Pictures({ item, pictures, large = true, explained = true }: { item: ItemRef; pictures: PictureInfo[]; large?: boolean; explained?: boolean }) {
+  const { t } = useTranslation("picture");
   if (pictures.length === 0) return null;
   return (
     <section>
-      <h4 className="mb-1 text-sm font-semibold">{large ? "Картинки" : "Обложка и картинки"}</h4>
-      {explained && pictures.some((p) => p.influence != null) && (
-        <p className="mb-2 text-xs text-muted-foreground">
-          Число на картинке — на сколько баллов вашей шкалы она сдвигает работу: прогноз как есть минус прогноз без неё.
-          Картинку, из-за которой вы выбрали бы работу или отбросили её, отметьте 👍 или 👎 — модель будет искать похожие.
-        </p>
-      )}
+      <h4 className="mb-1 text-sm font-semibold">{large ? t("Pictures.heading") : t("Pictures.headingWithCover")}</h4>
+      {explained && pictures.some((p) => p.influence != null) && <p className="mb-2 text-xs text-muted-foreground">{t("Pictures.explanation")}</p>}
       <div className={cn("grid gap-2", large ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-3 sm:grid-cols-5")}>
         {pictures.map((p) => (
           <div
@@ -37,14 +34,14 @@ export function Pictures({ item, pictures, large = true, explained = true }: { i
                 className="aspect-video w-full rounded-md bg-muted object-cover transition-opacity hover:opacity-85"
               />
               {p.position === 0 && (
-                <span className="absolute top-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">обложка</span>
+                <span className="absolute top-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white">{t("Pictures.cover")}</span>
               )}
               {!p.analyzed && !p.error && (
                 <span
                   className="absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 py-0.5 text-xs text-white/80"
-                  title="Модель картинок ещё не разобрала её: она пока не влияет на прогноз"
+                  title={t("Pictures.notAnalyzedHint")}
                 >
-                  не разобрана
+                  {t("Pictures.notAnalyzed")}
                 </span>
               )}
               {p.error && (
@@ -52,14 +49,14 @@ export function Pictures({ item, pictures, large = true, explained = true }: { i
                   className="absolute bottom-1.5 left-1.5 inline-flex items-center gap-1 rounded bg-black/70 px-1.5 py-0.5 text-xs text-maybe"
                   title={p.error}
                 >
-                  <TriangleAlertIcon className="size-3" /> ошибка
+                  <TriangleAlertIcon className="size-3" /> {t("Pictures.error")}
                 </span>
               )}
               {p.influence != null && (
                 <InfluenceBadge
                   influence={p.influence}
                   className="absolute right-1.5 bottom-1.5"
-                  title="Прогноз как есть минус прогноз без этой картинки, в баллах вашей шкалы"
+                  title={t("Pictures.influence")}
                 />
               )}
             </a>
@@ -103,15 +100,12 @@ function PictureMark({ item, position, mark }: { item: ItemRef; position: number
  * left, the marked one on the right, and between them how far from chance the likeness is.
  */
 export function PictureMatches({ item, matches }: { item: ItemRef; matches: PictureMatch[] }) {
+  const { t } = useTranslation("picture");
   if (matches.length === 0) return null;
   return (
     <section>
-      <h4 className="mb-1 text-sm font-semibold">Похоже на отмеченные вами картинки</h4>
-      <p className="mb-2 text-xs text-muted-foreground">
-        Слева картинка этой работы, справа — отмеченная вами в другой. Число — насколько сходство неслучайно: случайно
-        выходит около 1, 3 — у одной работы из двадцати, 5 — у одной из ста пятидесяти. ✓ — похоже в том смысле, ✕ —
-        похоже, но не в том: отметка учтёт это и станет точнее.
-      </p>
+      <h4 className="mb-1 text-sm font-semibold">{t("PictureMatches.heading")}</h4>
+      <p className="mb-2 text-xs text-muted-foreground">{t("PictureMatches.explanation")}</p>
       <div className="flex flex-col gap-2">
         {matches.map((m) => {
           const mark = { source: m.markSource, item: m.markItem };
@@ -132,7 +126,7 @@ export function PictureMatches({ item, matches }: { item: ItemRef; matches: Pict
               <StrengthBadge
                 mark={m.mark}
                 strength={m.strength}
-                title={m.mark > 0 ? "Похоже на картинку, из-за которой вы выбрали бы работу" : "Похоже на картинку, из-за которой вы отбросили бы работу"}
+                title={m.mark > 0 ? t("PictureMatches.likePick") : t("PictureMatches.likeDrop")}
               />
               <figure className="min-w-0">
                 <a href={pictureSrc(mark, m.markPosition, true)} target="_blank" rel="noreferrer">

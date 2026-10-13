@@ -1,6 +1,6 @@
 import { forwardRef } from "react";
 import type { ContentTypeInfo, Grade, ItemSummary } from "@/api/client";
-import { ago } from "@/i18n";
+import { ago } from "@/i18n/format";
 import { cn } from "@/lib/utils";
 import { SearchJudge } from "@/search/SearchJudge";
 import {

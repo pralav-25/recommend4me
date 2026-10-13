@@ -1,6 +1,7 @@
+import { useTranslation } from "react-i18next";
 import type { FacetValueInfo } from "@/api/client";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { percent } from "@/i18n";
+import { percent } from "@/i18n/format";
 
 /** Below one half the model thinks the work more likely has the value not than has it. */
 const HALF = 0.5;
@@ -22,6 +23,7 @@ export function unlikely(value: FacetValueInfo): boolean {
 
 /** "87%" in small print — the model's chance by the value's name; amber, with a word why, when below one half. */
 export function ChanceMark({ value }: { value: FacetValueInfo }) {
+  const { t } = useTranslation("facet");
   const chance = shownChance(value);
   if (chance === undefined) return null;
   const text = percent(chance);
@@ -29,7 +31,7 @@ export function ChanceMark({ value }: { value: FacetValueInfo }) {
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="cursor-help text-[10px] font-medium text-maybe tabular-nums" />}>{text}</TooltipTrigger>
-      <TooltipContent>Модель считает, что скорее этого у работы нет</TooltipContent>
+      <TooltipContent>{t("ChanceMark.unlikely")}</TooltipContent>
     </Tooltip>
   );
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { api, unwrap, type Grade, type ItemRef, type ItemSummary } from "@/api/client";
 import { toast } from "@/components/ui/toast";
 import { ItemDialog } from "./ItemDialog";
@@ -12,6 +13,7 @@ import { useRateItem } from "./useRateItem";
  * browser extension sent. Its card is read from the item's details.
  */
 export function ItemRefDialog({ item, onClose }: { item: ItemRef | null; onClose: () => void }) {
+  const { t } = useTranslation("item");
   const details = useQuery({
     queryKey: item ? itemKey(item) : ["item", "none"],
     enabled: item !== null,
@@ -25,9 +27,9 @@ export function ItemRefDialog({ item, onClose }: { item: ItemRef | null; onClose
   const failed = item !== null && details.isError ? details.error.message : null;
   useEffect(() => {
     if (failed === null) return;
-    toast.add({ title: "Работа не открылась", description: failed, type: "error" });
+    toast.add({ title: t("ItemRefDialog.failed"), description: failed, type: "error" });
     onClose();
-  }, [failed, onClose]);
+  }, [failed, onClose, t]);
 
   return (
     <ItemDialog

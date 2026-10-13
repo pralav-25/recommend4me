@@ -1,9 +1,11 @@
 import { CheckCircle2Icon, DatabaseIcon, DownloadIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import type { JobStatus, SourceInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
-import { catalogueLabel, compact, formatDate, MODE_LABEL, phaseLabel, timeLeft } from "@/i18n";
+import { compact, formatDate, timeLeft } from "@/i18n/format";
+import { catalogueLabel, modeLabel, phaseLabel } from "./labels";
 import { catalogueUnfinished, isActive, useCancelJob, useStartJob } from "./useJobs";
 
 type Props = {
@@ -18,6 +20,7 @@ type Props = {
  * take — and the buttons that start, resume or stop them.
  */
 export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) {
+  const { t } = useTranslation("job");
   const start = useStartJob();
   const cancel = useCancelJob();
   const active = isActive(job);
@@ -29,12 +32,12 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
   // A loaded catalogue leaves the updates to do: they are the main button then
   const updatesFirst = updates && (!whole || catalogue?.complete === true);
   const wholeLabel = resumeWhole
-    ? "Продолжить загрузку каталога"
+    ? t("JobDialog.resumeCatalogue")
     : catalogue?.complete
-      ? "Пройти каталог заново"
+      ? t("JobDialog.rescanCatalogue")
       : catalogue?.stage === "none"
-        ? "Начать загрузку каталога"
-        : "Загрузить весь каталог";
+        ? t("JobDialog.startCatalogue")
+        : t("JobDialog.loadWholeCatalogue");
 
   return (
     <Dialog open={source !== null} onOpenChange={onOpenChange}>
@@ -43,38 +46,37 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <DatabaseIcon className="size-5" /> {source.title}: загрузка
+                <DatabaseIcon className="size-5" /> {t("JobDialog.title", { source: source.title })}
               </DialogTitle>
               <DialogDescription>
-                Работы приходят с сайта{" "}
-                <a href={source.homepage} target="_blank" rel="noreferrer" className="underline underline-offset-2">
-                  {source.title}
-                </a>
-                . Модель учится на тех, что вы оценили, поэтому стоит загрузить и те, что вы знаете давно.
+                <Trans
+                  t={t}
+                  i18nKey="JobDialog.description"
+                  values={{ source: source.title }}
+                  components={{ link: <a href={source.homepage} target="_blank" rel="noreferrer" className="underline underline-offset-2" /> }}
+                />
               </DialogDescription>
             </DialogHeader>
 
             <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
               {updates && (
                 <li>
-                  <span className="font-medium">Обновления</span> — то, что появилось или обновилось с прошлого раза. Быстро.
+                  <Trans t={t} i18nKey="JobDialog.updatesAbout" components={{ b: <span className="font-medium" /> }} />
                 </li>
               )}
               {whole && (
                 <li>
-                  <span className="font-medium">Весь каталог</span> — все работы сайта, от новых к старым. Долго; загрузку можно
-                  остановить и продолжить позже, даже после перезапуска приложения. По ходу модель переобучается, так что
-                  прогнозы улучшаются.
+                  <Trans t={t} i18nKey="JobDialog.wholeAbout" components={{ b: <span className="font-medium" /> }} />
                 </li>
               )}
-              <li>Картинки и тексты разбираются отдельно и непрерывно — см. счётчики в шапке.</li>
+              <li>{t("JobDialog.backgroundAbout")}</li>
             </ul>
 
             {job && (
               <div className="grid grid-cols-3 gap-2 text-sm">
-                <Stat label="Работ в базе" value={compact(job.items)} />
-                <Stat label="Новых за загрузку" value={compact(job.newItems)} />
-                <Stat label="Ошибок" value={compact(job.errors)} />
+                <Stat label={t("JobDialog.items")} value={compact(job.items)} />
+                <Stat label={t("JobDialog.newItems")} value={compact(job.newItems)} />
+                <Stat label={t("JobDialog.errors")} value={compact(job.errors)} />
               </div>
             )}
 
@@ -91,13 +93,13 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
               <div className="flex flex-col gap-1.5">
                 <div className="flex justify-between gap-2 text-sm">
                   <span>
-                    {job.mode && <span className="text-muted-foreground">{MODE_LABEL[job.mode]} · </span>}
-                    {job.state === "CANCELLING" ? "Останавливаю…" : phaseLabel(job.phase)}
+                    {job.mode && <span className="text-muted-foreground">{modeLabel(job.mode)} · </span>}
+                    {job.state === "CANCELLING" ? t("JobDialog.stopping") : phaseLabel(job.phase)}
                   </span>
                   {job.total > 0 && (
                     <span className="tabular-nums text-muted-foreground">
                       {job.processed} / {job.total}
-                      {left && ` · осталось ~${left}`}
+                      {left && ` · ${t("JobDialog.left", { left })}`}
                     </span>
                   )}
                 </div>
@@ -110,12 +112,16 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
             {job && !active && job.state === "DONE" && job.finishedAt && (
               <div className="flex items-center gap-2 text-sm text-yes">
                 <CheckCircle2Icon className="size-4" />
-                {job.mode ? MODE_LABEL[job.mode] : "Загрузка"}: готово {formatDate(job.finishedAt)}, новых {job.newItems}.
+                {t("JobDialog.done", {
+                  what: job.mode ? modeLabel(job.mode) : t("JobDialog.loading"),
+                  date: formatDate(job.finishedAt),
+                  count: job.newItems,
+                })}
               </div>
             )}
             {job && !active && job.state === "FAILED" && (
               <div className="flex items-center gap-2 text-sm text-destructive">
-                <TriangleAlertIcon className="size-4" /> Загрузка не удалась {job.finishedAt && formatDate(job.finishedAt)}
+                <TriangleAlertIcon className="size-4" /> {t("JobDialog.failed", { date: formatDate(job.finishedAt) })}
               </div>
             )}
 
@@ -123,11 +129,11 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
               <div className="flex gap-2 rounded-lg border border-maybe/50 bg-maybe/10 p-3 text-sm">
                 <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-maybe" />
                 <div>
-                  Сайт не узнал вас: без входа он отдаёт не всё. Задайте вход в{" "}
-                  <button className="underline underline-offset-2" onClick={onNeedSettings}>
-                    настройках
-                  </button>
-                  .
+                  <Trans
+                    t={t}
+                    i18nKey="JobDialog.notLoggedIn"
+                    components={{ settings: <button className="underline underline-offset-2" onClick={onNeedSettings} /> }}
+                  />
                 </div>
               </div>
             )}
@@ -135,12 +141,12 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
             <DialogFooter>
               {active ? (
                 <Button variant="outline" onClick={() => cancel.mutate(source.id)} disabled={job?.state === "CANCELLING" || cancel.isPending}>
-                  <SquareIcon /> Остановить
+                  <SquareIcon /> {t("JobDialog.stop")}
                 </Button>
               ) : (
                 <>
                   <Button variant="outline" onClick={() => onOpenChange(false)}>
-                    Закрыть
+                    {t("JobDialog.close")}
                   </Button>
                   {updates && (
                     <Button
@@ -148,7 +154,7 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
                       onClick={() => start.mutate({ source: source.id, mode: "UPDATES" }, { onSuccess: () => onOpenChange(false) })}
                       disabled={start.isPending}
                     >
-                      <DownloadIcon /> Загрузить обновления
+                      <DownloadIcon /> {t("JobDialog.loadUpdates")}
                     </Button>
                   )}
                   {whole && (

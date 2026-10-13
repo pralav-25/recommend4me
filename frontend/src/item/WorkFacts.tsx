@@ -1,6 +1,8 @@
+import { useTranslation } from "react-i18next";
 import type { FacetRole, ItemFacet, ItemSummary, NumberRole, SourceInfo } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
-import { ago, compact, formatDate } from "@/i18n";
+import { ago, compact, formatDate, number } from "@/i18n/format";
+import { intlTag } from "@/i18n/i18n";
 import { cn } from "@/lib/utils";
 import { FacetBadges } from "./pieces";
 
@@ -20,7 +22,7 @@ function numbersOfRole(source: SourceInfo, numbers: Record<string, number>, role
   return source.numbers.filter((n) => n.role === role && numbers[n.key] !== undefined).map((n) => ({ ...n, value: numbers[n.key] }));
 }
 
-/** Who made the work: "Плотников Сергей", "Sakrilas & VelcroFist". */
+/** Who made the work: "Sergey Plotnikov", "Sakrilas & VelcroFist". */
 export function Byline({ source, facets, className }: { source: SourceInfo; facets: ItemFacet[]; className?: string }) {
   const authors = namesOf(facetsOfRole(source, facets, "AUTHOR"));
   if (authors.length === 0) return null;
@@ -34,6 +36,7 @@ export function Byline({ source, facets, className }: { source: SourceInfo; face
  * of the views liked it.
  */
 export function FactLine({ source, summary, facets, className }: { source: SourceInfo; summary: ItemSummary; facets: ItemFacet[]; className?: string }) {
+  const { t } = useTranslation("item");
   const status = namesOf(facetsOfRole(source, facets, "STATUS"));
   const form = namesOf(facetsOfRole(source, facets, "FORM"));
   const size = numbersOfRole(source, summary.numbers, "SIZE");
@@ -51,18 +54,18 @@ export function FactLine({ source, summary, facets, className }: { source: Sourc
       ))}
       {summary.version && <span className="font-medium">{summary.version}</span>}
       {size.map((n) => (
-        <span key={n.key} title={`${n.label}: ${n.value.toLocaleString("ru-RU")}`}>
+        <span key={n.key} title={`${n.label}: ${number(n.value)}`}>
           {compact(n.value)} {n.label.toLowerCase()}
         </span>
       ))}
-      <span title={formatDate(summary.updatedAt)}>обновлено {ago(summary.updatedAt)}</span>
+      <span title={formatDate(summary.updatedAt)}>{t("FactLine.updated", { ago: ago(summary.updatedAt) })}</span>
       {approval.map((n) => (
-        <span key={n.key} title={`${n.label}: ${n.value.toLocaleString("ru-RU")}`}>
-          {n.label} <span className="font-medium">{n.scale === "LINEAR" ? n.value.toLocaleString("ru-RU", { maximumFractionDigits: 1 }) : compact(n.value)}</span>
+        <span key={n.key} title={`${n.label}: ${number(n.value)}`}>
+          {n.label} <span className="font-medium">{n.scale === "LINEAR" ? n.value.toLocaleString(intlTag(), { maximumFractionDigits: 1 }) : compact(n.value)}</span>
           {n.scale !== "LINEAR" && reach && reach.value > 0 && (
-            <span className="opacity-70" title={`Доля от числа «${reach.label.toLowerCase()}»: ${reach.value.toLocaleString("ru-RU")}`}>
+            <span className="opacity-70" title={t("FactLine.reachShare", { reach: reach.label.toLowerCase(), value: number(reach.value) })}>
               {" "}
-              ({((n.value / reach.value) * 100).toLocaleString("ru-RU", { maximumSignificantDigits: 2 })}%)
+              ({((n.value / reach.value) * 100).toLocaleString(intlTag(), { maximumSignificantDigits: 2 })}%)
             </span>
           )}
         </span>

@@ -1,0 +1,10 @@
+{
+  "MarkButtons.against": "Would pass on it for this",
+  "MarkButtons.clear": "Clear the mark",
+  "MarkButtons.for": "Would pick it for this",
+  "MatchVerdict.otherSense": "Alike, but not in that sense",
+  "MatchVerdict.recountNote": "The mark will take this into account at the next recalculation",
+  "MatchVerdict.sameSense": "Alike in the very sense meant",
+  "MatchVerdict.takeBack": "Take back the answer",
+  "MatchVerdict.undo": "Undo"
+}

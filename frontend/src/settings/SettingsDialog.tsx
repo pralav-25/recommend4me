@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2Icon, TriangleAlertIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, unwrap, type SettingValue, type SourceSettings } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -15,21 +16,22 @@ type Props = { open: boolean; onOpenChange: (open: boolean) => void };
 
 /** The settings of every source that has any: logins, pauses between requests and the like. */
 export function SettingsDialog({ open, onOpenChange }: Props) {
+  const { t } = useTranslation("settings");
   const settings = useSettings();
   const sources = (settings.data ?? []).filter((s) => s.values.length > 0);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] max-w-2xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Настройки</DialogTitle>
-          <DialogDescription>Хранятся в локальной базе приложения. У каждого сайта свои.</DialogDescription>
+          <DialogTitle>{t("SettingsDialog.title")}</DialogTitle>
+          <DialogDescription>{t("SettingsDialog.description")}</DialogDescription>
         </DialogHeader>
-        {settings.isError && <div className="text-sm text-destructive">Не удалось загрузить настройки</div>}
-        {settings.data && sources.length === 0 && <div className="text-sm text-muted-foreground">Настраивать нечего.</div>}
+        {settings.isError && <div className="text-sm text-destructive">{t("SettingsDialog.loadFailed")}</div>}
+        {settings.data && sources.length === 0 && <div className="text-sm text-muted-foreground">{t("SettingsDialog.nothing")}</div>}
         {open && sources.map((s) => <SourceForm key={s.source} settings={s} />)}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Закрыть
+            {t("SettingsDialog.close")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -42,6 +44,7 @@ export function SettingsDialog({ open, onOpenChange }: Props) {
  * replaces it, the button beside it takes it away. Only what was changed is sent.
  */
 function SourceForm({ settings }: { settings: SourceSettings }) {
+  const { t } = useTranslation("settings");
   const queryClient = useQueryClient();
   const initial = () => Object.fromEntries(settings.values.map((v) => [v.key, v.secret ? "" : (v.value ?? "")]));
   const [draft, setDraft] = useState<Record<string, string>>(initial);
@@ -81,15 +84,15 @@ function SourceForm({ settings }: { settings: SourceSettings }) {
           busy={save.isPending}
         />
       ))}
-      {save.isError && <div className="text-sm text-destructive">Не удалось сохранить: {String(save.error.message)}</div>}
+      {save.isError && <div className="text-sm text-destructive">{t("SourceForm.saveFailed", { error: String(save.error.message) })}</div>}
       <div className="flex items-center justify-end gap-2">
         {saved && Object.keys(changed).length === 0 && (
           <span className="inline-flex items-center gap-1 text-xs text-yes">
-            <CheckCircle2Icon className="size-3.5" /> сохранено
+            <CheckCircle2Icon className="size-3.5" /> {t("SourceForm.saved")}
           </span>
         )}
         <Button onClick={() => save.mutate(changed)} disabled={save.isPending || Object.keys(changed).length === 0}>
-          Сохранить
+          {t("SourceForm.save")}
         </Button>
       </div>
     </section>
@@ -111,6 +114,7 @@ function Field({
   onClear: () => void;
   busy: boolean;
 }) {
+  const { t } = useTranslation("settings");
   return (
     <div className="grid gap-2">
       <Label htmlFor={id} className="flex items-center gap-2">
@@ -118,11 +122,11 @@ function Field({
         {v.secret &&
           (v.set ? (
             <span className="inline-flex items-center gap-1 text-xs text-yes">
-              <CheckCircle2Icon className="size-3.5" /> задано
+              <CheckCircle2Icon className="size-3.5" /> {t("Field.set")}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1 text-xs text-maybe">
-              <TriangleAlertIcon className="size-3.5" /> не задано
+              <TriangleAlertIcon className="size-3.5" /> {t("Field.notSet")}
             </span>
           ))}
       </Label>
@@ -133,14 +137,14 @@ function Field({
             rows={3}
             value={draft}
             onChange={(e) => onChange(e.target.value)}
-            placeholder={v.set ? "оставьте пустым, чтобы не менять" : "новое значение"}
+            placeholder={v.set ? t("Field.keepEmpty") : t("Field.newValue")}
             autoComplete="off"
             spellCheck={false}
             className="min-h-16 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 dark:bg-input/30"
           />
           {v.set && (
             <Button variant="destructive" size="sm" onClick={onClear} disabled={busy}>
-              Удалить
+              {t("Field.delete")}
             </Button>
           )}
         </div>
@@ -150,7 +154,7 @@ function Field({
           type={v.kind === "NUMBER" ? "number" : "text"}
           value={draft}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={v.set ? undefined : "по умолчанию"}
+          placeholder={v.set ? undefined : t("Field.default")}
         />
       )}
       {v.hint && <p className="text-xs text-muted-foreground">{v.hint}</p>}

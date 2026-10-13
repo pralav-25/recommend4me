@@ -1,0 +1,10 @@
+{
+  "PartText.failed": "Текст не загрузился",
+  "Parts.influence": "Прогноз как есть минус прогноз без текста этой главы, в баллах вашей шкалы",
+  "Parts.more": "Ещё {{n, number}}",
+  "Parts.noText": "Текст не сохранён",
+  "Parts.showText": "Показать текст",
+  "Parts.upDown": "<up>повышают {{up, number}}</up>, <down>понижают {{down, number}}</down>",
+  "Parts.upDownHint": "Сколько сохранённых глав повышают прогноз и сколько понижают — каждая сама по себе",
+  "Parts.withText": "текст сохранён у {{n, number}}"
+}

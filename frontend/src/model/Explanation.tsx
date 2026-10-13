@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ContributionGroup } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { FeatureBars } from "./FeatureBars";
@@ -13,13 +14,14 @@ import { FeatureBars } from "./FeatureBars";
 export function Explanation({
   groups,
   className,
-  title = "Почему такой прогноз",
+  title,
 }: {
   groups: ContributionGroup[];
   className?: string;
-  /** What the folded line says the parts explain. */
+  /** What the folded line says the parts explain; "Why this prediction" when not given. */
   title?: string;
 }) {
+  const { t } = useTranslation("model");
   const [shown, setShown] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   if (groups.length === 0) return null;
@@ -33,14 +35,17 @@ export function Explanation({
         className="inline-flex items-center gap-1 text-left text-sm hover:underline"
         onClick={() => setShown(!shown)}
         aria-expanded={shown}
-        title="Сколько баллов вашей шкалы даёт работе каждая часть: прогноз как есть минус прогноз без неё"
+        title={t("Explanation.hint")}
       >
         <ChevronRightIcon className={cn("size-4 shrink-0 transition-transform", shown && "rotate-90")} />
-        <span className="font-semibold">{title}</span>
+        <span className="font-semibold">{title ?? t("Explanation.title")}</span>
         {!shown && (
           <span className="min-w-0 truncate text-muted-foreground">
-            · больше всего: {strongest.label.toLowerCase()} {strongest.contribution > 0 ? "+" : ""}
-            {strongest.contribution.toFixed(2)}
+            ·{" "}
+            {t("Explanation.strongest", {
+              part: strongest.label.toLowerCase(),
+              contribution: `${strongest.contribution > 0 ? "+" : ""}${strongest.contribution.toFixed(2)}`,
+            })}
           </span>
         )}
       </button>
@@ -59,7 +64,7 @@ export function Explanation({
                 )}
                 onClick={() => several && setOpen(expanded ? null : g.part)}
                 aria-expanded={several ? expanded : undefined}
-                title={several ? "Показать, что внутри" : undefined}
+                title={several ? t("Explanation.expand") : undefined}
               >
                 {several ? (
                   <ChevronRightIcon className={cn("size-3.5 text-muted-foreground transition-transform", expanded && "rotate-90")} />

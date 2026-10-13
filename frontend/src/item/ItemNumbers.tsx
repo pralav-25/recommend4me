@@ -1,20 +1,22 @@
 import { useState } from "react";
 import { PlusIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { NumberValue, SourceInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { CorrectedMark, EditButton, FieldEditor } from "@/correction/FieldEditor";
 import { numberField, type Corrections } from "@/correction/useCorrections";
-import { number } from "@/i18n";
+import { number } from "@/i18n/format";
 
 /** The numbers of the item, each correctable; a number the source declares but the item lacks can be given. */
 export function ItemNumbers({ numbers, source, corrections }: { numbers: NumberValue[]; source?: SourceInfo; corrections: Corrections }) {
+  const { t } = useTranslation("item");
   const [editing, setEditing] = useState<string | null>(null);
   const missing = (source?.numbers ?? []).filter((n) => !numbers.some((v) => v.key === n.key));
   const adding = missing.find((n) => n.key === editing);
   if (numbers.length === 0 && missing.length === 0) return null;
   return (
     <section>
-      <h4 className="mb-2 text-sm font-semibold">Числа</h4>
+      <h4 className="mb-2 text-sm font-semibold">{t("ItemNumbers.heading")}</h4>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-sm">
         {numbers.map((n) => (
           <div key={n.key} className="group/number contents">
@@ -36,7 +38,7 @@ export function ItemNumbers({ numbers, source, corrections }: { numbers: NumberV
                   {n.corrected && <CorrectedMark />}
                   <EditButton
                     onClick={() => setEditing(n.key)}
-                    title="Исправить число"
+                    title={t("ItemNumbers.edit")}
                     className="opacity-0 transition-opacity group-hover/number:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
                   />
                 </>

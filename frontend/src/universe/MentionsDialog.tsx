@@ -1,6 +1,7 @@
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { ExternalLinkIcon, Loader2Icon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { api, unwrap, type CharacterInfo, type ContentTypeInfo, type FacetValueInfo, type ItemRef, type MentionQuote, type UniverseInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -34,18 +35,19 @@ export function MentionsDialog({
   name: string;
   /** The value's page in the catalogue, as the dictionary gives it. */
   url?: string | null;
-  /** "упоминается 3 раза" */
+  /** "mentioned 3 times" */
   summary?: string;
   /** The universes the work has. */
   universes: FacetValueInfo[];
   /** What opens it. */
   children: ReactNode;
 }) {
+  const { t } = useTranslation("universe");
   return (
     <Dialog>
       <DialogTrigger
         render={<button type="button" className="inline-flex cursor-pointer items-baseline gap-1 underline decoration-dotted underline-offset-2 hover:decoration-solid" />}
-        title="Где упоминается и почему в списке"
+        title={t("MentionsDialog.trigger")}
       >
         {children}
       </DialogTrigger>
@@ -53,7 +55,7 @@ export function MentionsDialog({
         <DialogHeader>
           <DialogTitle>
             {url ? (
-              <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:underline" title="Страница в Викиданных">
+              <a href={url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:underline" title={t("MentionsDialog.wikidataPage")}>
                 {name} <ExternalLinkIcon className="size-4 text-muted-foreground" />
               </a>
             ) : (
@@ -74,6 +76,7 @@ export function MentionsDialog({
 
 /** Every passage of the work's texts that names the value, in the order of the work, the names marked. */
 function Quotes({ item, facet, value }: { item: ItemRef; facet: string; value: string }) {
+  const { t } = useTranslation("universe");
   const quotes = useQuery({
     queryKey: ["mentions", item.source, item.item, facet, value],
     queryFn: async () =>
@@ -82,13 +85,13 @@ function Quotes({ item, facet, value }: { item: ItemRef; facet: string; value: s
       ),
   });
   if (quotes.isLoading) return <Loader2Icon className="size-4 animate-spin text-muted-foreground" />;
-  if (quotes.isError) return <p className="text-destructive">Не удалось найти упоминания: {quotes.error.message}</p>;
+  if (quotes.isError) return <p className="text-destructive">{t("Quotes.loadFailed", { error: quotes.error.message })}</p>;
   const list = quotes.data ?? [];
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">Где упоминается</h3>
+      <h3 className="text-sm font-medium">{t("Quotes.heading")}</h3>
       {list.length === 0 ? (
-        <p className="text-muted-foreground">В текстах работы не найден.</p>
+        <p className="text-muted-foreground">{t("Quotes.none")}</p>
       ) : (
         <ol className="flex flex-col gap-2">
           {list.map((q, i) => (
@@ -133,6 +136,7 @@ function Marked({ quote }: { quote: MentionQuote }) {
 
 /** Why the dictionary has each of the [values]: the work's universes it is an entry of, with its classes there. */
 function Origins({ type, values, universes }: { type: ContentTypeInfo; values: string[]; universes: FacetValueInfo[] }) {
+  const { t } = useTranslation("universe");
   const dictionary = useUniverses(type.id, universes.length > 0);
   const linked = universes
     .map((v) => dictionary.data?.find((u) => u.value === v.key))
@@ -148,7 +152,7 @@ function Origins({ type, values, universes }: { type: ContentTypeInfo; values: s
   if (found.length === 0) return null;
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-sm font-medium">Почему в списке</h3>
+      <h3 className="text-sm font-medium">{t("Origins.heading")}</h3>
       {found.map(({ universe, entry }) => (
         <Origin key={`${universe.value} ${entry.value}`} type={type} universe={universe} entry={entry} />
       ))}
@@ -162,6 +166,7 @@ function Origins({ type, values, universes }: { type: ContentTypeInfo; values: s
  * be left out by itself; its page in the catalogue is where a wrong class is put right.
  */
 function Origin({ type, universe, entry }: { type: ContentTypeInfo; universe: UniverseInfo; entry: CharacterInfo }) {
+  const { t } = useTranslation("universe");
   const classes = useQuery(classesQuery(type.id, universe));
   const inclusion = useInclusion(type.id, universe);
   const byId = new Map((classes.data ?? []).map((c) => [c.class, c]));
@@ -170,7 +175,7 @@ function Origin({ type, universe, entry }: { type: ContentTypeInfo; universe: Un
     <div className="flex flex-col gap-1.5 rounded-lg border px-3 py-2">
       <div className="flex flex-wrap items-baseline gap-x-2">
         <span className={cn("font-medium", !entry.included && "line-through decoration-muted-foreground/60")}>{entry.names[0] ?? entry.character}</span>
-        <span className="text-xs text-muted-foreground">во вселенной «{universe.name}»</span>
+        <span className="text-xs text-muted-foreground">{t("Origin.inUniverse", { name: universe.name })}</span>
         <a href={entry.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           {entry.character} <ExternalLinkIcon className="size-3" />
         </a>
@@ -179,11 +184,11 @@ function Origin({ type, universe, entry }: { type: ContentTypeInfo; universe: Un
       <div className="text-xs text-muted-foreground">
         {entry.choice != null
           ? entry.included
-            ? "Оставлен вашим выбором, что бы ни говорили классы."
-            : "Убран вашим выбором."
+            ? t("Origin.keptByChoice")
+            : t("Origin.leftByChoice")
           : entry.classes.length === 0
-            ? "В Викиданных у него нет классов — оставлен: ничто не говорит, что это не персонаж."
-            : "В списке по классам — нажмите на неверный, чтобы убрать из вселенной все его записи:"}
+            ? t("Origin.noClasses")
+            : t("Origin.byClasses")}
       </div>
       {classes.isLoading && <Loader2Icon className="size-4 animate-spin text-muted-foreground" />}
       {own.length > 0 && (
@@ -195,7 +200,12 @@ function Origin({ type, universe, entry }: { type: ContentTypeInfo; universe: Un
               variant={c.included ? "secondary" : "outline"}
               aria-pressed={c.included}
               onClick={() => inclusion.setClass(c)}
-              title={`${c.included ? "Оставлены как персонажи" : "Убраны"}${c.choice != null ? " — ваш выбор" : ""}. Нажмите, чтобы ${c.included ? "убрать" : "оставить"} все ${c.count} во вселенной`}
+              title={t(
+                c.included
+                  ? c.choice != null ? "Origin.keptByChoiceHint" : "Origin.keptHint"
+                  : c.choice != null ? "Origin.leftByChoiceHint" : "Origin.leftHint",
+                { n: c.count },
+              )}
               className={cn("h-auto min-h-6 whitespace-normal", !c.included && "text-muted-foreground line-through decoration-muted-foreground/60")}
             >
               {c.choice != null && <span className="text-primary">•</span>}
@@ -212,7 +222,7 @@ function Origin({ type, universe, entry }: { type: ContentTypeInfo; universe: Un
           icon={entry.included ? <XIcon /> : undefined}
           disabled={classes.isLoading}
         >
-          {entry.included ? "Убрать из вселенной только его" : "Вернуть во вселенную"}
+          {entry.included ? t("Origin.leaveOut") : t("Origin.restore")}
         </AsyncButton>
       </div>
     </div>

@@ -1,11 +1,12 @@
 import { type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { BrainCircuitIcon, Loader2Icon, RefreshCwIcon, StarIcon, TriangleAlertIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, unwrap, type ContentTypeInfo, type Grade, type GradeOnScale, type ModelCandidate, type ModelInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ALL_GRADES, gradeLabel } from "@/contenttype/types";
-import { formatDate, number, percent, score } from "@/i18n";
+import { formatDate, number, percent, score } from "@/i18n/format";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
 import { FeatureBars } from "./FeatureBars";
@@ -14,14 +15,23 @@ import { useModel } from "./useModel";
 
 /** The model's state as an entry of the menu shows it: training or not, how well it orders, whether it is stale. */
 export function ModelLabel({ type }: { type: ContentTypeInfo }) {
+  const { t } = useTranslation("model");
   const model = useModel(type.id);
   const m = model.data;
   const warn = m && (!m.textEncoderReady || !m.imageEncoderReady);
   return (
     <>
       {m?.training ? <Loader2Icon className="animate-spin" /> : <BrainCircuitIcon />}
-      <span>{!m ? "Модель" : m.trained ? (m.metrics ? `порядок ${percent(m.metrics.concordance)}` : "Модель") : "Не обучена"}</span>
-      {m?.stale && !m.training && <span className="size-2 rounded-full bg-maybe" title="Оценки изменились после обучения" />}
+      <span>
+        {!m
+          ? t("ModelLabel.model")
+          : m.trained
+            ? m.metrics
+              ? t("ModelLabel.order", { percent: percent(m.metrics.concordance) })
+              : t("ModelLabel.model")
+            : t("ModelLabel.untrained")}
+      </span>
+      {m?.stale && !m.training && <span className="size-2 rounded-full bg-maybe" title={t("ModelLabel.stale")} />}
       {warn && <TriangleAlertIcon className="text-maybe" />}
     </>
   );
@@ -76,12 +86,13 @@ const GRADE_TONE: Record<number, string> = {
 
 /** Where a grade stands on the user's scale, as the score badges of the works show it. */
 function GradePlace({ grade, ladder }: { grade: Grade; ladder: GradeOnScale[] }) {
+  const { t } = useTranslation("model");
   const place = ladder.find((l) => l.grade === grade);
   if (!place) return null;
   return (
     <span
       className={cn("inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-sm font-semibold whitespace-nowrap tabular-nums", GRADE_TONE[grade])}
-      title="Место оценки на вашей шкале: прогноз работы сравнивается с этим числом"
+      title={t("GradePlace.hint")}
     >
       <StarIcon className="size-3.5 fill-current" />
       {score(place.score)}
@@ -96,6 +107,7 @@ const se = (v?: number) => (v === undefined ? "" : ` ± ${Math.round(v * 100)}`)
  * the model cannot tell apart stand at one point.
  */
 function Ladder({ type, ladder }: { type: ContentTypeInfo; ladder: GradeOnScale[] }) {
+  const { t } = useTranslation("model");
   // Grades at one point are labelled together
   const points = new Map<string, GradeOnScale[]>();
   ladder.forEach((l) => {
@@ -104,11 +116,8 @@ function Ladder({ type, ladder }: { type: ContentTypeInfo; ladder: GradeOnScale[
   });
   return (
     <section>
-      <h4 className="mb-1 text-sm font-semibold">Ваша шкала</h4>
-      <p className="mb-3 text-xs text-muted-foreground">
-        Где на шкале 0–10 оказались середины ваших оценок. Числа задаёт не кнопка, а то, насколько по-разному модель видит
-        работы разных оценок; оценки, которые она не различает, стоят в одной точке.
-      </p>
+      <h4 className="mb-1 text-sm font-semibold">{t("Ladder.title")}</h4>
+      <p className="mb-3 text-xs text-muted-foreground">{t("Ladder.about")}</p>
       <div className="relative mx-3 mt-2 mb-14 h-1.5 rounded-full bg-muted">
         {[...points.values()].map((group, i) => {
           const at = Math.min(100, Math.max(0, group[0].score * 10));
@@ -139,13 +148,14 @@ function Ladder({ type, ladder }: { type: ContentTypeInfo; ladder: GradeOnScale[
 }
 
 function Candidates({ candidates, chosen }: { candidates: ModelCandidate[]; chosen?: number }) {
+  const { t } = useTranslation("model");
   return (
     <div className="overflow-hidden rounded-lg border">
       <table className="w-full text-sm">
         <thead className="bg-muted/60 text-xs text-muted-foreground">
           <tr>
-            <th className="px-3 py-2 text-left font-medium">Параметр</th>
-            <th className="px-3 py-2 text-right font-medium">Порядок пар, %</th>
+            <th className="px-3 py-2 text-left font-medium">{t("Candidates.parameter")}</th>
+            <th className="px-3 py-2 text-right font-medium">{t("Candidates.concordance")}</th>
             <th className="px-3 py-2 text-right font-medium">ρ</th>
             <th className="px-3 py-2 text-right font-medium">AUC</th>
           </tr>
@@ -169,6 +179,7 @@ function Candidates({ candidates, chosen }: { candidates: ModelCandidate[]; chos
 }
 
 function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
+  const { t } = useTranslation("model");
   const queryClient = useQueryClient();
   const trained = (data: ModelInfo) => {
     queryClient.setQueryData(["model", type.id], data);
@@ -191,31 +202,19 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <BrainCircuitIcon className="size-5" /> Модель рекомендаций: {type.title.toLowerCase()}
+          <BrainCircuitIcon className="size-5" /> {t("ModelDetails.title", { type: type.title.toLowerCase() })}
         </DialogTitle>
-        <DialogDescription>
-          Учится порядку, а не числам: какая из двух оценённых работ с разными оценками нравится вам больше. Оценки при этом
-          не стоят никаких баллов. Шкала строится потом: середина работ с самой низкой оценкой — 0, с самой высокой — 10,
-          остальные оценки встают туда, куда их поставила модель. Тексты, обложки и картинки превращаются в векторы; к ним
-          добавляются признаки, числа сайтов и ваши действия на сайтах. Параметр выбирается кросс-валидацией по работам по
-          доле верно упорядоченных пар; из почти равных берётся самый осторожный.
-        </DialogDescription>
+        <DialogDescription>{t("ModelDetails.description")}</DialogDescription>
       </DialogHeader>
 
-      {!m.textEncoderReady && (
-        <Warning>Модель текстов не найдена в каталоге models — тексты не учитываются.</Warning>
-      )}
-      {!m.imageEncoderReady && (
-        <Warning>Модель картинок не найдена в каталоге models — обложки и картинки не учитываются.</Warning>
-      )}
-      {m.stale && !m.training && (
-        <Warning>Оценки изменились после обучения: прогнозы отстают. Модель переобучится сама через несколько секунд, или нажмите «Обучить заново».</Warning>
-      )}
+      {!m.textEncoderReady && <Warning>{t("ModelDetails.noTextEncoder")}</Warning>}
+      {!m.imageEncoderReady && <Warning>{t("ModelDetails.noImageEncoder")}</Warning>}
+      {m.stale && !m.training && <Warning>{t("ModelDetails.stale")}</Warning>}
 
       {m.scorers.length > 0 && (
         <section className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h4 className="text-sm font-semibold">Способ ранжирования</h4>
+            <h4 className="text-sm font-semibold">{t("ModelDetails.scorer")}</h4>
             <div className="flex flex-wrap gap-1">
               {m.scorers.map((s) => (
                 <Button
@@ -232,12 +231,14 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
             </div>
             {m.scorers.length > 1 && <ScorerComparisonDialog type={type} current={m.scorer} onChoose={(s) => choose.mutate(s)} busy={busy} />}
           </div>
-          {choose.isError && <div className="text-sm text-destructive">Не удалось сменить способ: {String(choose.error.message)}</div>}
+          {choose.isError && (
+            <div className="text-sm text-destructive">{t("ModelDetails.scorerFailed", { error: String(choose.error.message) })}</div>
+          )}
         </section>
       )}
 
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-        <Stat label="Оценок" value={String(rated)} />
+        <Stat label={t("ModelDetails.grades")} value={String(rated)} />
         {ALL_GRADES.map((g) => (
           <Stat
             key={g}
@@ -256,54 +257,47 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <Stat
-              label="Порядок пар, %"
+              label={t("ModelDetails.concordance")}
               value={m.metrics ? `${Math.round(m.metrics.concordance * 100)}${se(m.metrics.concordanceSe)}` : "—"}
-              hint="Доля пар работ с разными оценками, которые модель упорядочила верно (на кросс-валидации): 50 — наугад, 100 — идеально. По ней выбирается параметр: из значений, что хуже лучшего меньше чем на «±», берётся самое осторожное"
+              hint={t("ModelDetails.concordanceHint")}
             />
+            <Stat label={t("ModelDetails.spearman")} value={m.metrics?.spearman?.toFixed(2) ?? "—"} hint={t("ModelDetails.spearmanHint")} />
             <Stat
-              label="Ранговая корреляция, ρ"
-              value={m.metrics?.spearman?.toFixed(2) ?? "—"}
-              hint="Насколько порядок работ по модели совпадает с порядком ваших оценок по всем пяти градациям: 0 — случайно, 1 — полностью"
-            />
-            <Stat
-              label="AUC понравилось vs нет"
+              label={t("ModelDetails.auc")}
               value={m.metrics?.auc?.toFixed(3) ?? "—"}
-              hint={`Насколько хорошо понравившиеся (выше «${gradeLabel(type, 2)}») отделены от непонравившихся: 0.5 — наугад, 1 — идеально`}
+              hint={t("ModelDetails.aucHint", { grade: gradeLabel(type, 2) })}
             />
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <span>{scorerTitle}</span>
-            {m.parameter !== undefined && <span>· параметр {number(m.parameter)}</span>}
-            <span>· {m.features} признаков</span>
-            {m.metrics && <span>· {m.metrics.folds} фолдов</span>}
-            {m.trainedAt && <span>· обучена {formatDate(m.trainedAt)}</span>}
+            {m.parameter !== undefined && <span>· {t("ModelDetails.parameter", { value: number(m.parameter) })}</span>}
+            <span>· {t("ModelDetails.features", { count: m.features })}</span>
+            {m.metrics && <span>· {t("ModelDetails.folds", { count: m.metrics.folds })}</span>}
+            {m.trainedAt && <span>· {t("ModelDetails.trainedAt", { date: formatDate(m.trainedAt) })}</span>}
           </div>
 
           {m.candidates.length > 0 && <Candidates candidates={m.candidates} chosen={m.parameter} />}
 
           <div className="grid gap-6 md:grid-cols-2">
             <section>
-              <h4 className="mb-2 text-sm font-semibold text-yes">Поднимают на шкале</h4>
+              <h4 className="mb-2 text-sm font-semibold text-yes">{t("ModelDetails.raise")}</h4>
               <FeatureBars items={m.topPositive} />
             </section>
             <section>
-              <h4 className="mb-2 text-sm font-semibold text-no">Опускают на шкале</h4>
+              <h4 className="mb-2 text-sm font-semibold text-no">{t("ModelDetails.lower")}</h4>
               <FeatureBars items={m.topNegative} />
             </section>
           </div>
         </>
       ) : (
-        <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          Модель ещё не обучена: нужно хотя бы 3 оценки минимум двух разных видов. Кросс-валидация включается с 6 оценённых
-          работ.
-        </div>
+        <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">{t("ModelDetails.untrained")}</div>
       )}
 
       <div className="flex items-center justify-end gap-2">
-        {train.isError && <span className="text-sm text-destructive">Не удалось: {String(train.error.message)}</span>}
+        {train.isError && <span className="text-sm text-destructive">{t("ModelDetails.trainFailed", { error: String(train.error.message) })}</span>}
         <Button onClick={() => train.mutate()} disabled={busy}>
           {busy ? <Loader2Icon className="animate-spin" /> : <RefreshCwIcon />}
-          {busy ? "Обучается…" : "Обучить заново"}
+          {busy ? t("ModelDetails.training") : t("ModelDetails.retrain")}
         </Button>
       </div>
     </>

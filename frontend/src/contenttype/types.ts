@@ -29,7 +29,7 @@ export function useSource(sourceId: string | undefined): SourceOfType | undefine
   return sourceId === undefined ? undefined : findSource(types.data, sourceId);
 }
 
-/** The label of a grade as the content type words it: "Можно почитать". */
+/** The label of a grade as the content type words it: "Worth a read". */
 export function gradeLabel(type: ContentTypeInfo, grade: Grade): string {
   return type.grades[grade - 1] ?? String(grade);
 }

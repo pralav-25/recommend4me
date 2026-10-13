@@ -1,0 +1,6 @@
+{
+  "NumberFilter.from": "от",
+  "NumberFilter.fromLabel": "{{label}}: от",
+  "NumberFilter.to": "до",
+  "NumberFilter.toLabel": "{{label}}: до"
+}

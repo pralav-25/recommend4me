@@ -1,0 +1,12 @@
+{
+  "ReviewCard.influence": "Predviđanje kakvo jeste minus predviđanje bez ove recenzije, u bodovima vaše skale",
+  "ReviewMatches.explanation": "Recenzija ovog dela, a ispod nje — recenzija drugog dela koju ste označili. Broj pokazuje koliko sličnost nije slučajna, kao kod slika; ✓ i ✕ — takođe kao kod slika.",
+  "ReviewMatches.heading": "Slično recenzijama koje ste označili",
+  "ReviewMatches.likeDrop": "Slično recenziji zbog koje biste odbacili delo",
+  "ReviewMatches.likePick": "Slično recenziji zbog koje biste izabrali delo",
+  "Reviews.explanationMark": "Recenziju koja kaže zašto biste izabrali delo ili ga odbacili označite sa 👍 ili 👎 — model će tražiti slične u drugim delima.",
+  "Reviews.explanationPoints": "Broj pokazuje za koliko bodova vaše skale: predviđanje kakvo jeste minus predviđanje bez ove recenzije.",
+  "Reviews.more": "Još {{n, number}}",
+  "Reviews.mostMoving": "najviše pomeraju predviđanje",
+  "Reviews.newest": "najnovije"
+}

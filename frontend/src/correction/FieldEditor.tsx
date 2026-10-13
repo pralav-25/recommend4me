@@ -1,18 +1,20 @@
 import { useState, type KeyboardEvent } from "react";
 import { CheckIcon, PencilIcon, Undo2Icon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
-/** "исправлено": the value shown is the user's, not the site's. */
+/** "corrected": the value shown is the user's, not the site's. */
 export function CorrectedMark({ className }: { className?: string }) {
+  const { t } = useTranslation("correction");
   return (
     <span
       className={cn("rounded border border-dashed border-primary/50 px-1 text-[10px] leading-4 font-normal text-muted-foreground", className)}
-      title="Значение исправлено вами; сайт даёт другое"
+      title={t("CorrectedMark.hint")}
     >
-      исправлено
+      {t("CorrectedMark.label")}
     </span>
   );
 }
@@ -37,7 +39,7 @@ export function EditButton({ onClick, title, className }: { onClick: () => void;
 
 /**
  * Editing one field of an item: the title, a text or a number. Saving overrides the site's value;
- * "как на сайте" takes the correction back. Closes itself once the item is saved.
+ * "as on the site" takes the correction back. Closes itself once the item is saved.
  */
 export function FieldEditor({
   value,
@@ -58,6 +60,7 @@ export function FieldEditor({
   onClose: () => void;
   className?: string;
 }) {
+  const { t } = useTranslation("correction");
   const [draft, setDraft] = useState(value);
   const invalid = numeric ? draft.trim() === "" || !isFinite(Number(draft.replace(",", "."))) : false;
   const save = async () => {
@@ -102,14 +105,14 @@ export function FieldEditor({
       )}
       <div className="flex flex-wrap items-center gap-1">
         <AsyncButton size="sm" onClick={save} disabled={invalid || draft === value} icon={<CheckIcon />}>
-          Сохранить
+          {t("FieldEditor.save")}
         </AsyncButton>
         <Button size="sm" variant="ghost" onClick={onClose}>
-          Отмена
+          {t("FieldEditor.cancel")}
         </Button>
         {corrected && (
-          <AsyncButton size="sm" variant="outline" onClick={reset} icon={<Undo2Icon />} className="ml-auto" title="Убрать исправление: снова значение сайта">
-            Как на сайте
+          <AsyncButton size="sm" variant="outline" onClick={reset} icon={<Undo2Icon />} className="ml-auto" title={t("FieldEditor.resetHint")}>
+            {t("FieldEditor.reset")}
           </AsyncButton>
         )}
       </div>

@@ -1,0 +1,10 @@
+{
+  "PartText.failed": "The text didn't load",
+  "Parts.influence": "The prediction as it is minus the prediction without this chapter's text, in points of your scale",
+  "Parts.more": "{{n, number}} more",
+  "Parts.noText": "Text not kept",
+  "Parts.showText": "Show the text",
+  "Parts.upDown": "<up>{{up, number}} raise</up>, <down>{{down, number}} lower</down>",
+  "Parts.upDownHint": "How many kept chapters raise the prediction and how many lower it — each by itself",
+  "Parts.withText": "text kept for {{n, number}}"
+}

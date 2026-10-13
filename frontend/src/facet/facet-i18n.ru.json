@@ -1,0 +1,8 @@
+{
+  "ChanceMark.unlikely": "Модель считает, что скорее этого у работы нет",
+  "FacetDropdown.all": "Всё",
+  "FacetDropdown.findPlaceholder": "Найти…",
+  "FacetDropdown.none": "Ничего",
+  "FacetDropdown.summaryCount": "{{shown, number}} из {{total, number}}",
+  "FacetDropdown.summaryNone": "ничего"
+}

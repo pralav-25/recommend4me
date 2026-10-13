@@ -1,0 +1,18 @@
+{
+  "Work.parts.about": "Тексты глав, нарезанные на фрагменты; у каждого фрагмента свой вектор.",
+  "Work.parts.title": "Главы",
+  "Work.pictures.about": "Обложки и скриншоты, разобранные моделью картинок: сначала оценённых работ, потом остальных по прогнозу.",
+  "Work.pictures.title": "Картинки",
+  "Work.sets.about": "Пересчёт направлений наборов: скриншотов, отзывов, фрагментов текста.",
+  "Work.sets.title": "Наборы",
+  "Work.texts.about": "Описания и другие тексты, превращённые в векторы для модели и поиска по смыслу.",
+  "Work.texts.title": "Тексты",
+  "WorkProgress.counts": "{{title}}: {{done}} из {{total}}.",
+  "WorkProgress.countsFailed": "{{title}}: {{done}} из {{total}}, не удалось: {{failed}}.",
+  "WorkProgress.countsFailedRunning": "{{title}}: {{done}} из {{total}}, не удалось: {{failed}} — идёт сейчас.",
+  "WorkProgress.countsRunning": "{{title}}: {{done}} из {{total}} — идёт сейчас.",
+  "WorkProgress.idle": "{{title}}.",
+  "WorkProgress.running": "{{title}} — идёт сейчас.",
+  "WorkProgress.speed": "Скорость {{speed}} в минуту.",
+  "WorkProgress.speedLeft": "Скорость {{speed}} в минуту, осталось ~{{left}}."
+}

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ComponentProps, type MouseEvent, type ReactNode } from "react";
 import { Loader2Icon, TriangleAlertIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 
 /**
@@ -33,6 +34,7 @@ export function AsyncButton({
   /** The icon; a spinner while at work, a warning sign after a failure. */
   icon?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
   const alive = useRef(true);
@@ -47,7 +49,7 @@ export function AsyncButton({
     <Button
       {...rest}
       disabled={disabled || busy}
-      title={failed ? `Не вышло: ${failed}` : title}
+      title={failed ? t("AsyncButton.failed", { error: failed }) : title}
       onClick={async (e) => {
         e.preventDefault();
         e.stopPropagation();

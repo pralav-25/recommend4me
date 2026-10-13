@@ -1,11 +1,12 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckIcon, CopyIcon, ExternalLinkIcon, Loader2Icon, RadarIcon } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import { api, unwrap, type ItemRef } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { findSource, useTypes } from "@/contenttype/types";
-import { ago, formatDate } from "@/i18n";
+import { ago, formatDate } from "@/i18n/format";
 import { ItemRefDialog } from "@/item/ItemRefDialog";
 
 const DEFAULT_ADDRESS = "http://127.0.0.1:8095";
@@ -36,6 +37,7 @@ export function CaptureDialog({ open, onOpenChange: setOpen }: { open: boolean; 
 }
 
 function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) {
+  const { t } = useTranslation("capture");
   const types = useTypes();
   const patterns = useQuery({
     queryKey: ["capture", "patterns"],
@@ -59,54 +61,38 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <RadarIcon className="size-5" /> Слежение в браузере
+          <RadarIcon className="size-5" /> {t("CaptureDetails.title")}
         </DialogTitle>
-        <DialogDescription>
-          Расширение для Firefox присылает сюда страницы сайтов, которые вы открываете, — так приложение узнаёт о работах,
-          ничего не запрашивая у сайта само, и видит их такими, какими их видите вы (с вашим входом).
-        </DialogDescription>
+        <DialogDescription>{t("CaptureDetails.description")}</DialogDescription>
       </DialogHeader>
 
       <ol className="flex list-decimal flex-col gap-2 pl-5 text-sm">
         <li>
-          Откройте в Firefox адрес <Code>about:debugging#/runtime/this-firefox</Code> — его нужно вставить в адресную строку
-          вручную, по ссылке Firefox его не откроет.
+          <Trans t={t} i18nKey="CaptureDetails.firefoxStep1" components={{ code: <Code /> }} />
         </li>
         <li>
-          Нажмите «Загрузить временное дополнение…» и выберите файл расширения — вставьте его путь в поле имени файла:
+          {t("CaptureDetails.firefoxStep2")}
           <ManifestPath manifest={extension.data?.manifest} loading={extension.isLoading} />
         </li>
-        <li>
-          Готово: расширение работает, пока Firefox не перезапустится; после перезапуска его нужно загрузить снова тем же
-          способом. После обновления приложения нажмите у расширения «Перезагрузить» на той же странице.
-        </li>
+        <li>{t("CaptureDetails.firefoxStep3")}</li>
       </ol>
 
       <SafariSteps />
 
       <section className="flex flex-col gap-2 text-sm">
-        <h4 className="font-semibold">Что расширение показывает на сайтах</h4>
-        <p className="text-muted-foreground">
-          На странице работы — панель с прогнозом, кнопками оценки и тем, на чём держится прогноз. У каждого тега сайта — в
-          скобках уверенность модели (жёлтым, если скорее нет) и ваши ✓ «есть» и ✕ «нет»; повторное нажатие снимает ответ.
-          После них — ваши теги, подсказки пунктиром и поле, чтобы добавить свой. На ficbook под блоком «Пэйринг и персонажи»
-          — вычисленные пейринги и главные персонажи. Под отзывами и картинками — «+ / −»: повод выбрать работу или
-          отказаться от неё. В лентах и поиске на каждой карточке — прогноз и ваша оценка. Выключается в настройках
-          расширения.
-        </p>
+        <h4 className="font-semibold">{t("CaptureDetails.shownHeading")}</h4>
+        <p className="text-muted-foreground">{t("CaptureDetails.shown")}</p>
       </section>
 
       <section className="flex flex-col gap-2 text-sm">
-        <h4 className="font-semibold">Что присылает расширение</h4>
+        <h4 className="font-semibold">{t("CaptureDetails.sentHeading")}</h4>
         <p className="text-muted-foreground">
-          Только страницы этих сайтов — и только по адресу, на который оно настроено: по умолчанию <Code>{DEFAULT_ADDRESS}</Code>
-          , это приложение на этом компьютере. Адрес меняется в настройках расширения (about:addons → recommend4me →
-          Настройки). Страницы остальных сайтов никуда не уходят.
+          <Trans t={t} i18nKey="CaptureDetails.sent" values={{ address: DEFAULT_ADDRESS }} components={{ code: <Code /> }} />
         </p>
         {patterns.isLoading ? (
           <Loader2Icon className="size-4 animate-spin text-muted-foreground" />
         ) : tracked.length === 0 ? (
-          <p className="text-muted-foreground">Ни один источник сейчас не следит за страницами в браузере.</p>
+          <p className="text-muted-foreground">{t("CaptureDetails.noSources")}</p>
         ) : (
           <ul className="flex flex-col gap-1">
             {tracked.map((p) => (
@@ -119,7 +105,7 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
                   <span className="font-medium">{titleOf(p.source)}</span>
                 )}
                 <span className="truncate font-mono text-xs text-muted-foreground" title={p.patterns.join("\n")}>
-                  {p.patterns.length === 1 ? p.patterns[0] : `${p.patterns.length} шаблонов адресов`}
+                  {p.patterns.length === 1 ? p.patterns[0] : t("CaptureDetails.patterns", { count: p.patterns.length })}
                 </span>
               </li>
             ))}
@@ -129,13 +115,11 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
 
       <section className="flex flex-col gap-2 text-sm">
         <h4 className="flex items-center gap-2 font-semibold">
-          Последние присланные страницы
+          {t("CaptureDetails.recentHeading")}
           {recent.isFetching && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
         </h4>
-        {recent.data && recent.data.length === 0 && (
-          <p className="text-muted-foreground">Пока ни одной. Откройте страницу работы на одном из сайтов выше — она появится здесь через пару секунд.</p>
-        )}
-        {recent.isError && <p className="text-destructive">Не удалось загрузить список</p>}
+        {recent.data && recent.data.length === 0 && <p className="text-muted-foreground">{t("CaptureDetails.recentNone")}</p>}
+        {recent.isError && <p className="text-destructive">{t("CaptureDetails.recentFailed")}</p>}
         <ul className="flex flex-col divide-y rounded-lg border">
           {(recent.data ?? []).map((p) => (
             <li key={`${p.url}-${p.capturedAt}`} className="flex items-center gap-2 px-3 py-1.5">
@@ -147,7 +131,7 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
                 <button
                   className="min-w-0 flex-1 truncate text-left underline-offset-2 hover:underline"
                   onClick={() => onOpenItem({ source: p.source, item: p.item! })}
-                  title="Открыть работу"
+                  title={t("CaptureDetails.openWork")}
                 >
                   {p.title ?? p.item}
                 </button>
@@ -156,7 +140,7 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
                   {p.url}
                 </span>
               )}
-              <a href={p.url} target="_blank" rel="noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground" title="Страница на сайте">
+              <a href={p.url} target="_blank" rel="noreferrer" className="shrink-0 text-muted-foreground hover:text-foreground" title={t("CaptureDetails.sitePage")}>
                 <ExternalLinkIcon className="size-3.5" />
               </a>
             </li>
@@ -177,43 +161,32 @@ const USERSCRIPTS = "https://apps.apple.com/app/userscripts/id1463298887";
  * the iPad reaches the application at: over https, which `tailscale serve` gives.
  */
 function SafariSteps() {
+  const { t } = useTranslation("capture");
   const origin = window.location.origin;
   const script = `${origin}/userscript/recommend4me.user.js`;
   const secure = window.location.protocol === "https:";
   return (
     <section className="flex flex-col gap-2 text-sm">
-      <h4 className="font-semibold">Safari на iPad</h4>
-      <p className="text-muted-foreground">
-        Расширение без App Store в Safari не поставить, поэтому на iPad то же самое делает скрипт для бесплатного приложения
-        Userscripts: присылает страницы и показывает на них прогноз, оценку и теги.
-      </p>
+      <h4 className="font-semibold">{t("SafariSteps.heading")}</h4>
+      <p className="text-muted-foreground">{t("SafariSteps.intro")}</p>
       <ol className="flex list-decimal flex-col gap-2 pl-5">
         <li>
-          На этом компьютере один раз отдайте приложение по https через Tailscale: в настройках сети Tailscale (DNS) включите
-          «HTTPS Certificates», затем выполните <Code>tailscale serve --bg 8095</Code>. Приложение откроется по адресу вида{" "}
-          <Code>https://имя-компьютера.ваша-сеть.ts.net</Code> — без порта.
+          <Trans t={t} i18nKey="SafariSteps.step1" components={{ code: <Code /> }} />
         </li>
         <li>
-          На iPad поставьте{" "}
-          <a href={USERSCRIPTS} target="_blank" rel="noreferrer" className="underline underline-offset-2">
-            Userscripts
-          </a>{" "}
-          из App Store, откройте его один раз и выберите папку для скриптов. Затем в «Настройки → Приложения → Safari →
-          Расширения → Userscripts» включите его и разрешите на всех сайтах.
+          <Trans
+            t={t}
+            i18nKey="SafariSteps.step2"
+            components={{ link: <a href={USERSCRIPTS} target="_blank" rel="noreferrer" className="underline underline-offset-2" /> }}
+          />
         </li>
         <li>
-          В Safari на iPad откройте это окно по https-адресу из шага 1 и нажмите ссылку на скрипт ниже, затем значок Userscripts
-          в адресной строке → «Install». Скрипт запомнит адрес, с которого его взяли, и будет обновляться оттуда же.
+          {t("SafariSteps.step3")}
           <div className="mt-1 flex flex-col gap-1">
             <a href={script} className="font-mono text-xs break-all underline underline-offset-2">
               {script}
             </a>
-            {!secure && (
-              <span className="text-xs text-maybe">
-                Это окно открыто не по https: взятый отсюда скрипт будет обращаться к {origin}, а iPad туда, скорее всего, не
-                дотянется. Откройте приложение на iPad по адресу из шага 1.
-              </span>
-            )}
+            {!secure && <span className="text-xs text-maybe">{t("SafariSteps.notSecure", { origin })}</span>}
           </div>
         </li>
       </ol>
@@ -223,12 +196,13 @@ function SafariSteps() {
 
 /** The path of the extension's manifest.json on this machine, with a button to copy it. */
 function ManifestPath({ manifest, loading }: { manifest?: string; loading: boolean }) {
+  const { t } = useTranslation("capture");
   const [copied, setCopied] = useState(false);
   if (loading) return <Loader2Icon className="mt-1 size-4 animate-spin text-muted-foreground" />;
   if (!manifest) {
     return (
       <p className="mt-1 text-destructive">
-        Приложение не знает, где лежит расширение: запустите его из установленной папки (там есть папка <Code>extension</Code>).
+        <Trans t={t} i18nKey="ManifestPath.unknown" components={{ code: <Code /> }} />
       </p>
     );
   }
@@ -240,14 +214,15 @@ function ManifestPath({ manifest, loading }: { manifest?: string; loading: boole
   return (
     <div className="mt-1 flex items-center gap-2">
       <Code>{manifest}</Code>
-      <Button variant="outline" size="sm" onClick={copy} title="Скопировать путь">
+      <Button variant="outline" size="sm" onClick={copy} title={t("ManifestPath.copyPath")}>
         {copied ? <CheckIcon /> : <CopyIcon />}
-        {copied ? "Скопировано" : "Скопировать"}
+        {copied ? t("ManifestPath.copied") : t("ManifestPath.copy")}
       </Button>
     </div>
   );
 }
 
-function Code({ children }: { children: ReactNode }) {
+/** Code in a sentence; without [children] when a translation's <code> tag fills it in. */
+function Code({ children }: { children?: ReactNode }) {
   return <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs break-words">{children}</code>;
 }

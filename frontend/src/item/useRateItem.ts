@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap, type ContentTypeInfo, type Grade, type ItemRef, type ItemSummary, type RatingRecord } from "@/api/client";
 import { toast } from "@/components/ui/toast";
 import { findSource, gradeLabel } from "@/contenttype/types";
+import i18n from "@/i18n/i18n";
 import { applyGrade, itemKey, ITEMS } from "./lists";
 import { heldOutLater } from "./useHeldOut";
 
@@ -36,11 +37,11 @@ export function useRateItem() {
       const type = findSource(queryClient.getQueryData<ContentTypeInfo[]>(["types"]), updated.source)?.type;
       const previous = (summary.grade as Grade | undefined) ?? null;
       toast.add({
-        title: updated.grade ? (type ? gradeLabel(type, updated.grade as Grade) : String(updated.grade)) : "Оценка снята",
+        title: updated.grade ? (type ? gradeLabel(type, updated.grade as Grade) : String(updated.grade)) : i18n.t("RateItem.cleared", { ns: "item" }),
         description: `${summary.title} ${summary.version}`.trim(),
         timeout: 5000,
         actionProps: {
-          children: "Отменить",
+          children: i18n.t("RateItem.undo", { ns: "item" }),
           onClick: async () => {
             apply(await send(summary, previous));
             // An item put back into a list it had left needs the list from the server
@@ -49,7 +50,7 @@ export function useRateItem() {
         },
       });
     },
-    onError: (error) => toast.add({ title: "Не удалось сохранить оценку", description: error.message, type: "error" }),
+    onError: (error) => toast.add({ title: i18n.t("RateItem.failed", { ns: "item" }), description: error.message, type: "error" }),
   });
 }
 

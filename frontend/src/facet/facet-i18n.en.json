@@ -1,0 +1,8 @@
+{
+  "ChanceMark.unlikely": "The model thinks the work more likely lacks this",
+  "FacetDropdown.all": "All",
+  "FacetDropdown.findPlaceholder": "Find…",
+  "FacetDropdown.none": "None",
+  "FacetDropdown.summaryCount": "{{shown, number}} of {{total, number}}",
+  "FacetDropdown.summaryNone": "none"
+}

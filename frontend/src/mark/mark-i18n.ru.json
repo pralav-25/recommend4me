@@ -1,0 +1,10 @@
+{
+  "MarkButtons.against": "Из-за этого отбросил бы",
+  "MarkButtons.clear": "Снять отметку",
+  "MarkButtons.for": "Из-за этого выбрал бы",
+  "MatchVerdict.otherSense": "Похоже, но не в том смысле",
+  "MatchVerdict.recountNote": "Отметка учтёт это при следующем пересчёте",
+  "MatchVerdict.sameSense": "Похоже в том самом смысле",
+  "MatchVerdict.takeBack": "Забрать ответ",
+  "MatchVerdict.undo": "Отменить"
+}

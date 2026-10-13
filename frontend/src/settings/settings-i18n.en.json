@@ -1,0 +1,16 @@
+{
+  "Field.default": "default",
+  "Field.delete": "Delete",
+  "Field.keepEmpty": "leave empty to keep it unchanged",
+  "Field.newValue": "new value",
+  "Field.notSet": "not set",
+  "Field.set": "set",
+  "SettingsDialog.close": "Close",
+  "SettingsDialog.description": "Kept in the application's local database. Each site has its own.",
+  "SettingsDialog.loadFailed": "Couldn't load the settings",
+  "SettingsDialog.nothing": "Nothing to set up.",
+  "SettingsDialog.title": "Settings",
+  "SourceForm.save": "Save",
+  "SourceForm.saveFailed": "Couldn't save: {{error}}",
+  "SourceForm.saved": "saved"
+}

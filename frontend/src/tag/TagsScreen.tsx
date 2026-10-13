@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, CombineIcon, Loader2Icon, SearchIcon, TagsIcon, XIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   api,
   unwrap,
@@ -17,7 +18,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
-import { plural } from "@/i18n";
 import { usePref } from "@/lib/usePref";
 import { cn } from "@/lib/utils";
 import { followLink, screenHref } from "@/screen/screens";
@@ -34,13 +34,10 @@ const QUERY_SETTLE_MS = 400;
 /** How many alike tags are offered for a tag. */
 const SIMILAR = 30;
 
-const RULE_LABEL: Record<TagNameRule, string> = {
-  EXPLICIT: "название задано вами",
-  LIKED: "самое частое название у понравившихся работ (оценки выше середины)",
-  GRADED: "самое частое название у оценённых работ",
-  ALL: "самое частое название у всех работ",
-  ALPHABET: "первое по алфавиту название",
-};
+/** The key of the words saying how a tag's name was chosen. */
+function ruleKey(rule: TagNameRule) {
+  return `Rule.${rule}` as const;
+}
 
 function sourceTitle(type: ContentTypeInfo, id: string): string {
   return type.sources.find((s) => s.id === id)?.title ?? id;
@@ -54,11 +51,12 @@ function sitesOf(tag: TagInfo): string[] {
 /**
  * THE SCREEN OF THE TAGS: the normalized tags of a content type's free tags. Every site's tag is
  * bound to a normalized tag — at first to the one of its name, any case; the user merges tags that
- * are one — "Angst" and "Ангст" — names a tag, takes a site's tag out of one, puts tags under
+ * are one — "Angst" and its Russian spelling — names a tag, takes a site's tag out of one, puts tags under
  * others, tells two apart. The application only offers tags alike by the meaning of their names; it
  * merges nothing by itself.
  */
 export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected?: string }) {
+  const { t } = useTranslation("tag");
   return (
     <div className="mx-auto grid max-w-[1800px] gap-4 px-4 py-4 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
       <div className={cn(selected && "hidden lg:block")}>
@@ -69,18 +67,10 @@ export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected
       ) : (
         <div className="hidden flex-col gap-2 text-sm text-muted-foreground lg:flex">
           <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
-            <TagsIcon className="size-5" /> Теги: {type.title.toLowerCase()}
+            <TagsIcon className="size-5" /> {t("TagsScreen.title", { type: type.title.toLowerCase() })}
           </h1>
-          <p>
-            Нормализованные теги: каждый тег каждого сайта привязан к одному из них — сначала к тегу своего названия без учёта
-            регистра: «Магия» одного сайта и «магия» другого — один тег. Одинаковые по смыслу теги («Angst» и «Ангст», «Enemies to
-            Lovers» и «От врагов к возлюбленным») объединяете вы: выберите тег слева — справа будут похожие по смыслу, с любого
-            сайта, и теги сайтов, привязанные к нему.
-          </p>
-          <p>
-            Название объединённого тега — заданное вами, иначе самое частое у понравившихся вам работ, у оценённых, у всех, иначе
-            первое по алфавиту.
-          </p>
+          <p>{t("TagsScreen.intro")}</p>
+          <p>{t("TagsScreen.nameRule")}</p>
         </div>
       )}
     </div>
@@ -88,15 +78,16 @@ export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected
 }
 
 function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string }) {
+  const { t } = useTranslation("tag");
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       setQuery(input.trim());
       setLimit(PAGE);
     }, QUERY_SETTLE_MS);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [input]);
   const tags = useQuery({
     queryKey: [TAGS, type.id, "list", query, limit],
@@ -109,33 +100,33 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
     <section className="flex flex-col gap-2">
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="Найти тег по названию на любом сайте" className="pl-8" type="search" />
+        <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder={t("TagList.searchPlaceholder")} className="pl-8" type="search" />
       </div>
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
-        {page && <span>{plural(page.total, "тег", "тега", "тегов")}, чаще всего используемые первыми</span>}
+        {page && <span>{t("TagList.total", { count: page.total })}</span>}
         {tags.isFetching && <Loader2Icon className="size-3.5 animate-spin" />}
       </div>
-      {tags.isError && <p className="text-sm text-destructive">Теги не загрузились: {tags.error.message}</p>}
+      {tags.isError && <p className="text-sm text-destructive">{t("TagList.loadError", { error: tags.error.message })}</p>}
       <ul className="flex flex-col divide-y rounded-lg border">
-        {page?.tags.map((t) => (
-          <li key={t.key}>
+        {page?.tags.map((row) => (
+          <li key={row.key}>
             <a
-              href={screenHref({ kind: "tags", tag: t.key })}
-              onClick={(e) => followLink(e, { kind: "tags", tag: t.key })}
-              aria-current={t.key === selected ? "page" : undefined}
-              className={cn("flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted/50", t.key === selected && "bg-muted")}
+              href={screenHref({ kind: "tags", tag: row.key })}
+              onClick={(e) => followLink(e, { kind: "tags", tag: row.key })}
+              aria-current={row.key === selected ? "page" : undefined}
+              className={cn("flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted/50", row.key === selected && "bg-muted")}
             >
-              <span className="min-w-0 flex-1 truncate" title={t.variants.map((v) => v.name).join(" · ")}>
-                {t.name}
+              <span className="min-w-0 flex-1 truncate" title={row.variants.map((v) => v.name).join(" · ")}>
+                {row.name}
               </span>
-              {t.variants.length > 1 && (
-                <Badge variant="secondary" title={`Теги сайтов: ${t.variants.map((v) => v.name).join(", ")}`}>
-                  <CombineIcon /> {t.variants.length}
+              {row.variants.length > 1 && (
+                <Badge variant="secondary" title={t("TagList.siteTags", { names: row.variants.map((v) => v.name).join(", ") })}>
+                  <CombineIcon /> {row.variants.length}
                 </Badge>
               )}
-              <span className="text-xs text-muted-foreground">{sitesOf(t).map((s) => sourceTitle(type, s)).join(", ")}</span>
-              <span className="w-10 text-right text-xs tabular-nums text-muted-foreground" title="Работ с тегом">
-                {t.works}
+              <span className="text-xs text-muted-foreground">{sitesOf(row).map((s) => sourceTitle(type, s)).join(", ")}</span>
+              <span className="w-10 text-right text-xs tabular-nums text-muted-foreground" title={t("TagList.works")}>
+                {row.works}
               </span>
             </a>
           </li>
@@ -143,7 +134,7 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
       </ul>
       {page && page.tags.length < page.total && (
         <Button variant="outline" size="sm" onClick={() => setLimit(limit + PAGE)} disabled={tags.isFetching}>
-          Показать ещё
+          {t("TagList.more")}
         </Button>
       )}
     </section>
@@ -162,11 +153,12 @@ function useTagsChanged(typeId: string) {
 }
 
 function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
+  const { t } = useTranslation("tag");
   const info = useQuery({
     queryKey: [TAGS, type.id, "one", tag],
     queryFn: async () => unwrap(await api.GET("/api/types/{type}/tags/one", { params: { path: { type: type.id }, query: { tag } } })),
   });
-  const t = info.data;
+  const found = info.data;
   return (
     <section className="flex min-w-0 flex-col gap-4">
       <a
@@ -174,22 +166,23 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
         onClick={(e) => followLink(e, { kind: "tags" })}
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground lg:hidden"
       >
-        <ArrowLeftIcon className="size-4" /> Все теги
+        <ArrowLeftIcon className="size-4" /> {t("TagDetails.allTags")}
       </a>
       {info.isLoading && <Loader2Icon className="size-5 animate-spin text-muted-foreground" />}
-      {info.isError && <p className="text-sm text-destructive">Тег не загрузился: {info.error.message}</p>}
-      {t && (
+      {info.isError && <p className="text-sm text-destructive">{t("TagDetails.loadError", { error: info.error.message })}</p>}
+      {found && (
         <>
           <header className="flex flex-col gap-1">
-            <h1 className="text-xl font-semibold">{t.name}</h1>
+            <h1 className="text-xl font-semibold">{found.name}</h1>
             <p className="text-sm text-muted-foreground">
-              {RULE_LABEL[t.rule]} · {plural(t.works, "работа", "работы", "работ")} · оценено {t.graded} · понравилось {t.liked}
+              {t(ruleKey(found.rule))} · {t("TagDetails.works", { count: found.works })} · {t("TagDetails.graded", { graded: found.graded })} ·{" "}
+              {t("TagDetails.liked", { liked: found.liked })}
             </p>
           </header>
-          <TagName type={type} tag={t} />
-          <Related tag={t} />
-          <Variants type={type} tag={t} />
-          <Similar type={type} tag={t} />
+          <TagName type={type} tag={found} />
+          <Related tag={found} />
+          <Variants type={type} tag={found} />
+          <Similar type={type} tag={found} />
         </>
       )}
     </section>
@@ -198,6 +191,7 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
 
 /** The tags right above and under this one, each a link to its own page. */
 function Related({ tag }: { tag: TagInfo }) {
+  const { t } = useTranslation("tag");
   if (tag.parents.length === 0 && tag.children.length === 0) return null;
   const links = (list: TagRef[]) =>
     list.map((r, i) => (
@@ -211,14 +205,14 @@ function Related({ tag }: { tag: TagInfo }) {
   return (
     <div className="flex flex-col gap-0.5 text-sm">
       {tag.parents.length > 0 && (
-        <div title="Работа с этим тегом получает и надтеги">
-          <span className="text-muted-foreground">Надтеги: </span>
+        <div title={t("Related.parentsTitle")}>
+          <span className="text-muted-foreground">{t("Related.parents")} </span>
           {links(tag.parents)}
         </div>
       )}
       {tag.children.length > 0 && (
-        <div title="Отрицание этого тега у работы отрицает и подтеги">
-          <span className="text-muted-foreground">Подтеги: </span>
+        <div title={t("Related.childrenTitle")}>
+          <span className="text-muted-foreground">{t("Related.children")} </span>
           {links(tag.children)}
         </div>
       )}
@@ -228,13 +222,14 @@ function Related({ tag }: { tag: TagInfo }) {
 
 /** The name the user gives the tag, or none: then the sites' names decide. */
 function TagName({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+  const { t } = useTranslation("tag");
   const changed = useTagsChanged(type.id);
   const [name, setName] = useState(tag.explicitName ?? "");
   const save = useMutation({
     mutationFn: async (value: string | null) =>
       unwrap(await api.PUT("/api/types/{type}/tags/name", { params: { path: { type: type.id } }, body: { tag: tag.key, name: value ?? undefined } })),
-    onSuccess: (t) => {
-      setName(t.explicitName ?? "");
+    onSuccess: (saved) => {
+      setName(saved.explicitName ?? "");
       return changed();
     },
   });
@@ -246,33 +241,38 @@ function TagName({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
         save.mutate(name.trim() || null);
       }}
     >
-      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={tag.name} className="max-w-sm" aria-label="Своё название тега" />
+      <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={tag.name} className="max-w-sm" aria-label={t("TagName.label")} />
       <Button type="submit" size="sm" disabled={save.isPending || name.trim() === (tag.explicitName ?? "")}>
-        {save.isPending && <Loader2Icon className="animate-spin" />} Назвать
+        {save.isPending && <Loader2Icon className="animate-spin" />} {t("TagName.save")}
       </Button>
       {tag.explicitName && (
-        <Button type="button" variant="ghost" size="sm" onClick={() => save.mutate(null)} disabled={save.isPending} title="Название снова выбирается по сайтам">
-          <XIcon /> Сбросить своё название
+        <Button type="button" variant="ghost" size="sm" onClick={() => save.mutate(null)} disabled={save.isPending} title={t("TagName.resetTitle")}>
+          <XIcon /> {t("TagName.reset")}
         </Button>
       )}
-      {save.isError && <span className="w-full text-sm text-destructive">Не сохранилось: {save.error.message}</span>}
+      {save.isError && <span className="w-full text-sm text-destructive">{t("TagName.saveError", { error: save.error.message })}</span>}
     </form>
   );
 }
 
 /** The sites' tags bound to the tag, as the sites write them, with their works. */
 function Variants({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+  const { t } = useTranslation("tag");
   return (
     <section className="flex flex-col gap-1.5 text-sm">
-      <h2 className="font-semibold">Теги сайтов</h2>
+      <h2 className="font-semibold">{t("Variants.title")}</h2>
       <table className="w-full">
         <thead className="text-xs text-muted-foreground">
           <tr className="text-left">
-            <th className="font-normal">Сайт</th>
-            <th className="font-normal">Название</th>
-            <th className="pl-3 text-right font-normal">Работ</th>
-            <th className="hidden pl-3 text-right font-normal sm:table-cell" title="Оценено">Оцен.</th>
-            <th className="hidden pl-3 text-right font-normal sm:table-cell" title="Понравилось">Понр.</th>
+            <th className="font-normal">{t("Variants.site")}</th>
+            <th className="font-normal">{t("Variants.name")}</th>
+            <th className="pl-3 text-right font-normal">{t("Variants.works")}</th>
+            <th className="hidden pl-3 text-right font-normal sm:table-cell" title={t("Variants.gradedTitle")}>
+              {t("Variants.graded")}
+            </th>
+            <th className="hidden pl-3 text-right font-normal sm:table-cell" title={t("Variants.likedTitle")}>
+              {t("Variants.liked")}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -293,13 +293,11 @@ function Variants({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
 
 type Said = Exclude<TagRelation, "NONE">;
 
-/** What the user may say another tag is to this one: a button of every row, and a filter of the rows said so. */
-const RELATIONS: { relation: Said; label: string; title: string; filter: string }[] = [
-  { relation: "MERGED", label: "Объединить", title: "Это тот же тег: его теги сайтов — теги этого", filter: "объединённые" },
-  { relation: "CHILD", label: "Подтег", title: "Это подтег: работа с ним получает и этот тег; «нет» этого тега — «нет» и ему", filter: "подтеги" },
-  { relation: "PARENT", label: "Надтег", title: "Это надтег: работа с этим тегом получает и его; «нет» ему — «нет» и этому", filter: "надтеги" },
-  { relation: "DIFFERENT", label: "Разные", title: "Это другой тег, просто похоже назван", filter: "разные" },
-];
+/**
+ * What the user may say another tag is to this one: a button of every row, and a filter of the rows
+ * said so; the words of each are the keys "Relation.<relation>.label", ".title" and ".filter".
+ */
+const RELATIONS: Said[] = ["MERGED", "CHILD", "PARENT", "DIFFERENT"];
 
 /** The quiet after the last answer before the table is read anew. */
 const REFRESH_AFTER_MS = 2000;
@@ -332,14 +330,15 @@ function rowKey(tag: string, site?: TagVariantInfo): string {
  * click meant for the one that was there.
  */
 function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+  const { t } = useTranslation("tag");
   const [stored, setShown] = usePref<Partial<Record<Said, boolean>>>("tags.similar.shown", {});
   const shown: Record<Said, boolean> = { MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true, ...stored };
-  const hidden = RELATIONS.filter((r) => !shown[r.relation]).map((r) => r.relation);
+  const hidden = RELATIONS.filter((r) => !shown[r]);
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   useEffect(() => {
-    const t = setTimeout(() => setQuery(input.trim()), QUERY_SETTLE_MS);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setQuery(input.trim()), QUERY_SETTLE_MS);
+    return () => clearTimeout(timer);
   }, [input]);
   const [locked, setLocked] = useState(false);
   /** The answers given since the table was read, by tag: shown pressed before the table says so. */
@@ -488,40 +487,36 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
 
   return (
     <section className="flex flex-col gap-1.5 text-sm">
-      <h2 className="font-semibold">Похожие по смыслу названия</h2>
-      <p className="text-xs text-muted-foreground">
-        Только предложение: решаете вы. «Объединить» — это тот же тег; «Подтег» — более узкий, работа с ним получает и этот тег;
-        «Надтег» — более широкий; «Разные» — просто похоже названы. Нажатая кнопка снимается повторным нажатием.
-      </p>
+      <h2 className="font-semibold">{t("Similar.title")}</h2>
+      <p className="text-xs text-muted-foreground">{t("Similar.help")}</p>
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Похожие на текст, а не на этот тег"
+          placeholder={t("Similar.searchPlaceholder")}
           className="pl-8"
           type="search"
         />
       </div>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        <span className="text-muted-foreground">Показывать:</span>
+        <span className="text-muted-foreground">{t("Similar.show")}</span>
         {RELATIONS.map((r) => (
-          <label key={r.relation} className="flex items-center gap-1">
-            <input type="checkbox" checked={shown[r.relation]} onChange={() => setShown({ ...shown, [r.relation]: !shown[r.relation] })} className="size-3.5" />
-            {r.filter}
+          <label key={r} className="flex items-center gap-1">
+            <input type="checkbox" checked={shown[r]} onChange={() => setShown({ ...shown, [r]: !shown[r] })} className="size-3.5" />
+            {t(`Relation.${r}.filter`)}
           </label>
         ))}
         {(locked || similar.isFetching) && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
       </div>
       {similar.isLoading && (
         <p className="flex items-center gap-2 text-muted-foreground">
-          <Loader2Icon className="size-4 animate-spin" /> Ищу похожие — в первый раз названия всех тегов переводятся в векторы, это
-          может занять минуту
+          <Loader2Icon className="size-4 animate-spin" /> {t("Similar.searching")}
         </p>
       )}
-      {similar.isError && <p className="text-destructive">Похожие не нашлись: {similar.error.message}</p>}
-      {visible && visible.length === 0 && <p className="text-muted-foreground">Похожих нет.</p>}
-      {error && <p className="text-destructive">Не сохранилось: {error}</p>}
+      {similar.isError && <p className="text-destructive">{t("Similar.loadError", { error: similar.error.message })}</p>}
+      {visible && visible.length === 0 && <p className="text-muted-foreground">{t("Similar.none")}</p>}
+      {error && <p className="text-destructive">{t("Similar.saveError", { error })}</p>}
       {visible && visible.length > 0 && (
         <ul className={cn("flex flex-col divide-y rounded-lg border", locked && "pointer-events-none")} aria-busy={locked}>
           {visible.map(({ tag: s, similarity, relation: read, site: given }) => {
@@ -544,7 +539,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
               {/* The name in full and the sites under it; on a narrow screen the buttons take a line of their own */}
               <div className="flex min-w-0 flex-1 basis-48 flex-col">
                 {site ? (
-                  <span className="break-words" title="Тег сайта, привязанный к этому тегу">
+                  <span className="break-words" title={t("Similar.siteTagTitle")}>
                     {site.name}
                   </span>
                 ) : (
@@ -558,39 +553,40 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                   </a>
                 )}
                 <span className="truncate text-xs text-muted-foreground">
-                  {site ? `тег сайта ${sourceTitle(type, site.source)}` : sitesOf(s).map((x) => sourceTitle(type, x)).join(", ")}
+                  {site ? t("Similar.siteTagOf", { site: sourceTitle(type, site.source) }) : sitesOf(s).map((x) => sourceTitle(type, x)).join(", ")}
                 </span>
               </div>
               <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                <span title="Работ с тегом">{site ? site.works : s.works}</span>
+                <span title={t("Similar.works")}>{site ? site.works : s.works}</span>
                 {" · "}
-                <span title="Сходство смысла названий">{Math.round(similarity * 100)}%</span>
+                <span title={t("Similar.similarity")}>{Math.round(similarity * 100)}%</span>
               </span>
               <ButtonGroup className="w-full sm:w-fit">
                 {RELATIONS.map((r) => {
-                  const pressed = relation === r.relation;
+                  const pressed = relation === r;
                   // A site's tag is bound to a tag or not: under, above, different are said of the tag it is taken out to
-                  const ofTags = site !== undefined && r.relation !== "MERGED";
+                  const ofTags = site !== undefined && r !== "MERGED";
+                  const title = t(`Relation.${r}.title`);
                   return (
                     <Button
-                      key={r.relation}
+                      key={r}
                       variant={pressed ? "default" : "outline"}
                       size="xs"
                       className="flex-1 sm:flex-none"
                       aria-pressed={pressed}
                       disabled={locked || ofTags || (only && pressed)}
-                      onClick={() => answer(s.key, pressed ? "NONE" : r.relation, site)}
+                      onClick={() => answer(s.key, pressed ? "NONE" : r, site)}
                       title={
                         ofTags
-                          ? "Тег сайта: сначала выньте его в отдельный тег (отожмите «Объединить»)"
+                          ? t("Similar.siteTagFirst")
                           : only && pressed
-                            ? "Единственный тег сайта у этого тега"
+                            ? t("Similar.onlySiteTag")
                             : pressed
-                              ? `${r.title}. Нажмите ещё раз, чтобы снять`
-                              : r.title
+                              ? t("Similar.pressAgain", { title })
+                              : title
                       }
                     >
-                      {r.label}
+                      {t(`Relation.${r}.label`)}
                     </Button>
                   );
                 })}
@@ -602,8 +598,8 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
       )}
       {similar.hasNextPage && (
         <Button variant="outline" size="sm" onClick={() => void similar.fetchNextPage()} disabled={similar.isFetchingNextPage || locked}>
-          {similar.isFetchingNextPage && <Loader2Icon className="animate-spin" />} Показать ещё
-          {total !== undefined && visible && <span className="text-muted-foreground">({visible.length} из {total})</span>}
+          {similar.isFetchingNextPage && <Loader2Icon className="animate-spin" />} {t("Similar.more")}
+          {total !== undefined && visible && <span className="text-muted-foreground">{t("Similar.shownOf", { shown: visible.length, total })}</span>}
         </Button>
       )}
     </section>

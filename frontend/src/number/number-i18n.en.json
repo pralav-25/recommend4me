@@ -1,0 +1,6 @@
+{
+  "NumberFilter.from": "from",
+  "NumberFilter.fromLabel": "{{label}}: from",
+  "NumberFilter.to": "to",
+  "NumberFilter.toLabel": "{{label}}: to"
+}

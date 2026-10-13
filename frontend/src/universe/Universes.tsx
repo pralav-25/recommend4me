@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, ChevronRightIcon, ExternalLinkIcon, LinkIcon, Loader2Icon, OrbitIcon, PlusIcon, RefreshCwIcon, SearchIcon, Trash2Icon, XIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, ensureOk, unwrap, type CharacterInfo, type ContentTypeInfo, type FoundUniverse, type UniverseClassInfo, type UniverseInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ago, formatDate, plural } from "@/i18n";
+import { ago, formatDate } from "@/i18n/format";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
 import { followLink, navigate, screenHref } from "@/screen/screens";
@@ -65,35 +66,32 @@ function useDictionaryChanged(typeId: string) {
  * ("/universes/<catalogue>/<id>"): a link to it opens it, its characters shown.
  */
 export function UniversesScreen({ type, selected }: { type: ContentTypeInfo; selected?: UniverseRef }) {
+  const { t } = useTranslation("universe");
   const universes = useUniverses(type.id);
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-4">
       <header className="flex flex-col gap-1">
         <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <OrbitIcon className="size-5" /> Вселенные: {type.title.toLowerCase()}
+          <OrbitIcon className="size-5" /> {t("UniversesScreen.title", { type: type.title.toLowerCase() })}
         </h1>
-        <p className="text-sm text-muted-foreground">
-          Словарь вселенных, по которым пишут фанфики, — с персонажами, какими их дают Викиданные. Связь работы со вселенной
-          подтверждается или отклоняется в окне работы, как любое значение признака. Викиданные спрашиваются только по кнопкам
-          этой страницы; персонажи хранятся у вас.
-        </p>
+        <p className="text-sm text-muted-foreground">{t("UniversesScreen.description")}</p>
       </header>
 
       <section className="flex flex-col gap-2 text-sm">
-        <h4 className="font-semibold">Добавить из Викиданных</h4>
+        <h4 className="font-semibold">{t("UniversesScreen.addFromWikidata")}</h4>
         <CatalogueSearch type={type} dictionary={universes.data} />
       </section>
 
       <section className="flex flex-col gap-2 text-sm">
         <h4 className="flex items-center gap-2 font-semibold">
-          В словаре
+          {t("UniversesScreen.inDictionary")}
           {universes.data && <span className="font-normal text-muted-foreground tabular-nums">{universes.data.length}</span>}
           {universes.isFetching && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
         </h4>
-        {universes.isError && <p className="text-destructive">Не удалось загрузить словарь: {universes.error.message}</p>}
+        {universes.isError && <p className="text-destructive">{t("UniversesScreen.loadFailed", { error: universes.error.message })}</p>}
         {universes.data && universes.data.length === 0 && (
-          <p className="text-muted-foreground">Словарь пуст. Найдите вселенную в Викиданных выше и добавьте её.</p>
+          <p className="text-muted-foreground">{t("UniversesScreen.empty")}</p>
         )}
         {universes.data && universes.data.length > 0 && (
           <ul className="flex flex-col divide-y rounded-lg border">
@@ -110,6 +108,7 @@ export function UniversesScreen({ type, selected }: { type: ContentTypeInfo; sel
 
 /** A universe of the dictionary: its numbers, its buttons, and its characters when it is the one opened. */
 function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; universe: UniverseInfo; expanded: boolean }) {
+  const { t } = useTranslation("universe");
   const changed = useDictionaryChanged(type.id);
   const [confirming, setConfirming] = useState(false);
   const ref = { catalogue: u.catalogue, universe: u.universe };
@@ -138,8 +137,8 @@ function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; u
           size="icon-sm"
           onClick={toggle}
           aria-expanded={expanded}
-          aria-label={expanded ? "Скрыть персонажей" : "Показать персонажей"}
-          title={expanded ? "Скрыть персонажей" : "Показать персонажей"}
+          aria-label={expanded ? t("UniverseRow.hideCharacters") : t("UniverseRow.showCharacters")}
+          title={expanded ? t("UniverseRow.hideCharacters") : t("UniverseRow.showCharacters")}
         >
           <ChevronRightIcon className={cn("transition-transform", expanded && "rotate-90")} />
         </Button>
@@ -149,12 +148,12 @@ function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; u
             href={screenHref({ kind: "universes", ...ref })}
             onClick={(e) => followLink(e, expanded ? { kind: "universes" } : { kind: "universes", ...ref })}
             className="font-medium underline-offset-2 hover:underline"
-            title="Персонажи вселенной"
+            title={t("UniverseRow.openCharacters")}
           >
             {u.name}
           </a>
-          {u.localName && <span className="ml-1.5 text-xs text-muted-foreground">в Викиданных — {u.catalogueName}</span>}
-          <a href={u.url} target="_blank" rel="noreferrer" className="ml-1.5 inline-flex align-middle text-muted-foreground hover:text-foreground" title="Страница в Викиданных">
+          {u.localName && <span className="ml-1.5 text-xs text-muted-foreground">{t("UniverseRow.catalogueName", { name: u.catalogueName })}</span>}
+          <a href={u.url} target="_blank" rel="noreferrer" className="ml-1.5 inline-flex align-middle text-muted-foreground hover:text-foreground" title={t("UniverseRow.wikidataPage")}>
             <ExternalLinkIcon className="size-3.5" />
           </a>
           <LocalNameEdit
@@ -167,13 +166,14 @@ function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; u
           />
           {u.description && <div className="text-muted-foreground">{u.description}</div>}
           <div className="flex flex-wrap gap-x-2 text-xs text-muted-foreground">
-            <span title="Оставлено персонажами из всего, что Викиданные относят ко вселенной">
-              {plural(u.characters, "персонаж", "персонажа", "персонажей")}
-              {u.total !== u.characters && ` из ${u.total}`}
+            <span title={t("UniverseRow.charactersHint")}>
+              {u.total !== u.characters
+                ? t("UniverseRow.charactersOfTotal", { count: u.characters, total: u.total })
+                : t("UniverseRow.characters", { count: u.characters })}
             </span>
-            <span>· {plural(u.works, "работа", "работы", "работ")}</span>
-            <span title={`Персонажи спрошены ${formatDate(u.refreshedAt)}`}>· обновлено {ago(u.refreshedAt)}</span>
-            <span title={formatDate(u.addedAt)}>· добавлено {ago(u.addedAt)}</span>
+            <span>· {t("UniverseRow.works", { count: u.works })}</span>
+            <span title={t("UniverseRow.refreshedAtHint", { date: formatDate(u.refreshedAt) })}>· {t("UniverseRow.refreshed", { ago: ago(u.refreshedAt) })}</span>
+            <span title={formatDate(u.addedAt)}>· {t("UniverseRow.added", { ago: ago(u.addedAt) })}</span>
           </div>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-1">
@@ -182,28 +182,28 @@ function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; u
             variant="outline"
             onClick={() => refresh.mutate()}
             disabled={refresh.isPending || remove.isPending}
-            title="Заново спросить у Викиданных персонажей этой вселенной"
+            title={t("UniverseRow.refreshHint")}
           >
             {refresh.isPending ? <Loader2Icon className="animate-spin" /> : <RefreshCwIcon />}
-            {refresh.isPending ? "Обновляется…" : "Обновить персонажей"}
+            {refresh.isPending ? t("UniverseRow.refreshing") : t("UniverseRow.refresh")}
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => setConfirming(true)} disabled={confirming || remove.isPending} title="Удалить из словаря">
-            <Trash2Icon /> Удалить
+          <Button size="sm" variant="ghost" onClick={() => setConfirming(true)} disabled={confirming || remove.isPending} title={t("UniverseRow.removeHint")}>
+            <Trash2Icon /> {t("UniverseRow.remove")}
           </Button>
         </div>
       </div>
 
-      {refresh.isError && <p className="text-destructive">Не удалось обновить: {refresh.error.message}</p>}
+      {refresh.isError && <p className="text-destructive">{t("UniverseRow.refreshFailed", { error: refresh.error.message })}</p>}
       {confirming && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/5 p-2">
-          <span className="min-w-0 flex-1">Вселенная и все связи работ с ней будут удалены.</span>
+          <span className="min-w-0 flex-1">{t("UniverseRow.confirmRemove")}</span>
           <Button size="sm" variant="destructive" onClick={() => remove.mutate()} disabled={remove.isPending}>
-            {remove.isPending ? <Loader2Icon className="animate-spin" /> : <Trash2Icon />} Удалить
+            {remove.isPending ? <Loader2Icon className="animate-spin" /> : <Trash2Icon />} {t("UniverseRow.remove")}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} disabled={remove.isPending}>
-            Отмена
+            {t("UniverseRow.cancel")}
           </Button>
-          {remove.isError && <p className="w-full text-destructive">Не удалось удалить: {remove.error.message}</p>}
+          {remove.isError && <p className="w-full text-destructive">{t("UniverseRow.removeFailed", { error: remove.error.message })}</p>}
         </div>
       )}
       {expanded && <Characters type={type} universe={u} />}
@@ -270,6 +270,7 @@ type EntriesShown = "kept" | "left" | "all";
  * — and every entry, each kept or left out by its classes or by the user's word on it alone.
  */
 function Characters({ type, universe: u }: { type: ContentTypeInfo; universe: UniverseInfo }) {
+  const { t } = useTranslation("universe");
   const [filter, setFilter] = useState("");
   const [shownKind, setShownKind] = useState<EntriesShown>("kept");
   const characters = useQuery(charactersQuery(type.id, u));
@@ -278,10 +279,10 @@ function Characters({ type, universe: u }: { type: ContentTypeInfo; universe: Un
   const changed = useDictionaryChanged(type.id);
 
   if (characters.isLoading || classes.isLoading) return <Loader2Icon className="ml-9 size-4 animate-spin text-muted-foreground" />;
-  if (characters.isError) return <p className="ml-9 text-destructive">Не удалось загрузить персонажей: {characters.error.message}</p>;
-  if (classes.isError) return <p className="ml-9 text-destructive">Не удалось загрузить классы: {classes.error.message}</p>;
+  if (characters.isError) return <p className="ml-9 text-destructive">{t("Characters.loadFailed", { error: characters.error.message })}</p>;
+  if (classes.isError) return <p className="ml-9 text-destructive">{t("Characters.loadClassesFailed", { error: classes.error.message })}</p>;
   const all = characters.data ?? [];
-  if (all.length === 0) return <p className="ml-9 text-muted-foreground">Викиданные не дали этой вселенной ни одного персонажа.</p>;
+  if (all.length === 0) return <p className="ml-9 text-muted-foreground">{t("Characters.empty")}</p>;
 
   const byId = new Map((classes.data ?? []).map((c) => [c.class, c]));
   const byClasses = (c: CharacterInfo) => keptByClasses(c, byId);
@@ -295,13 +296,13 @@ function Characters({ type, universe: u }: { type: ContentTypeInfo; universe: Un
     <div className="ml-9 flex flex-col gap-3">
       <Classes classes={classes.data ?? []} onToggle={inclusion.setClass} />
       <div className="flex flex-wrap items-center gap-2">
-        <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Найти по любому имени" className="max-w-xs" type="search" />
-        <div className="flex gap-1" role="group" aria-label="Что показывать">
+        <Input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder={t("Characters.filterPlaceholder")} className="max-w-xs" type="search" />
+        <div className="flex gap-1" role="group" aria-label={t("Characters.shown")}>
           {(
             [
-              ["kept", `Персонажи ${kept}`],
-              ["left", `Убранные ${all.length - kept}`],
-              ["all", `Всё ${all.length}`],
+              ["kept", t("Characters.kept", { n: kept })],
+              ["left", t("Characters.left", { n: all.length - kept })],
+              ["all", t("Characters.all", { n: all.length })],
             ] as const
           ).map(([kind, label]) => (
             <Button key={kind} size="sm" variant={shownKind === kind ? "secondary" : "ghost"} aria-pressed={shownKind === kind} onClick={() => setShownKind(kind)}>
@@ -309,7 +310,7 @@ function Characters({ type, universe: u }: { type: ContentTypeInfo; universe: Un
             </Button>
           ))}
         </div>
-        {needle !== "" && <span className="text-xs text-muted-foreground tabular-nums">найдено {shown.length}</span>}
+        {needle !== "" && <span className="text-xs text-muted-foreground tabular-nums">{t("Characters.found", { n: shown.length })}</span>}
       </div>
       <ul className="flex max-h-96 flex-col divide-y overflow-y-auto rounded-lg border">
         {shown.map((c) => (
@@ -341,6 +342,7 @@ function Characters({ type, universe: u }: { type: ContentTypeInfo; universe: Un
  * every entry of the class.
  */
 function Classes({ classes, onToggle }: { classes: UniverseClassInfo[]; onToggle: (cls: UniverseClassInfo) => Promise<unknown> }) {
+  const { t } = useTranslation("universe");
   if (classes.length === 0) return null;
   const group = (character: boolean, label: string, hint: string) => {
     const list = classes.filter((c) => c.character === character);
@@ -358,7 +360,12 @@ function Classes({ classes, onToggle }: { classes: UniverseClassInfo[]; onToggle
               variant={c.included ? "secondary" : "outline"}
               aria-pressed={c.included}
               onClick={() => onToggle(c)}
-              title={`${c.included ? "Оставлены как персонажи" : "Убраны"}${c.choice != null ? " — ваш выбор" : ""}. Нажмите, чтобы ${c.included ? "убрать" : "оставить"} все ${c.count}`}
+              title={t(
+                c.included
+                  ? c.choice != null ? "Classes.keptByChoiceHint" : "Classes.keptHint"
+                  : c.choice != null ? "Classes.leftByChoiceHint" : "Classes.leftHint",
+                { n: c.count },
+              )}
               className={cn("h-auto min-h-6 max-w-full whitespace-normal text-left", !c.included && "text-muted-foreground line-through decoration-muted-foreground/60")}
             >
               {c.choice != null && <span className="text-primary">•</span>}
@@ -371,8 +378,8 @@ function Classes({ classes, onToggle }: { classes: UniverseClassInfo[]; onToggle
   };
   return (
     <div className="flex flex-col gap-2 rounded-lg border p-2">
-      {group(true, "Классы персонажей — оставлены, если вы не убрали", "Викиданные считают эти классы персонажами")}
-      {group(false, "Прочее — места, группы, предметы, события; убрано, если вы не оставили", "Эти классы в Викиданных не персонажи")}
+      {group(true, t("Classes.characterClasses"), t("Classes.characterClassesHint"))}
+      {group(false, t("Classes.other"), t("Classes.otherHint"))}
     </div>
   );
 }
@@ -389,6 +396,7 @@ function CharacterRow({
   /** The user's own name of the character over the catalogue's, to give or take back. */
   naming?: ReactNode;
 }) {
+  const { t } = useTranslation("universe");
   const [main, ...others] = c.names;
   return (
     <li className={cn("flex items-start gap-2 px-3 py-1.5", !c.included && "text-muted-foreground")}>
@@ -397,7 +405,11 @@ function CharacterRow({
         variant={c.included ? "secondary" : "outline"}
         aria-pressed={c.included}
         onClick={onToggle}
-        title={`${c.included ? "Персонаж" : "Убрано"}${c.choice != null ? " — ваш выбор" : " — по классу"}. Нажмите, чтобы ${c.included ? "убрать" : "оставить как персонажа"}`}
+        title={t(
+          c.included
+            ? c.choice != null ? "CharacterRow.keptByChoiceHint" : "CharacterRow.keptByClassHint"
+            : c.choice != null ? "CharacterRow.leftByChoiceHint" : "CharacterRow.leftByClassHint",
+        )}
         icon={c.included ? <CheckIcon /> : <XIcon />}
         className="mt-0.5"
       />
@@ -405,12 +417,12 @@ function CharacterRow({
         <span className={cn("font-medium", !c.included && "line-through decoration-muted-foreground/60")}>{main ?? c.character}</span>
         {naming}
         {others.length > 0 && <span className="text-muted-foreground"> · {others.join(", ")}</span>}
-        {c.choice != null && <span className="ml-1 text-xs text-primary">ваш выбор</span>}
+        {c.choice != null && <span className="ml-1 text-xs text-primary">{t("CharacterRow.yourChoice")}</span>}
         {(classNames.length > 0 || c.description) && (
           <div className="text-xs text-muted-foreground">{[classNames.join(", "), c.description].filter(Boolean).join(" — ")}</div>
         )}
       </div>
-      <a href={c.url} target="_blank" rel="noreferrer" className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground" title="Страница в Викиданных">
+      <a href={c.url} target="_blank" rel="noreferrer" className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground" title={t("CharacterRow.wikidataPage")}>
         <ExternalLinkIcon className="size-3.5" />
       </a>
     </li>
@@ -434,6 +446,7 @@ export type UniverseForWork = {
  * that work as well.
  */
 export function CatalogueSearch({ type, dictionary, forWork }: { type: ContentTypeInfo; dictionary?: UniverseInfo[]; forWork?: UniverseForWork }) {
+  const { t } = useTranslation("universe");
   const [query, setQuery] = useState("");
   const search = useMutation({
     mutationFn: async (q: string) =>
@@ -453,13 +466,13 @@ export function CatalogueSearch({ type, dictionary, forWork }: { type: ContentTy
           submit();
         }}
       >
-        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Название вселенной: «Гарри Поттер», «Наруто»…" />
+        <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t("CatalogueSearch.placeholder")} />
         <Button type="submit" disabled={search.isPending || query.trim() === ""}>
-          {search.isPending ? <Loader2Icon className="animate-spin" /> : <SearchIcon />} Найти
+          {search.isPending ? <Loader2Icon className="animate-spin" /> : <SearchIcon />} {t("CatalogueSearch.search")}
         </Button>
       </form>
-      {search.isError && <p className="text-destructive">Поиск не удался: {search.error.message}</p>}
-      {search.data && search.data.length === 0 && <p className="text-muted-foreground">По запросу «{search.variables}» ничего не нашлось.</p>}
+      {search.isError && <p className="text-destructive">{t("CatalogueSearch.searchFailed", { error: search.error.message })}</p>}
+      {search.data && search.data.length === 0 && <p className="text-muted-foreground">{t("CatalogueSearch.nothingFound", { query: search.variables })}</p>}
       {search.data && search.data.length > 0 && (
         <ul className="flex flex-col divide-y rounded-lg border">
           {search.data.map((f) => {
@@ -496,6 +509,7 @@ function FoundRow({
   entry?: UniverseInfo;
   forWork?: UniverseForWork;
 }) {
+  const { t } = useTranslation("universe");
   const changed = useDictionaryChanged(type.id);
   // The spinner stays until the dictionary below shows the universe (and the work its link)
   const add = useMutation({
@@ -515,27 +529,27 @@ function FoundRow({
         <div className="flex items-start gap-2">
           <FoundName found={f} />
           {entry && forWork.linked(entry.value) ? (
-            <span className="shrink-0 text-xs text-muted-foreground">уже у работы</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{t("FoundRow.linked")}</span>
           ) : entry ? (
-            <AsyncButton size="sm" variant="outline" onClick={() => forWork.link(entry.value)} title="Вселенная уже в словаре: связать с ней работу" icon={<LinkIcon />}>
-              Связать с работой
+            <AsyncButton size="sm" variant="outline" onClick={() => forWork.link(entry.value)} title={t("FoundRow.linkHint")} icon={<LinkIcon />}>
+              {t("FoundRow.link")}
             </AsyncButton>
           ) : added ? (
-            <span className="shrink-0 text-xs text-muted-foreground">уже в словаре</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{t("FoundRow.inDictionary")}</span>
           ) : (
             <Button
               size="sm"
               variant="outline"
               onClick={() => add.mutate()}
               disabled={add.isPending}
-              title="Добавить в словарь вместе с персонажами из Викиданных и связать с ней работу"
+              title={t("FoundRow.addAndLinkHint")}
             >
               {add.isPending ? <Loader2Icon className="animate-spin" /> : <PlusIcon />}
-              {add.isPending ? "Добавляется…" : "Добавить и связать"}
+              {add.isPending ? t("FoundRow.adding") : t("FoundRow.addAndLink")}
             </Button>
           )}
         </div>
-        {add.isError && <p className="text-destructive">Не удалось добавить: {add.error.message}</p>}
+        {add.isError && <p className="text-destructive">{t("FoundRow.addFailed", { error: add.error.message })}</p>}
       </li>
     );
 
@@ -544,23 +558,24 @@ function FoundRow({
       <div className="flex items-start gap-2">
         <FoundName found={f} />
         {added ? (
-          <span className="shrink-0 text-xs text-muted-foreground">уже в словаре</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{t("FoundRow.inDictionary")}</span>
         ) : (
-          <Button size="sm" variant="outline" onClick={() => add.mutate()} disabled={add.isPending} title="Добавить в словарь вместе с персонажами из Викиданных">
+          <Button size="sm" variant="outline" onClick={() => add.mutate()} disabled={add.isPending} title={t("FoundRow.addHint")}>
             {add.isPending ? <Loader2Icon className="animate-spin" /> : <PlusIcon />}
-            {add.isPending ? "Добавляется…" : "Добавить"}
+            {add.isPending ? t("FoundRow.adding") : t("FoundRow.add")}
           </Button>
         )}
       </div>
-      {add.isError && <p className="text-destructive">Не удалось добавить: {add.error.message}</p>}
+      {add.isError && <p className="text-destructive">{t("FoundRow.addFailed", { error: add.error.message })}</p>}
     </li>
   );
 }
 
 function FoundName({ found: f }: { found: FoundUniverse }) {
+  const { t } = useTranslation("universe");
   return (
     <div className="min-w-0 flex-1">
-      <a href={f.url} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline" title="Страница в Викиданных">
+      <a href={f.url} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline" title={t("FoundName.wikidataPage")}>
         {f.name}
       </a>
       <span className="ml-2 font-mono text-xs text-muted-foreground">{f.universe}</span>

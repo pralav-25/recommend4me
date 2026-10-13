@@ -1,0 +1,16 @@
+{
+  "Field.default": "podrazumevano",
+  "Field.delete": "Obriši",
+  "Field.keepEmpty": "ostavite prazno da se ne menja",
+  "Field.newValue": "nova vrednost",
+  "Field.notSet": "nije postavljeno",
+  "Field.set": "postavljeno",
+  "SettingsDialog.close": "Zatvori",
+  "SettingsDialog.description": "Čuvaju se u lokalnoj bazi aplikacije. Svaki sajt ima svoja.",
+  "SettingsDialog.loadFailed": "Učitavanje podešavanja nije uspelo",
+  "SettingsDialog.nothing": "Nema šta da se podešava.",
+  "SettingsDialog.title": "Podešavanja",
+  "SourceForm.save": "Sačuvaj",
+  "SourceForm.saveFailed": "Čuvanje nije uspelo: {{error}}",
+  "SourceForm.saved": "sačuvano"
+}

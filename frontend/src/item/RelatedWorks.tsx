@@ -1,4 +1,5 @@
 import { ChevronRightIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ContentTypeInfo, Grade, RelatedWorks as Related } from "@/api/client";
 import { gradeLabel } from "@/contenttype/types";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ import { GRADE_TEXT, shownScore } from "./pieces";
  * this one.
  */
 export function RelatedWorks({ type, related }: { type: ContentTypeInfo; related: Related[] }) {
+  const { t } = useTranslation("item");
   if (related.length === 0) return null;
   return (
     <div className="flex flex-col gap-2">
@@ -27,7 +29,7 @@ export function RelatedWorks({ type, related }: { type: ContentTypeInfo; related
                 <a
                   href={itemHref(s)}
                   className="flex items-center gap-2 px-2 py-1 text-sm hover:bg-muted/50"
-                  title={s.grade ? "Ваша оценка" : s.prediction ? "Прогноз: вы её ещё не оценили" : undefined}
+                  title={s.grade ? t("RelatedWorks.yourGrade") : s.prediction ? t("RelatedWorks.prediction") : undefined}
                 >
                   <span className="min-w-0 flex-1 truncate">{s.title}</span>
                   {s.grade ? (

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import type { TFunction } from "i18next";
 import { CheckIcon, StarIcon } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import {
   api,
   pictureSrc,
@@ -20,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ALL_GRADES, gradeLabel, sourceTitle, typeIcon } from "@/contenttype/types";
 import { shownChance, unlikely } from "@/facet/FacetValueMarks";
-import { compact, percent, score } from "@/i18n";
+import { compact, number, percent, score } from "@/i18n/format";
 import { useLadder } from "@/model/useModel";
 import { cn } from "@/lib/utils";
 import { useMarkInterest } from "./useMarkInterest";
@@ -76,6 +78,7 @@ export function RatingButtons({
   labels?: boolean;
   className?: string;
 }) {
+  const { t } = useTranslation("item");
   const ladder = useLadder(type.id);
   return (
     <div className={cn("grid grid-cols-5 gap-1", className)}>
@@ -106,9 +109,9 @@ export function RatingButtons({
             )}
           </TooltipTrigger>
           <TooltipContent>
-            {value === g ? "Снять оценку" : gradeLabel(type, g)}
-            {value !== g && ladder[g] !== undefined && ` (на вашей шкале ${score(ladder[g])})`} · клавиша{" "}
-            <kbd className="font-mono">{g}</kbd>
+            {value === g ? t("RatingButtons.takeBack") : gradeLabel(type, g)}
+            {value !== g && ladder[g] !== undefined && ` ${t("RatingButtons.onScale", { score: score(ladder[g]) })}`} ·{" "}
+            <Trans t={t} i18nKey="RatingButtons.key" values={{ grade: g }} components={{ kbd: <kbd className="font-mono" /> }} />
           </TooltipContent>
         </Tooltip>
       ))}
@@ -147,6 +150,7 @@ export function InterestButtons({
   labels?: boolean;
   className?: string;
 }) {
+  const { t } = useTranslation("item");
   const mark = useMarkInterest();
   const grade = summary.grade ?? summary.previousGrade;
   const byGrade = interestByGrade(summary);
@@ -164,7 +168,7 @@ export function InterestButtons({
               variant="outline"
               size={size}
               aria-pressed={summary.interest === true}
-              aria-label="Интересно"
+              aria-label={t("InterestButtons.interesting")}
               className={cn(
                 "min-w-0 px-2",
                 summary.interest === true ? "border-emerald-600! bg-emerald-600! text-white! hover:bg-emerald-600/90!" : "hover:border-emerald-600 hover:text-emerald-600",
@@ -176,10 +180,14 @@ export function InterestButtons({
         >
           {/* Not a thumb: a thumb says liked or not, and interest is another thing */}
           <span aria-hidden>🤔</span>
-          {labels && <span>Интересно</span>}
+          {labels && <span>{t("InterestButtons.interesting")}</span>}
         </TooltipTrigger>
         <TooltipContent>
-          {summary.interest === true ? "Снять отметку «интересно»" : byGrade === true ? `Интересно — по оценке ${grade}; отметить явно` : "Интересно читать"}
+          {summary.interest === true
+            ? t("InterestButtons.takeBackInteresting")
+            : byGrade === true
+              ? t("InterestButtons.interestingByGrade", { grade })
+              : t("InterestButtons.interestingHint")}
         </TooltipContent>
       </Tooltip>
       <Tooltip>
@@ -189,7 +197,7 @@ export function InterestButtons({
               variant="outline"
               size={size}
               aria-pressed={summary.interest === false}
-              aria-label="Неинтересно"
+              aria-label={t("InterestButtons.dull")}
               className={cn(
                 "min-w-0 px-2",
                 summary.interest === false ? "border-grade-1! bg-grade-1! text-white! hover:bg-grade-1/90!" : "hover:border-grade-1 hover:text-grade-1",
@@ -200,20 +208,20 @@ export function InterestButtons({
           }
         >
           <span aria-hidden>🥱</span>
-          {labels && <span>Неинтересно</span>}
+          {labels && <span>{t("InterestButtons.dull")}</span>}
         </TooltipTrigger>
         <TooltipContent>
           {summary.interest === false
-            ? "Снять отметку «неинтересно»"
+            ? t("InterestButtons.takeBackDull")
             : byGrade === false
-              ? `Неинтересно — по оценке ${grade}; отметить явно`
-              : "Неинтересно читать, даже если прогноз высок"}
+              ? t("InterestButtons.dullByGrade", { grade })
+              : t("InterestButtons.dullHint")}
         </TooltipContent>
       </Tooltip>
       {chance != null && (
         <Tooltip>
           <TooltipTrigger render={<span className="text-xs text-muted-foreground tabular-nums" />}>{percent(chance)}</TooltipTrigger>
-          <TooltipContent>Модель: интересно с вероятностью {percent(chance)}</TooltipContent>
+          <TooltipContent>{t("InterestButtons.chance", { chance: percent(chance) })}</TooltipContent>
         </Tooltip>
       )}
     </div>
@@ -242,6 +250,7 @@ export function shownScore(value: number): string {
 }
 
 export function ScoreBadge({ type, summary, className }: { type: ContentTypeInfo; summary: ItemSummary; className?: string }) {
+  const { t } = useTranslation("item");
   const p = summary.prediction;
   const ladder = useLadder(type.id);
   return (
@@ -264,16 +273,16 @@ export function ScoreBadge({ type, summary, className }: { type: ContentTypeInfo
         {summary.heldOut ? (
           // A graded work: what the model that had not seen it says, and why — the model of every grade learnt it
           <div className="flex w-56 flex-col">
-            <div className="font-semibold">Без вашей оценки модель: {score(Math.max(0, summary.heldOut.score))}</div>
+            <div className="font-semibold">{t("ScoreBadge.heldOut", { score: score(Math.max(0, summary.heldOut.score)) })}</div>
             <ScoreWhy summary={summary} />
           </div>
         ) : p ? (
           <div className="flex w-56 flex-col">
-            <div className="font-semibold">Место на вашей шкале: {score(Math.max(0, p.score))}</div>
+            <div className="font-semibold">{t("ScoreBadge.place", { score: score(Math.max(0, p.score)) })}</div>
             <ScoreWhy summary={summary} />
           </div>
         ) : (
-          "Прогноза ещё нет: модели нужны ваши оценки"
+          t("ScoreBadge.noPrediction")
         )}
       </TooltipContent>
     </Tooltip>
@@ -285,12 +294,13 @@ const WHY_PARTS = 3;
 
 /** Why in short, in a score's tooltip: the parts that move the work most; asked when the tooltip opens. */
 function ScoreWhy({ summary }: { summary: ItemSummary }) {
+  const { t } = useTranslation("item");
   const why = useQuery({
     queryKey: ["explanation", summary.source, summary.item],
     queryFn: async () =>
       unwrap(await api.GET("/api/items/{source}/{item}/explanation", { params: { path: { source: summary.source, item: summary.item } } })),
   });
-  if (why.isLoading) return <div className="opacity-70">почему — считаю…</div>;
+  if (why.isLoading) return <div className="opacity-70">{t("ScoreWhy.loading")}</div>;
   const parts = (why.data ?? []).slice(0, WHY_PARTS);
   if (parts.length === 0) return null;
   return (
@@ -308,22 +318,22 @@ function ScoreWhy({ summary }: { summary: ItemSummary }) {
   );
 }
 
-const CORRECTED_NOTE: Record<NonNullable<FacetValueInfo["corrected"]>, string> = {
-  ADDED: " · добавлено вами",
-  CONFIRMED: " · подтверждено вами",
-  REMOVED: " · убрано вами",
-};
+const CORRECTED_NOTE = {
+  ADDED: "FacetBadges.added",
+  CONFIRMED: "FacetBadges.confirmed",
+  REMOVED: "FacetBadges.removed",
+} as const satisfies Record<NonNullable<FacetValueInfo["corrected"]>, string>;
 
 /** The title of a value's chip on a card: its facet, the user's word or the model's chance, and whether the model gave it. */
-function facetValueTitle(facet: ItemFacet, value: FacetValueInfo): string {
+function facetValueTitle(t: TFunction<"item">, facet: ItemFacet, value: FacetValueInfo): string {
   const chance = shownChance(value);
   return (
     facet.label +
-    (value.corrected ? CORRECTED_NOTE[value.corrected] : "") +
-    (chance !== undefined ? ` · модель: ${percent(chance)}` : "") +
-    (unlikely(value) ? " — скорее этого у работы нет" : "") +
-    (value.inferred ? " · вычислено по описанию, главам и другим тегам" : "") +
-    (value.implied ? " · есть подтег этого тега" : "")
+    (value.corrected ? ` · ${t(CORRECTED_NOTE[value.corrected])}` : "") +
+    (chance !== undefined ? ` · ${t("FacetBadges.chance", { chance: percent(chance) })}` : "") +
+    (unlikely(value) ? ` — ${t("FacetBadges.unlikely")}` : "") +
+    (value.inferred ? ` · ${t("FacetBadges.inferred")}` : "") +
+    (value.implied ? ` · ${t("FacetBadges.implied")}` : "")
   );
 }
 
@@ -333,6 +343,7 @@ function facetValueTitle(facet: ItemFacet, value: FacetValueInfo): string {
  * amber-edged. [limit] cuts the list, the rest go into "+N" with their names in its title.
  */
 export function FacetBadges({ facets, limit, className }: { facets: ItemFacet[]; limit?: number; className?: string }) {
+  const { t } = useTranslation("item");
   // A value only offered to answer on is not the work's: the cards leave it out
   const values = facets.flatMap((f) => f.values.filter((v) => !v.offered).map((v) => ({ facet: f, value: v })));
   const shown = limit === undefined ? values : values.slice(0, limit);
@@ -350,7 +361,7 @@ export function FacetBadges({ facets, limit, className }: { facets: ItemFacet[];
             (value.corrected === "ADDED" || value.corrected === "CONFIRMED") && "border-yes/50 bg-yes/15",
             unlikely(value) && "border-maybe/60",
           )}
-          title={facetValueTitle(facet, value)}
+          title={facetValueTitle(t, facet, value)}
         >
           {(value.corrected === "ADDED" || value.corrected === "CONFIRMED") && <CheckIcon className="size-3 text-yes" />}
           {value.name}
@@ -369,7 +380,7 @@ export function FacetBadges({ facets, limit, className }: { facets: ItemFacet[];
 const FLAG = new Set(["", "true", "1", "yes"]);
 
 /**
- * "Нравится", "Полка: читаю", "Реакция: весело, грустно" — a signal and its values with the names
+ * "Liked", "Shelf: reading", "Reaction: funny, sad" — a signal and its values with the names
  * its source gives them; a value may be several joined by ",", a yes/no one shows the name only.
  */
 function signalLabel(info: SignalInfo | undefined, key: string, value: string): string {
@@ -384,12 +395,13 @@ function signalLabel(info: SignalInfo | undefined, key: string, value: string): 
 
 /** The user's own actions on the site: liked it, put it on a shelf. */
 export function SignalBadges({ source, signals, className }: { source?: SourceInfo; signals?: Record<string, string>; className?: string }) {
+  const { t } = useTranslation("item");
   const entries = Object.entries(signals ?? {});
   if (entries.length === 0) return null;
   return (
     <span className={cn("inline-flex flex-wrap gap-1", className)}>
       {entries.map(([key, value]) => (
-        <Badge key={key} variant="outline" className="border-primary/40 font-normal" title="Ваше действие на сайте">
+        <Badge key={key} variant="outline" className="border-primary/40 font-normal" title={t("SignalBadges.title")}>
           {signalLabel(source?.signals.find((s) => s.key === key), key, value)}
         </Badge>
       ))}
@@ -409,10 +421,11 @@ export function SourceBadge({ type, source, className }: { type: ContentTypeInfo
 
 /** The other items of the same work: the site of each, linking to its page there. */
 export function LinkedBadges({ type, linked, className }: { type: ContentTypeInfo; linked: LinkedItem[]; className?: string }) {
+  const { t } = useTranslation("item");
   if (linked.length === 0) return null;
   return (
     <span className={cn("inline-flex flex-wrap items-center gap-1", className)}>
-      <span>также:</span>
+      <span>{t("LinkedBadges.also")}</span>
       {linked.map((l) => (
         <a
           key={`${l.source}/${l.item}`}
@@ -430,7 +443,7 @@ export function LinkedBadges({ type, linked, className }: { type: ContentTypeInf
   );
 }
 
-/** The numbers of a card with the labels its source gives them: "лайки 1,2 тыс." */
+/** The numbers of a card with the labels its source gives them: "likes 1.2K". */
 export function NumberLine({ type, summary, limit = 3 }: { type: ContentTypeInfo; summary: ItemSummary; limit?: number }) {
   const declared = type.sources.find((s) => s.id === summary.source)?.numbers ?? [];
   const label = (key: string) => declared.find((n) => n.key === key)?.label ?? key;
@@ -438,7 +451,7 @@ export function NumberLine({ type, summary, limit = 3 }: { type: ContentTypeInfo
   return (
     <>
       {entries.map(([key, value]) => (
-        <span key={key} className="whitespace-nowrap" title={`${label(key)}: ${value.toLocaleString("ru-RU")}`}>
+        <span key={key} className="whitespace-nowrap" title={`${label(key)}: ${number(value)}`}>
           <span className="text-muted-foreground/80">{label(key)}</span> {compact(value)}
         </span>
       ))}
@@ -451,6 +464,7 @@ export function NumberLine({ type, summary, limit = 3 }: { type: ContentTypeInfo
  * marked; found by meaning alone, the phrase of the field nearest by meaning.
  */
 export function SearchMatchLine({ match, className }: { match: SearchMatch; className?: string }) {
+  const { t } = useTranslation("item");
   const parts: { text: string; found: boolean }[] = [];
   let at = 0;
   [...match.highlights]
@@ -464,7 +478,7 @@ export function SearchMatchLine({ match, className }: { match: SearchMatch; clas
   if (at < match.text.length) parts.push({ text: match.text.slice(at), found: false });
   return (
     <p className={cn("text-xs leading-snug text-muted-foreground", className)}>
-      <span className="font-medium text-foreground/70">{match.byMeaning ? `по смыслу · ${match.field}` : match.field}: </span>
+      <span className="font-medium text-foreground/70">{match.byMeaning ? t("SearchMatchLine.byMeaning", { field: match.field }) : match.field}: </span>
       {parts.map((p, i) =>
         p.found ? (
           <mark key={i} className="rounded-sm bg-maybe/35 px-0.5 text-foreground">
@@ -480,15 +494,16 @@ export function SearchMatchLine({ match, className }: { match: SearchMatch; clas
 
 /** The grade of an earlier version, when the current one is not graded yet or differs. */
 export function PreviousRating({ type, summary }: { type: ContentTypeInfo; summary: ItemSummary }) {
+  const { t } = useTranslation("item");
   const g = summary.previousGrade as Grade | undefined;
   if (!g) return null;
   return (
     <Badge
       variant="outline"
       className={GRADE_TEXT[g]}
-      title={`Оценка версии ${summary.previousGradeVersion ?? ""}: ${gradeLabel(type, g)}`}
+      title={t("PreviousRating.title", { version: summary.previousGradeVersion ?? "", grade: gradeLabel(type, g) })}
     >
-      ранее: {gradeLabel(type, g)}
+      {t("PreviousRating.label", { grade: gradeLabel(type, g) })}
     </Badge>
   );
 }

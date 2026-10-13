@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ContentTypeInfo, NumberInfo } from "@/api/client";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,7 @@ export function rangeParams(ranges: NumberRanges): string[] {
 }
 
 /**
- * "Частей от … до …": the list limited to the works whose number lies within the range, both ends
+ * "Chapters from … to …": the list limited to the works whose number lies within the range, both ends
  * included, for every number the content type's sources let it be limited by. A work without the
  * number is not shown while a range of it is set.
  */
@@ -37,13 +38,24 @@ export function NumberFilters({ type, value, onChange }: { type: ContentTypeInfo
 }
 
 function NumberFilter({ number, range, onChange }: { number: NumberInfo; range: NumberRange; onChange: (range: NumberRange) => void }) {
+  const { t } = useTranslation("number");
   const set = range.from !== undefined || range.to !== undefined;
   return (
     <div className={cn("flex items-center gap-1 rounded-lg border px-2 py-0.5 text-sm", set ? "border-primary/60" : "border-input")}>
       <span className="text-muted-foreground">{number.label}</span>
-      <End label={`${number.label}: от`} placeholder="от" value={range.from} onChange={(from) => onChange({ ...range, from })} />
+      <End
+        label={t("NumberFilter.fromLabel", { label: number.label })}
+        placeholder={t("NumberFilter.from")}
+        value={range.from}
+        onChange={(from) => onChange({ ...range, from })}
+      />
       <span className="text-muted-foreground">–</span>
-      <End label={`${number.label}: до`} placeholder="до" value={range.to} onChange={(to) => onChange({ ...range, to })} />
+      <End
+        label={t("NumberFilter.toLabel", { label: number.label })}
+        placeholder={t("NumberFilter.to")}
+        value={range.to}
+        onChange={(to) => onChange({ ...range, to })}
+      />
     </div>
   );
 }

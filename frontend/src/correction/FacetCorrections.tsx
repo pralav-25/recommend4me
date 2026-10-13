@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { CheckIcon, Loader2Icon, PlusIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, unwrap, type FacetValueInfo, type ItemFacet, type ItemRef, type SourceInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Badge } from "@/components/ui/badge";
@@ -44,6 +45,7 @@ export function FacetCorrections({
   corrections: Corrections;
   except?: readonly string[];
 }) {
+  const { t } = useTranslation("correction");
   const [editing, setEditing] = useState(false);
   const suggestions = useSuggestions(item, source);
   const facets = allFacets.filter((f) => !except.includes(f.facet));
@@ -57,9 +59,9 @@ export function FacetCorrections({
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center gap-1">
-        <h4 className="text-sm font-semibold">Признаки</h4>
+        <h4 className="text-sm font-semibold">{t("FacetCorrections.heading")}</h4>
         {addable && addable.facets.length > 0 && (
-          <EditButton onClick={() => setEditing(!editing)} title={editing ? "Закончить добавление" : "Добавить значение признака"} />
+          <EditButton onClick={() => setEditing(!editing)} title={editing ? t("FacetCorrections.finishAdding") : t("FacetCorrections.addValue")} />
         )}
       </div>
       {layer.length === 0 && !editing && <div className="text-sm text-muted-foreground">—</div>}
@@ -73,7 +75,7 @@ export function FacetCorrections({
       {suggested && <SuggestedValues suggestions={suggested} corrections={corrections} />}
       {site.length > 0 && (
         <div className="flex flex-col gap-3 border-t pt-3">
-          <h4 className="text-sm font-semibold">С сайта</h4>
+          <h4 className="text-sm font-semibold">{t("FacetCorrections.fromSite")}</h4>
           {site.map((f) => (
             <FacetLine key={f.facet} facet={f} />
           ))}
@@ -85,10 +87,11 @@ export function FacetCorrections({
 
 /**
  * A facet of the work with its values, in the order first shown: answered on when [corrections]
- * are given — with "✓ все" for every value shown the user has not answered on, and "…" for more
+ * are given — with "✓ all" for every value shown the user has not answered on, and "…" for more
  * candidates of the [item] — shown as it is when not.
  */
 function FacetLine({ facet: f, item, corrections }: { facet: ItemFacet; item?: ItemRef; corrections?: Corrections }) {
+  const { t } = useTranslation("correction");
   const values = useStableOrder(f.values);
   // The work's values the user has not answered on — not those only offered
   const open = f.values.filter((v) => !decided(v) && !v.offered);
@@ -100,8 +103,8 @@ function FacetLine({ facet: f, item, corrections }: { facet: ItemFacet; item?: I
       <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
         {f.label}
         {corrections && open.length > 1 && (
-          <AsyncButton variant="outline" size="xs" className="h-5 px-1.5 text-[11px]" onClick={confirmAll} title="Подтвердить все значения без вашего ответа">
-            ✓ все ({open.length})
+          <AsyncButton variant="outline" size="xs" className="h-5 px-1.5 text-[11px]" onClick={confirmAll} title={t("FacetLine.confirmAllHint")}>
+            {t("FacetLine.confirmAll", { n: open.length })}
           </AsyncButton>
         )}
       </div>
@@ -131,6 +134,7 @@ export function MoreCandidates({
   shown: { key: string }[];
   corrections: Corrections;
 }) {
+  const { t } = useTranslation("correction");
   const [asked, setAsked] = useState(0);
   const candidates = useCandidates(item, facet, asked > 0);
   const keys = new Set(shown.map((v) => v.key));
@@ -149,7 +153,7 @@ export function MoreCandidates({
           className="h-5 px-1.5"
           onClick={() => setAsked(asked + MORE_STEP)}
           disabled={candidates.isFetching}
-          title={`Показать ещё ${MORE_STEP} кандидатов`}
+          title={t("MoreCandidates.showMore", { count: MORE_STEP })}
         >
           {candidates.isFetching ? <Loader2Icon className="animate-spin" /> : "…"}
         </Button>
@@ -158,11 +162,12 @@ export function MoreCandidates({
   );
 }
 
-const CORRECTED_TITLE: Record<NonNullable<FacetValueInfo["corrected"]>, string> = {
-  ADDED: "Добавлено вами",
-  CONFIRMED: "Подтверждено вами",
-  REMOVED: "Убрано вами",
-};
+/** The keys of the titles of a value by the user's answer on it, translated at render. */
+const CORRECTED_TITLE = {
+  ADDED: "FacetValue.added",
+  CONFIRMED: "FacetValue.confirmed",
+  REMOVED: "FacetValue.removed",
+} as const satisfies Record<NonNullable<FacetValueInfo["corrected"]>, string>;
 
 /**
  * A value of the work's facet, its state told by its look and an icon, never by colour alone:
@@ -176,6 +181,7 @@ const CORRECTED_TITLE: Record<NonNullable<FacetValueInfo["corrected"]>, string> 
  * A value of a facet of the site ([corrections] not given) has no answers.
  */
 export function FacetValue({ facet, value, corrections }: { facet: string; value: FacetValueInfo; corrections?: Corrections }) {
+  const { t } = useTranslation("correction");
   const mine = value.corrected === "CONFIRMED" || value.corrected === "ADDED";
   const removed = value.corrected === "REMOVED";
   const open = corrections && !value.corrected;
@@ -192,11 +198,11 @@ export function FacetValue({ facet, value, corrections }: { facet: string; value
         open && value.offered && "border-dashed",
         !corrections && "bg-muted/40",
       )}
-      title={value.corrected ? CORRECTED_TITLE[value.corrected] : value.implied ? "Есть у работы, потому что есть его подтег" : undefined}
+      title={value.corrected ? t(CORRECTED_TITLE[value.corrected]) : value.implied ? t("FacetValue.implied") : undefined}
     >
-      {mine && <CheckIcon className="size-3 text-yes" aria-label="ваш ответ: есть" />}
+      {mine && <CheckIcon className="size-3 text-yes" aria-label={t("FacetValue.yourAnswerYes")} />}
       {/* Given by a tag under it: marked as such, not by a chance of its own */}
-      {value.implied && !value.corrected && <span className="text-muted-foreground" aria-label="из подтега">↑</span>}
+      {value.implied && !value.corrected && <span className="text-muted-foreground" aria-label={t("FacetValue.fromSubtag")}>↑</span>}
       <span className={cn(removed && "line-through")}>{value.name}</span>
       <ChanceMark value={value} />
       {corrections && <FacetAnswers facet={facet} value={value} corrections={corrections} />}
@@ -210,13 +216,14 @@ export function FacetValue({ facet, value, corrections }: { facet: string; value
  * one is sent by its name alone, and the backend makes its key.
  */
 function AddFacetValue({ source, corrections }: { source: SourceInfo; corrections: Corrections }) {
+  const { t } = useTranslation("correction");
   const facets = source.facets;
   const [facetKey, setFacetKey] = useState(facets[0]?.key ?? "");
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
   useEffect(() => {
-    const t = setTimeout(() => setQuery(name.trim()), 250);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setQuery(name.trim()), 250);
+    return () => clearTimeout(timer);
   }, [name]);
   const listId = useId();
   const facet = facets.find((f) => f.key === facetKey) ?? facets[0];
@@ -246,7 +253,7 @@ function AddFacetValue({ source, corrections }: { source: SourceInfo; correction
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-dashed p-2" onKeyDown={(e) => e.stopPropagation()}>
-      <div className="text-xs text-muted-foreground">Добавить значение</div>
+      <div className="text-xs text-muted-foreground">{t("AddFacetValue.heading")}</div>
       <select
         value={facet.key}
         onChange={(e) => setFacetKey(e.target.value)}
@@ -264,7 +271,7 @@ function AddFacetValue({ source, corrections }: { source: SourceInfo; correction
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && typed && add().catch(() => {})}
           list={listId}
-          placeholder="Начните вводить…"
+          placeholder={t("AddFacetValue.placeholder")}
           className="h-8"
         />
         <datalist id={listId}>
@@ -272,9 +279,9 @@ function AddFacetValue({ source, corrections }: { source: SourceInfo; correction
             <option key={v.key} value={v.name} />
           ))}
         </datalist>
-        <AsyncButton size="icon" variant="outline" onClick={add} disabled={!typed} title={existing ? "Добавить" : "Добавить новое значение"} icon={<PlusIcon />} />
+        <AsyncButton size="icon" variant="outline" onClick={add} disabled={!typed} title={existing ? t("AddFacetValue.add") : t("AddFacetValue.addNew")} icon={<PlusIcon />} />
       </div>
-      {isNew && <div className="text-xs text-muted-foreground">Новое значение: такого ещё нет ни у одной работы</div>}
+      {isNew && <div className="text-xs text-muted-foreground">{t("AddFacetValue.newValue")}</div>}
     </div>
   );
 }

@@ -1,0 +1,10 @@
+{
+  "MarkButtons.against": "Zbog ovoga bih odbacio",
+  "MarkButtons.clear": "Ukloni oznaku",
+  "MarkButtons.for": "Zbog ovoga bih izabrao",
+  "MatchVerdict.otherSense": "Slično, ali ne u tom smislu",
+  "MatchVerdict.recountNote": "Oznaka će to uzeti u obzir pri sledećem preračunavanju",
+  "MatchVerdict.sameSense": "Slično baš u tom smislu",
+  "MatchVerdict.takeBack": "Povuci odgovor",
+  "MatchVerdict.undo": "Poništi"
+}

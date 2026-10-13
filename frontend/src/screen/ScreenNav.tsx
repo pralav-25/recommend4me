@@ -1,9 +1,12 @@
 import type { ReactNode } from "react";
+import type { TFunction } from "i18next";
 import { MenuIcon, OrbitIcon, RadarIcon, TagsIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { ContentTypeInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { typeIcon } from "@/contenttype/types";
+import { LanguageBarMenu, LanguageSubmenu } from "@/i18n/LanguageMenu";
 import { cn } from "@/lib/utils";
 import { ModelLabel } from "@/model/ModelDialog";
 import { followLink, screenHref, type Screen } from "./screens";
@@ -27,26 +30,27 @@ export type MenuProps = {
 };
 
 /**
- * THE ENTRIES, ONE LIST FOR BOTH MENUS: the works of every content type by its name — "Игры",
- * "Книги" — the dictionary of universes, of the type that has one, the tags of the type chosen; then
- * the model of the type and the browser extension, each opening its window.
+ * THE ENTRIES, ONE LIST FOR BOTH MENUS: the works of every content type by its name — "Games",
+ * "Books" — the dictionary of universes, of the type that has one, the tags of the type chosen; then
+ * the model of the type and the browser extension, each opening its window. The language of the
+ * interface follows them, in each menu as fits it.
  */
-function entries({ types, type, screen, onModel, onCapture }: MenuProps): Entry[] {
-  const universes = type.universes ? type : types.find((t) => t.universes);
+function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFunction<"screen">): Entry[] {
+  const universes = type.universes ? type : types.find((tp) => tp.universes);
   return [
-    ...types.map((t): Entry => {
-      const Icon = typeIcon(t.id);
+    ...types.map((tp): Entry => {
+      const Icon = typeIcon(tp.id);
       return {
-        key: `works:${t.id}`,
+        key: `works:${tp.id}`,
         screen: { kind: "works" },
-        typeId: t.id,
+        typeId: tp.id,
         label: (
           <>
-            <Icon /> {t.title}
+            <Icon /> {tp.title}
           </>
         ),
-        title: `${t.title}: работы с прогнозами`,
-        active: screen.kind === "works" && t.id === type.id,
+        title: t("Menu.works.title", { type: tp.title }),
+        active: screen.kind === "works" && tp.id === type.id,
       };
     }),
     ...(universes
@@ -57,10 +61,10 @@ function entries({ types, type, screen, onModel, onCapture }: MenuProps): Entry[
             typeId: universes.id,
             label: (
               <>
-                <OrbitIcon /> Вселенные
+                <OrbitIcon /> {t("Menu.universes")}
               </>
             ),
-            title: "Словарь вселенных фанфиков и их персонажи",
+            title: t("Menu.universes.title"),
             active: screen.kind === "universes",
           } satisfies Entry,
         ]
@@ -71,22 +75,22 @@ function entries({ types, type, screen, onModel, onCapture }: MenuProps): Entry[
       typeId: type.id,
       label: (
         <>
-          <TagsIcon /> Теги
+          <TagsIcon /> {t("Menu.tags")}
         </>
       ),
-      title: `Теги всех сайтов (${type.title.toLowerCase()}): объединить одинаковые, назвать, выстроить надтеги и подтеги`,
+      title: t("Menu.tags.title", { type: type.title.toLowerCase() }),
       active: screen.kind === "tags",
     },
-    { key: "model", open: onModel, label: <ModelLabel type={type} />, title: "Модель рекомендаций: как она упорядочивает работы", active: false },
+    { key: "model", open: onModel, label: <ModelLabel type={type} />, title: t("Menu.model.title"), active: false },
     {
       key: "capture",
       open: onCapture,
       label: (
         <>
-          <RadarIcon /> Расширение
+          <RadarIcon /> {t("Menu.capture")}
         </>
       ),
-      title: "Расширение для Firefox и скрипт для Safari на iPad: как подключить, что они присылают",
+      title: t("Menu.capture.title"),
       active: false,
     },
   ];
@@ -111,9 +115,10 @@ const ACTIVE = "bg-primary text-primary-foreground hover:bg-primary";
  * a second truth of what is on the screen.
  */
 export function ScreenBar(props: MenuProps) {
+  const { t } = useTranslation("screen");
   return (
-    <nav className="hidden items-center gap-1 xl:flex" aria-label="Меню">
-      {entries(props).map((e) =>
+    <nav className="hidden items-center gap-1 xl:flex" aria-label={t("Menu.title")}>
+      {entries(props, t).map((e) =>
         "screen" in e ? (
           <a
             key={e.key}
@@ -131,6 +136,7 @@ export function ScreenBar(props: MenuProps) {
           </button>
         ),
       )}
+      <LanguageBarMenu className={ITEM} />
     </nav>
   );
 }
@@ -140,14 +146,15 @@ export function ScreenBar(props: MenuProps) {
  * it: the button stands first in the header, before the name, and hides where the bar shows.
  */
 export function ScreenMenuButton(props: MenuProps) {
+  const { t } = useTranslation("screen");
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="-ms-1 xl:hidden" aria-label="Меню" />}>
+      <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="-ms-1 xl:hidden" aria-label={t("Menu.title")} />}>
         <MenuIcon />
       </DropdownMenuTrigger>
       {/* As wide as its words, not as the button it hangs on */}
       <DropdownMenuContent className="w-auto min-w-48">
-        {entries(props).map((e) =>
+        {entries(props, t).map((e) =>
           "screen" in e ? (
             <DropdownMenuItem
               key={e.key}
@@ -163,6 +170,8 @@ export function ScreenMenuButton(props: MenuProps) {
             </DropdownMenuItem>
           ),
         )}
+        <DropdownMenuSeparator />
+        <LanguageSubmenu />
       </DropdownMenuContent>
     </DropdownMenu>
   );

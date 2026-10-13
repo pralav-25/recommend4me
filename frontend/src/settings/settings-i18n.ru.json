@@ -1,0 +1,16 @@
+{
+  "Field.default": "по умолчанию",
+  "Field.delete": "Удалить",
+  "Field.keepEmpty": "оставьте пустым, чтобы не менять",
+  "Field.newValue": "новое значение",
+  "Field.notSet": "не задано",
+  "Field.set": "задано",
+  "SettingsDialog.close": "Закрыть",
+  "SettingsDialog.description": "Хранятся в локальной базе приложения. У каждого сайта свои.",
+  "SettingsDialog.loadFailed": "Не удалось загрузить настройки",
+  "SettingsDialog.nothing": "Настраивать нечего.",
+  "SettingsDialog.title": "Настройки",
+  "SourceForm.save": "Сохранить",
+  "SourceForm.saveFailed": "Не удалось сохранить: {{error}}",
+  "SourceForm.saved": "сохранено"
+}

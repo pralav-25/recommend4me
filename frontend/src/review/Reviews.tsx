@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { StarIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, ensureOk, type ItemRef, type ReviewInfo, type ReviewMatch } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { formatDate } from "@/i18n";
+import { formatDate, score } from "@/i18n/format";
 import { itemKey } from "@/item/lists";
 import { InfluenceBadge, MarkButtons, MatchVerdict, StrengthBadge } from "@/mark/MarkButtons";
 import { cn } from "@/lib/utils";
@@ -28,6 +29,7 @@ export function Reviews({
   /** What the points and the 👍 and 👎 mean is told above the reviews (the marking); the 👍 and 👎 are there always, a part of grading. */
   explained?: boolean;
 }) {
+  const { t } = useTranslation("review");
   const [all, setAll] = useState(false);
   if (reviews.length === 0) return null;
   const shown = all ? reviews : reviews.slice(0, FIRST_SHOWN);
@@ -37,13 +39,12 @@ export function Reviews({
       <h4 className="mb-1 text-sm font-semibold">
         {label}
         {total !== undefined && <span className="ml-1 font-normal text-muted-foreground">{total}</span>}
-        <span className="ml-1 text-xs font-normal text-muted-foreground">· {moving ? "сильнее всего сдвигающие прогноз" : "самые новые"}</span>
+        <span className="ml-1 text-xs font-normal text-muted-foreground">· {moving ? t("Reviews.mostMoving") : t("Reviews.newest")}</span>
       </h4>
       {explained && (
         <p className="mb-2 text-xs text-muted-foreground">
-          {moving && "Число — на сколько баллов вашей шкалы, прогноз как есть минус прогноз без этого отзыва. "}
-          Отзыв, который говорит, почему вы выбрали бы работу или отбросили её, отметьте 👍 или 👎 — модель будет искать похожие
-          в других работах.
+          {moving && `${t("Reviews.explanationPoints")} `}
+          {t("Reviews.explanationMark")}
         </p>
       )}
       <div className="flex flex-col gap-2">
@@ -53,7 +54,7 @@ export function Reviews({
       </div>
       {reviews.length > shown.length && (
         <Button variant="ghost" size="sm" className="mt-1" onClick={() => setAll(true)}>
-          Ещё {reviews.length - shown.length}
+          {t("Reviews.more", { n: reviews.length - shown.length })}
         </Button>
       )}
     </section>
@@ -61,6 +62,7 @@ export function Reviews({
 }
 
 function ReviewCard({ item, review }: { item: ItemRef; review: ReviewInfo }) {
+  const { t } = useTranslation("review");
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const mark = async (value: number | null) => {
@@ -85,7 +87,7 @@ function ReviewCard({ item, review }: { item: ItemRef; review: ReviewInfo }) {
       <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
         {review.stars != null && (
           <span className="inline-flex items-center gap-0.5 text-foreground">
-            <StarIcon className="size-3 fill-current" /> {review.stars.toLocaleString("ru-RU", { maximumFractionDigits: 1 })}
+            <StarIcon className="size-3 fill-current" /> {score(review.stars)}
           </span>
         )}
         {review.author && <span className="truncate">{review.author}</span>}
@@ -94,7 +96,7 @@ function ReviewCard({ item, review }: { item: ItemRef; review: ReviewInfo }) {
           <InfluenceBadge
             influence={influence}
             className="ml-auto shadow-none"
-            title="Прогноз как есть минус прогноз без этого отзыва, в баллах вашей шкалы"
+            title={t("ReviewCard.influence")}
           />
         )}
         <MarkButtons
@@ -121,14 +123,12 @@ function ReviewCard({ item, review }: { item: ItemRef; review: ReviewInfo }) {
  * first, the marked one under it, and how far from chance the likeness is.
  */
 export function ReviewMatches({ item, matches }: { item: ItemRef; matches: ReviewMatch[] }) {
+  const { t } = useTranslation("review");
   if (matches.length === 0) return null;
   return (
     <section>
-      <h4 className="mb-1 text-sm font-semibold">Похоже на отмеченные вами отзывы</h4>
-      <p className="mb-2 text-xs text-muted-foreground">
-        Отзыв об этой работе и под ним — отмеченный вами отзыв о другой. Число — насколько сходство неслучайно, как у
-        картинок; ✓ и ✕ — тоже как у картинок.
-      </p>
+      <h4 className="mb-1 text-sm font-semibold">{t("ReviewMatches.heading")}</h4>
+      <p className="mb-2 text-xs text-muted-foreground">{t("ReviewMatches.explanation")}</p>
       <div className="flex flex-col gap-3">
         {matches.map((m) => (
           <div key={`${m.reviewId}-${m.markSource}/${m.markItem}-${m.markReviewId}`} className={cn("flex flex-col gap-1.5", m.verdict === -1 && "opacity-40")}>
@@ -140,7 +140,7 @@ export function ReviewMatches({ item, matches }: { item: ItemRef; matches: Revie
                 <StrengthBadge
                   mark={m.mark}
                   strength={m.strength}
-                  title={m.mark > 0 ? "Похоже на отзыв, из-за которого вы выбрали бы работу" : "Похоже на отзыв, из-за которого вы отбросили бы работу"}
+                  title={m.mark > 0 ? t("ReviewMatches.likePick") : t("ReviewMatches.likeDrop")}
                 />
               </span>
               <figure className={cn("min-w-0 flex-1 rounded-lg border p-2 text-xs text-muted-foreground", m.mark > 0 ? "border-yes/60" : "border-no/60")}>

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, DownloadIcon, ExternalLinkIcon, Loader2Icon, PencilIcon, RefreshCwIcon, XIcon } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import { api, sameItem, unwrap, type ContentTypeInfo, type Grade, type ItemDetails, type ItemSummary, type RatingRecord, type SourceInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
@@ -13,7 +14,7 @@ import { FacetCorrections } from "@/correction/FacetCorrections";
 import { CorrectedMark, EditButton, FieldEditor } from "@/correction/FieldEditor";
 import { Links } from "@/correction/Links";
 import { titleField, useCorrections, type Corrections } from "@/correction/useCorrections";
-import { formatDate, score } from "@/i18n";
+import { formatDate, score } from "@/i18n/format";
 import { cn } from "@/lib/utils";
 import { Explanation } from "@/model/Explanation";
 import { Parts } from "@/part/Parts";
@@ -54,6 +55,7 @@ type Props = {
  * like elsewhere, the work to link. The way chosen stays from work to work.
  */
 export function ItemDialog({ items, index, total, onIndex, onRate, ratedLeaves }: Props) {
+  const { t } = useTranslation("item");
   const summary = index !== null ? items[index] : undefined;
   const of = useSource(summary?.source);
   const [marking, setMarking] = useState(false);
@@ -107,7 +109,7 @@ export function ItemDialog({ items, index, total, onIndex, onRate, ratedLeaves }
       <DialogContent className="flex h-[92vh] max-w-6xl flex-col gap-0 overflow-hidden p-0">
         {summary && index !== null && of && (
           // A work that fails to draw says so in the dialog, and the next one is drawn anew
-          <ErrorBoundary resetKey={`${summary.source}/${summary.item}`} title="Карточка работы не открылась">
+          <ErrorBoundary resetKey={`${summary.source}/${summary.item}`} title={t("ItemDialog.failed")}>
             <Shell
               // A new work is a new dialog: the editors of the last one do not stay open
               key={`${summary.source}/${summary.item}`}
@@ -152,6 +154,7 @@ function Shell({
   marking: boolean;
   onMarking: (marking: boolean) => void;
 }) {
+  const { t } = useTranslation("item");
   const ref = { source: summary.source, item: summary.item };
   const details = useQuery({
     queryKey: itemKey(ref),
@@ -185,7 +188,7 @@ function Shell({
                 <div className="group/title flex items-center gap-1">
                   <DialogTitle className="text-xl leading-tight font-semibold sm:text-2xl">{summary.title}</DialogTitle>
                   {d?.titleCorrected && <CorrectedMark />}
-                  {marking && <EditButton onClick={() => setEditingTitle(true)} title="Исправить название" />}
+                  {marking && <EditButton onClick={() => setEditingTitle(true)} title={t("ItemDialog.editTitle")} />}
                 </div>
               )}
               <Byline source={source} facets={facets} className="text-sm text-muted-foreground" />
@@ -213,12 +216,12 @@ function Shell({
         ) : d ? (
           <Details type={type} source={source} details={d} corrections={corrections} marking={marking} onMarking={onMarking} />
         ) : (
-          <div className="p-5 text-destructive">Не удалось загрузить подробности</div>
+          <div className="p-5 text-destructive">{t("ItemDialog.detailsFailed")}</div>
         )}
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-3 border-t bg-muted/40 px-4 py-3">
-        <Button variant="ghost" size="icon" onClick={() => onIndex(Math.max(index - 1, 0))} disabled={index === 0} title="Предыдущая (←)">
+        <Button variant="ghost" size="icon" onClick={() => onIndex(Math.max(index - 1, 0))} disabled={index === 0} title={t("ItemDialog.previous")}>
           <ChevronLeftIcon />
         </Button>
         <span className="text-sm tabular-nums text-muted-foreground">
@@ -229,11 +232,11 @@ function Shell({
           size="icon"
           onClick={() => onIndex(Math.min(index + 1, count - 1))}
           disabled={index >= count - 1}
-          title="Следующая (→)"
+          title={t("ItemDialog.next")}
         >
           <ChevronRightIcon />
         </Button>
-        <Button variant="outline" size="sm" nativeButton={false} render={<a href={summary.url} target="_blank" rel="noreferrer" />} title="Открыть на сайте (o)">
+        <Button variant="outline" size="sm" nativeButton={false} render={<a href={summary.url} target="_blank" rel="noreferrer" />} title={t("ItemDialog.openOnSite")}>
           <ExternalLinkIcon /> {source.title}
         </Button>
         {d?.canRefresh && <RefreshButton item={ref} />}
@@ -242,10 +245,10 @@ function Shell({
           size="sm"
           aria-pressed={marking}
           onClick={() => onMarking(!marking)}
-          title={marking ? "Закончить разметку (e)" : "Разметить: подтвердить или отклонить значения, исправить тексты и числа, связать с той же работой (e)"}
+          title={marking ? t("ItemDialog.finishMarking") : t("ItemDialog.startMarking")}
         >
           {marking ? <CheckIcon /> : <PencilIcon />}
-          {marking ? "Готово" : "Разметить"}
+          {marking ? t("ItemDialog.done") : t("ItemDialog.mark")}
         </Button>
         <PreviousRating type={type} summary={summary} />
         <InterestButtons summary={summary} size="lg" labels className="ml-auto" />
@@ -283,6 +286,7 @@ function Details({
   marking: boolean;
   onMarking: (marking: boolean) => void;
 }) {
+  const { t } = useTranslation("item");
   const ref = { source: d.summary.source, item: d.summary.item };
   const nothing = d.texts.length === 0 && d.pictures.length === 0 && d.reviews.length === 0 && d.parts.length === 0;
   const except = type.universes ? FANFIC_FACETS : undefined;
@@ -294,7 +298,7 @@ function Details({
     <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <aside className="flex min-w-0 flex-col gap-5 lg:order-2">
         {type.universes && (
-          <Part title="Фанфик">
+          <Part title={t("ItemDialog.fanfic")}>
             {marking ? (
               <FanficSection type={type} source={source} details={d} corrections={corrections} />
             ) : (
@@ -305,14 +309,14 @@ function Details({
         {marking ? (
           <>
             <Separator />
-            <Part title="Признаки">
+            <Part title={t("ItemDialog.facets")}>
               <FacetCorrections item={ref} source={source} facets={d.allFacets} corrections={corrections} except={except} />
             </Part>
-            <Part title="Числа">
+            <Part title={t("ItemDialog.numbers")}>
               <ItemNumbers numbers={d.allNumbers} source={source} corrections={corrections} />
             </Part>
             <Separator />
-            <Part title="Та же работа">
+            <Part title={t("ItemDialog.sameWork")}>
               <Links type={type} summary={d.summary} corrections={corrections} />
             </Part>
             <Separator />
@@ -322,41 +326,52 @@ function Details({
             </div>
           </>
         ) : (
-          <Part title="Признаки">
+          <Part title={t("ItemDialog.facets")}>
             <ContentFacts source={source} facets={d.allFacets} except={except} />
             <OpenSuggestions source={source} details={d} except={except ?? []} onMark={() => onMarking(true)} />
           </Part>
         )}
-        <Part title="Цикл и автор">
+        <Part title={t("ItemDialog.seriesAndAuthor")}>
           <RelatedWorks type={type} related={d.related} />
         </Part>
         {graded && heldOut.data === undefined && !heldOut.isError ? (
-          <Part title="Без вашей оценки">
+          <Part title={t("ItemDialog.withoutGrade")}>
             <Skeleton className="h-16 w-full" />
           </Part>
         ) : heldOut.data ? (
           // A graded work: the model of every grade has seen it and partly learnt it by heart — this one has not
-          <Part title="Без вашей оценки">
+          <Part title={t("ItemDialog.withoutGrade")}>
             <div className={cn("flex flex-col gap-1", heldOut.isFetching && "opacity-60")}>
               <div className="text-sm">
-                Модель, не видевшая эту работу: <span className="font-semibold tabular-nums">{score(Math.max(0, heldOut.data.score))}</span>
+                <Trans
+                  t={t}
+                  i18nKey="ItemDialog.heldOutScore"
+                  values={{ score: score(Math.max(0, heldOut.data.score)) }}
+                  components={{ score: <span className="font-semibold tabular-nums" /> }}
+                />
                 {heldOut.data.gradePlace != null && (
                   <span className="text-muted-foreground">
                     {" "}
-                    · ваша оценка на шкале: <span className="tabular-nums">{score(heldOut.data.gradePlace)}</span>
+                    ·{" "}
+                    <Trans
+                      t={t}
+                      i18nKey="ItemDialog.gradePlace"
+                      values={{ place: score(heldOut.data.gradePlace) }}
+                      components={{ place: <span className="tabular-nums" /> }}
+                    />
                   </span>
                 )}
               </div>
-              <Explanation groups={heldOut.data.explanation} title="За счёт чего" />
+              <Explanation groups={heldOut.data.explanation} title={t("ItemDialog.drivenBy")} />
             </div>
           </Part>
         ) : (
-          <Part title="Почему такой прогноз">
+          <Part title={t("ItemDialog.whyPrediction")}>
             <Explanation groups={d.explanation} />
           </Part>
         )}
         {d.ratings.length > 0 && (
-          <Part title="Мои оценки">
+          <Part title={t("ItemDialog.myGrades")}>
             <Ratings type={type} details={d} />
           </Part>
         )}
@@ -365,33 +380,33 @@ function Details({
       <div className="flex min-w-0 flex-col gap-5 lg:order-1">
         {nothing && d.canRefresh && <NotFetched item={ref} />}
         {source.picturesTell && (
-          <Part title="Картинки">
+          <Part title={t("ItemDialog.pictures")}>
             <Pictures item={ref} pictures={d.pictures} explained={marking} />
           </Part>
         )}
-        <Part title="Тексты">
+        <Part title={t("ItemDialog.texts")}>
           <ItemTexts texts={d.texts} source={source} corrections={corrections} editing={marking} />
         </Part>
         {!source.picturesTell && (
-          <Part title="Картинки">
+          <Part title={t("ItemDialog.pictures")}>
             <Pictures item={ref} pictures={d.pictures} large={false} explained={marking} />
           </Part>
         )}
         {marking && (
-          <Part title="Похожие картинки">
+          <Part title={t("ItemDialog.similarPictures")}>
             <PictureMatches item={ref} matches={d.pictureMatches} />
           </Part>
         )}
-        <Part title={source.reviewsLabel ?? "Отзывы"}>
-          <Reviews item={ref} label={source.reviewsLabel ?? "Отзывы"} reviews={d.reviews} total={d.reviewCount} explained={marking} />
+        <Part title={source.reviewsLabel ?? t("ItemDialog.reviews")}>
+          <Reviews item={ref} label={source.reviewsLabel ?? t("ItemDialog.reviews")} reviews={d.reviews} total={d.reviewCount} explained={marking} />
         </Part>
         {marking && (
-          <Part title="Похожие отзывы">
+          <Part title={t("ItemDialog.similarReviews")}>
             <ReviewMatches item={ref} matches={d.reviewMatches} />
           </Part>
         )}
-        <Part title={source.partsLabel ?? "Части"}>
-          <Parts item={ref} label={source.partsLabel ?? "Части"} parts={d.parts} />
+        <Part title={source.partsLabel ?? t("ItemDialog.parts")}>
+          <Parts item={ref} label={source.partsLabel ?? t("ItemDialog.parts")} parts={d.parts} />
         </Part>
       </div>
     </div>
@@ -400,8 +415,9 @@ function Details({
 
 /** A section of the card that fails to draw says so in its place; the grade and the rest of the card stay. */
 function Part({ title, children }: { title: string; children: ReactNode }) {
+  const { t } = useTranslation("item");
   return (
-    <ErrorBoundary title={`Не удалось показать: ${title.toLowerCase()}`} className="m-0 p-3">
+    <ErrorBoundary title={t("ItemDialog.partFailed", { part: title.toLowerCase() })} className="m-0 p-3">
       {children}
     </ErrorBoundary>
   );
@@ -423,6 +439,7 @@ function OpenSuggestions({
   except: readonly string[];
   onMark: () => void;
 }) {
+  const { t } = useTranslation("item");
   const suggestions = useSuggestions({ source: d.summary.source, item: d.summary.item }, source);
   const suggested = (suggestions.data ?? []).filter((s) => !except.includes(s.facet)).reduce((n, s) => n + s.suggested.length, 0);
   const inferred = d.allFacets
@@ -432,7 +449,7 @@ function OpenSuggestions({
   if (suggested + inferred === 0) return null;
   return (
     <Button variant="link" size="sm" className="h-auto self-start p-0 text-xs" onClick={onMark}>
-      Модель предлагает {suggested + inferred} без вашего ответа — разобрать
+      {t("OpenSuggestions.review", { count: suggested + inferred })}
     </Button>
   );
 }
@@ -442,6 +459,7 @@ function OpenSuggestions({
  * and a cross to take one back — an old version's grade, or one given to the work on another site.
  */
 function Ratings({ type, details: d }: { type: ContentTypeInfo; details: ItemDetails }) {
+  const { t } = useTranslation("item");
   const takeBack = useTakeBackGrade(d.summary);
   const itemOf = (r: RatingRecord) =>
     sameItem(r, d.summary)
@@ -449,14 +467,14 @@ function Ratings({ type, details: d }: { type: ContentTypeInfo; details: ItemDet
       : `${sourceTitle(type, r.source)} · ${d.summary.linked.find((l) => sameItem(l, r))?.title ?? r.item}`;
   return (
     <section>
-      <h4 className="mb-2 text-sm font-semibold">Мои оценки</h4>
+      <h4 className="mb-2 text-sm font-semibold">{t("Ratings.heading")}</h4>
       <ul className="flex flex-col gap-1 text-sm">
         {d.ratings.map((r) => (
           <li key={`${r.source}/${r.item}-${r.version}-${r.ratedAt}`} className="group/rating flex items-center gap-2">
             <span className="flex min-w-0 flex-1 flex-col">
               <span className={cn("truncate", !r.current && "text-muted-foreground")} title={formatDate(r.ratedAt)}>
                 {r.version || formatDate(r.ratedAt)}
-                {!r.current && r.version && " · прежняя версия"}
+                {!r.current && r.version && ` · ${t("Ratings.previousVersion")}`}
               </span>
               {itemOf(r) && <span className="truncate text-xs text-muted-foreground">{itemOf(r)}</span>}
             </span>
@@ -466,7 +484,7 @@ function Ratings({ type, details: d }: { type: ContentTypeInfo; details: ItemDet
             <AsyncButton
               variant="ghost"
               size="icon-xs"
-              title="Снять эту оценку"
+              title={t("Ratings.takeBack")}
               onClick={() => takeBack(r)}
               icon={<XIcon />}
               className="text-muted-foreground opacity-0 transition-opacity group-hover/rating:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
@@ -480,13 +498,14 @@ function Ratings({ type, details: d }: { type: ContentTypeInfo; details: ItemDet
 
 /** Nothing of the work is here yet: its page has not come in — fetch it now. */
 function NotFetched({ item }: { item: { source: string; item: string } }) {
+  const { t } = useTranslation("item");
   const refresh = useRefreshItem(item);
   return (
     <div className="flex flex-col items-start gap-3 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-      Страница этой работы ещё не загружена: нет ни текстов, ни картинок.
+      {t("NotFetched.message")}
       <Button onClick={() => refresh.mutate()} disabled={refresh.isPending}>
         {refresh.isPending ? <Loader2Icon className="animate-spin" /> : <DownloadIcon />}
-        {refresh.isPending ? "Загружаю…" : "Загрузить страницу"}
+        {refresh.isPending ? t("NotFetched.loading") : t("NotFetched.load")}
       </Button>
     </div>
   );
@@ -494,11 +513,12 @@ function NotFetched({ item }: { item: { source: string; item: string } }) {
 
 /** Downloads the page again: after a login was set, or to see a fresh update before the next job. */
 function RefreshButton({ item }: { item: { source: string; item: string } }) {
+  const { t } = useTranslation("item");
   const refresh = useRefreshItem(item);
   return (
-    <Button variant="outline" size="sm" onClick={() => refresh.mutate()} disabled={refresh.isPending} title="Скачать страницу работы заново">
+    <Button variant="outline" size="sm" onClick={() => refresh.mutate()} disabled={refresh.isPending} title={t("RefreshButton.title")}>
       {refresh.isPending ? <Loader2Icon className="animate-spin" /> : <RefreshCwIcon />}
-      Обновить
+      {t("RefreshButton.label")}
     </Button>
   );
 }

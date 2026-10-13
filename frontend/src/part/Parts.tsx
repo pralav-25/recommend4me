@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpenTextIcon, ChevronDownIcon, Loader2Icon } from "lucide-react";
+import { Trans, useTranslation } from "react-i18next";
 import { api, unwrap, type ItemRef, type PartInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { formatDate, formatDay } from "@/i18n";
+import { formatDate, formatDay } from "@/i18n/format";
 import { InfluenceBadge } from "@/mark/MarkButtons";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +16,7 @@ const FIRST_SHOWN = 20;
  * the list in order, each read part with the points it moves the work by, opening its text in place.
  */
 export function Parts({ item, label, parts }: { item: ItemRef; label: string; parts: PartInfo[] }) {
+  const { t } = useTranslation("part");
   const [listed, setListed] = useState(false);
   const [all, setAll] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -34,11 +36,16 @@ export function Parts({ item, label, parts }: { item: ItemRef; label: string; pa
         <span className="text-muted-foreground">
           {parts.length}
           {dates.length > 0 && ` · ${formatDay(dates[0])} — ${formatDay(dates[dates.length - 1])}`}
-          {` · текст сохранён у ${read}`}
+          {` · ${t("Parts.withText", { n: read })}`}
           {up + down > 0 && (
-            <span title="Сколько сохранённых глав повышают прогноз и сколько понижают — каждая сама по себе">
+            <span title={t("Parts.upDownHint")}>
               {" · "}
-              <span className="text-yes">повышают {up}</span>, <span className="text-no">понижают {down}</span>
+              <Trans
+                t={t}
+                i18nKey="Parts.upDown"
+                values={{ up, down }}
+                components={{ up: <span className="text-yes" />, down: <span className="text-no" /> }}
+              />
             </span>
           )}
         </span>
@@ -51,7 +58,7 @@ export function Parts({ item, label, parts }: { item: ItemRef; label: string; pa
               className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left", p.hasText ? "hover:bg-muted/50" : "cursor-default")}
               onClick={() => p.hasText && setOpen(open === p.partId ? null : p.partId)}
               disabled={!p.hasText}
-              title={p.hasText ? "Показать текст" : "Текст не сохранён"}
+              title={p.hasText ? t("Parts.showText") : t("Parts.noText")}
             >
               <span className="w-8 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{p.position}</span>
               <span className={cn("min-w-0 flex-1 truncate", !p.hasText && "text-muted-foreground")}>{p.title ?? `#${p.position}`}</span>
@@ -59,7 +66,7 @@ export function Parts({ item, label, parts }: { item: ItemRef; label: string; pa
                 <InfluenceBadge
                   influence={p.influence}
                   className="shrink-0 shadow-none"
-                  title="Прогноз как есть минус прогноз без текста этой главы, в баллах вашей шкалы"
+                  title={t("Parts.influence")}
                 />
               )}
               {p.publishedAt && <span className="shrink-0 text-xs text-muted-foreground">{formatDate(p.publishedAt)}</span>}
@@ -72,7 +79,7 @@ export function Parts({ item, label, parts }: { item: ItemRef; label: string; pa
       )}
       {listed && sorted.length > shown.length && (
         <Button variant="ghost" size="sm" className="mt-1" onClick={() => setAll(true)}>
-          Ещё {sorted.length - shown.length}
+          {t("Parts.more", { n: sorted.length - shown.length })}
         </Button>
       )}
     </section>
@@ -80,6 +87,7 @@ export function Parts({ item, label, parts }: { item: ItemRef; label: string; pa
 }
 
 function PartText({ item, partId }: { item: ItemRef; partId: string }) {
+  const { t } = useTranslation("part");
   const part = useQuery({
     queryKey: ["part", item.source, item.item, partId],
     queryFn: async () =>
@@ -91,7 +99,7 @@ function PartText({ item, partId }: { item: ItemRef; partId: string }) {
         <Loader2Icon className="size-5 animate-spin" />
       </div>
     );
-  if (!part.data) return <div className="px-3 pb-3 text-sm text-destructive">Текст не загрузился</div>;
+  if (!part.data) return <div className="px-3 pb-3 text-sm text-destructive">{t("PartText.failed")}</div>;
   return (
     <div className="mx-3 mb-3 max-h-[60vh] overflow-y-auto rounded-md bg-muted/40 p-3">
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">

@@ -1,4 +1,5 @@
 import { CheckIcon, Undo2Icon, XIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import type { FacetValueInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { cn } from "@/lib/utils";
@@ -21,18 +22,19 @@ export function FacetAnswers({
   value: { key: string; corrected?: FacetValueInfo["corrected"] };
   corrections: Corrections;
 }) {
+  const { t } = useTranslation("correction");
   const answer = (added: boolean) => corrections.setFacet(facet, { key: value.key }, added);
   const takeBack = () => corrections.resetFacet(facet, value.key);
 
   if (value.corrected === "REMOVED")
-    return <AsyncButton variant="ghost" size="icon-xs" className={BUTTON} title="Вернуть: снять ваш ответ" onClick={takeBack} icon={<Undo2Icon className="size-3" />} />;
+    return <AsyncButton variant="ghost" size="icon-xs" className={BUTTON} title={t("FacetAnswers.restore")} onClick={takeBack} icon={<Undo2Icon className="size-3" />} />;
   if (value.corrected === "ADDED" || value.corrected === "CONFIRMED")
     return (
       <AsyncButton
         variant="ghost"
         size="icon-xs"
         className={cn(BUTTON, "text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
-        title={value.corrected === "ADDED" ? "Убрать добавленное вами" : "Снять ваш ответ"}
+        title={value.corrected === "ADDED" ? t("FacetAnswers.removeAdded") : t("FacetAnswers.withdraw")}
         onClick={takeBack}
         icon={<XIcon className="size-3" />}
       />
@@ -44,7 +46,7 @@ export function FacetAnswers({
         variant="ghost"
         size="icon-xs"
         className={cn(BUTTON, "text-yes")}
-        title="Да, это у работы есть"
+        title={t("FacetAnswers.yes")}
         onClick={() => answer(true)}
         icon={<CheckIcon className="size-3" />}
       />
@@ -52,7 +54,7 @@ export function FacetAnswers({
         variant="ghost"
         size="icon-xs"
         className={cn(BUTTON, "text-destructive")}
-        title="Нет, этого у работы нет"
+        title={t("FacetAnswers.no")}
         onClick={() => answer(false)}
         icon={<XIcon className="size-3" />}
       />

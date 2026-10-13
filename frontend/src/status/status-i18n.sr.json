@@ -1,0 +1,18 @@
+{
+  "Work.parts.about": "Tekstovi poglavlja isečeni na fragmente; svaki fragment ima svoj vektor.",
+  "Work.parts.title": "Poglavlja",
+  "Work.pictures.about": "Korice i snimci ekrana koje je obradio model slika: prvo ocenjenih dela, zatim ostalih po predviđanju.",
+  "Work.pictures.title": "Slike",
+  "Work.sets.about": "Ponovno računanje pravaca skupova: snimaka ekrana, recenzija, fragmenata teksta.",
+  "Work.sets.title": "Skupovi",
+  "Work.texts.about": "Opisi i drugi tekstovi pretvoreni u vektore za model i pretragu po smislu.",
+  "Work.texts.title": "Tekstovi",
+  "WorkProgress.counts": "{{title}}: {{done}} od {{total}}.",
+  "WorkProgress.countsFailed": "{{title}}: {{done}} od {{total}}, nije uspelo: {{failed}}.",
+  "WorkProgress.countsFailedRunning": "{{title}}: {{done}} od {{total}}, nije uspelo: {{failed}} — u toku je.",
+  "WorkProgress.countsRunning": "{{title}}: {{done}} od {{total}} — u toku je.",
+  "WorkProgress.idle": "{{title}}.",
+  "WorkProgress.running": "{{title}} — u toku je.",
+  "WorkProgress.speed": "Brzina: {{speed}} u minuti.",
+  "WorkProgress.speedLeft": "Brzina: {{speed}} u minuti, preostalo je oko {{left}}."
+}

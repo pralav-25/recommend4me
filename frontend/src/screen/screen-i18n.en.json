@@ -1,0 +1,11 @@
+{
+  "Menu.capture": "Extension",
+  "Menu.capture.title": "The Firefox extension and the Safari script for iPad: how to connect them, what they send",
+  "Menu.model.title": "The recommendation model: how it orders the works",
+  "Menu.tags": "Tags",
+  "Menu.tags.title": "Tags of every site ({{type}}): merge the same ones, name them, build parent and child tags",
+  "Menu.title": "Menu",
+  "Menu.universes": "Universes",
+  "Menu.universes.title": "The dictionary of fan fiction universes and their characters",
+  "Menu.works.title": "{{type}}: works with predictions"
+}

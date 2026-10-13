@@ -1,8 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { BookOpenTextIcon, FileTextIcon, ImageIcon, LayersIcon, Loader2Icon, type LucideIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { api, unwrap, type WorkStatus } from "@/api/client";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { compact, duration, WORK_LABEL } from "@/i18n";
+import { compact, duration, number } from "@/i18n/format";
+import { workLabel } from "./labels";
 
 const ICON: Record<string, LucideIcon> = {
   pictures: ImageIcon,
@@ -31,10 +33,19 @@ export function WorkProgress() {
 }
 
 function Work({ w }: { w: WorkStatus }) {
+  const { t } = useTranslation("status");
   const Icon = ICON[w.name] ?? LayersIcon;
-  const label = WORK_LABEL[w.name] ?? { title: w.name, about: "" };
+  const label = workLabel(w.name);
   const rest = w.total - w.done - (w.failed ?? 0);
   const left = w.perMinute && w.perMinute > 0 && rest > 0 ? duration((rest / w.perMinute) * 60) : undefined;
+  // The first line, whole: how much is done, how much failed, whether it runs now
+  const counts = { title: label.title, done: number(w.done), total: number(w.total), failed: number(w.failed ?? 0) };
+  const state =
+    w.total > 0
+      ? w.failed
+        ? t(w.running ? "WorkProgress.countsFailedRunning" : "WorkProgress.countsFailed", counts)
+        : t(w.running ? "WorkProgress.countsRunning" : "WorkProgress.counts", counts)
+      : t(w.running ? "WorkProgress.running" : "WorkProgress.idle", counts);
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground tabular-nums" />}>
@@ -42,19 +53,16 @@ function Work({ w }: { w: WorkStatus }) {
         {w.total > 0 && `${compact(w.done)} / ${compact(w.total)}`}
       </TooltipTrigger>
       <TooltipContent className="block max-w-sm">
-        <div>
-          {label.title}
-          {w.total > 0 && `: ${w.done} из ${w.total}`}
-          {w.failed ? `, не удалось: ${w.failed}` : ""}
-          {w.running ? " — идёт сейчас" : ""}.
-        </div>
+        <div>{state}</div>
         {label.about && <div className="mt-1">{label.about}</div>}
-        {(w.perMinute || left) && (
+        {/* The time left comes from the speed: there is none without it */}
+        {w.perMinute ? (
           <div className="mt-1">
-            {w.perMinute ? `Скорость ${Math.round(w.perMinute)} в минуту` : ""}
-            {left ? `, осталось ~${left}` : ""}.
+            {left
+              ? t("WorkProgress.speedLeft", { speed: number(Math.round(w.perMinute)), left })
+              : t("WorkProgress.speed", { speed: number(Math.round(w.perMinute)) })}
           </div>
-        )}
+        ) : null}
       </TooltipContent>
     </Tooltip>
   );

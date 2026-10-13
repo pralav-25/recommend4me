@@ -260,6 +260,29 @@ universes, the characters of either kind and the pairings can each be said to be
 work keeps its own and is offered no other.
 Taking a universe out of the dictionary takes its links with it.
 
+## Languages of the interface
+
+The web interface speaks English, Russian and Serbian (Latin script), through i18next and
+react-i18next (`frontend/src/i18n`). The language is the one the user chose in the menu (kept in
+the browser's local storage), else the first of the browser's languages the interface has, else
+English. Numbers, dates and durations are formatted in it (`i18n/format.ts`).
+
+The words are split by the section of the application they belong to: every folder of the
+frontend with words of its own keeps them beside its code, `<section>-i18n.<language>.json` —
+`tag/tag-i18n.en.json`, `universe/universe-i18n.ru.json` — one i18next namespace a section; the
+words every section shares are the namespace `common`, in `i18n/`. Keys are flat,
+`"Component.purpose"`; a word of a count has a key of each plural form of its language
+(`works_one`, `works_few`, `works_many`, `works_other`) and is asked with `{ count }`.
+
+The keys are typed: the English files are the shape `t` is checked against (`i18n/i18next.d.ts`),
+so a key that does not exist does not compile; and `i18n/resources.ts` checks every other language
+against the English — the same keys, no more and no fewer, every word of a count in each plural
+form of that language — so a translation missing or left over does not compile either. A new
+section's files are registered there.
+
+What the server sends is shown as it comes: the labels of the facets, the titles of the content
+types and of the sources, the names of the catalogue, the server's messages.
+
 ## The site as the interface
 
 On the pages the sources want, the extension also shows the work as the application knows it,
