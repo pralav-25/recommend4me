@@ -158,6 +158,11 @@
     return `r4m-s${Math.max(0, Math.min(10, Math.round(score)))}`;
   }
 
+  /** A prediction on 0..10, as the application shows it: above the scale "10+", below it 0. */
+  function shownScore(score) {
+    return score > 10 ? "10+" : Math.max(0, score).toFixed(1);
+  }
+
   const lower = (text) => (text || "").trim().toLowerCase();
 
   /** The file an address names: what a preview and its original share. */
@@ -297,7 +302,7 @@
     const head = el("r4m-head");
     head.appendChild(el("strong", null, "recommend4me"));
     if (item && item.summary.prediction) {
-      head.appendChild(el("r4m-score", scoreClass(item.summary.prediction.score), item.summary.prediction.score.toFixed(1)));
+      head.appendChild(el("r4m-score", scoreClass(item.summary.prediction.score), shownScore(item.summary.prediction.score)));
     }
     if (item && item.summary.grade) head.appendChild(el("r4m-grade-mark", null, `★${item.summary.grade}`));
     head.appendChild(el("span", "r4m-spacer"));
@@ -321,7 +326,7 @@
     const score = el("r4m-line");
     if (s.prediction) {
       score.appendChild(el("span", null, "Прогноз "));
-      score.appendChild(el("r4m-score", scoreClass(s.prediction.score), s.prediction.score.toFixed(1)));
+      score.appendChild(el("r4m-score", scoreClass(s.prediction.score), shownScore(s.prediction.score)));
       score.appendChild(el("span", "r4m-muted", " из 10"));
     } else {
       score.appendChild(el("span", "r4m-muted", "Прогноза пока нет: модель ещё не обучена или работа ещё не разобрана"));
@@ -993,26 +998,35 @@
     const byLink = new Map(known.map((k) => [k.link, k]));
     let pending = false;
     wanted.forEach(({ card, link }) => {
-      // A work the application does not know yet gets its badge once the page that shows it is saved
-      const k = byLink.get(link.getAttribute("href"));
-      if (!k) return;
       let badge = card.querySelector("r4m-badge");
       if (!badge) {
         badge = el("r4m-badge");
         link.insertAdjacentElement("beforebegin", badge);
       }
-      const waiting = fillBadge(badge, k);
+      // A work the application does not know yet waits, marked, until the page that shows it is saved
+      const k = byLink.get(link.getAttribute("href"));
+      const waiting = k ? fillBadge(badge, k) : unsaved(badge);
       pending = pending || waiting;
     });
     clearTimeout(pendingTimer);
     if (pending && Date.now() - pendingSince < PENDING_FOR) pendingTimer = setTimeout(cards, PENDING_EVERY);
   }
 
+  /** The badge of a card of a work the application does not know yet: "…" until the page is saved. */
+  function unsaved(badge) {
+    badge.textContent = "";
+    const score = el("r4m-score", "r4m-pending-score", "…");
+    score.title = "recommend4me: работа сохраняется";
+    badge.appendChild(score);
+    badge.classList.add("r4m-pending");
+    return true;
+  }
+
   /** The badge of a card filled with what the application knows of the work [k]; true while its prediction is still worked out. */
   function fillBadge(badge, k) {
     badge.textContent = "";
     const scored = k.prediction !== undefined && k.prediction !== null;
-    const score = scored ? el("r4m-score", scoreClass(k.prediction), k.prediction.toFixed(1)) : el("r4m-score", "r4m-pending-score", "…");
+    const score = scored ? el("r4m-score", scoreClass(k.prediction), shownScore(k.prediction)) : el("r4m-score", "r4m-pending-score", "…");
     const waiting = !scored && !k.grade;
     score.title = waiting ? "recommend4me: прогноз ещё считается" : "recommend4me: прогноз из 10";
     badge.appendChild(score);

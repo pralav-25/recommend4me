@@ -62,7 +62,9 @@ async function inject(tabId, url) {
   }
 }
 
-browser.webNavigation.onCompleted.addListener((details) => {
+// As soon as the page's own markup is there, not after its pictures and fonts: the cards of a list
+// get their badges at once. What the page's scripts add later the watcher sends again
+browser.webNavigation.onDOMContentLoaded.addListener((details) => {
   if (details.frameId === 0) inject(details.tabId, details.url);
 });
 

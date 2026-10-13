@@ -40,6 +40,7 @@ class Captures(private val stores: Stores, private val contexts: SourceContexts)
     fun capture(url: String, html: String): Captured {
         val store = tracking().firstOrNull { s -> s.source.capturePatterns.any { it.matches(url) } } ?: return Captured(null, emptyList())
         val now = Instant.now()
+        val started = System.currentTimeMillis()
         // The parts whose text the page gave, as the source saves them: the user sees a chapter's text went
         val texts = ArrayList<CapturedPart>()
         val own = contexts.of(store.id)
@@ -58,7 +59,7 @@ class Captures(private val stores: Stores, private val contexts: SourceContexts)
             emptyList()
         }
         store.pages.keep(url, html, items.firstOrNull(), now, store.source.parserVersion)
-        log.info("{}: {} gave {} items, the text of {} parts", store.id, url, items.size, texts.size)
+        log.info("{}: {} gave {} items, the text of {} parts, in {} ms", store.id, url, items.size, texts.size, System.currentTimeMillis() - started)
         return Captured(store.id, items.map { ItemKey(store.id, it) }, texts)
     }
 
