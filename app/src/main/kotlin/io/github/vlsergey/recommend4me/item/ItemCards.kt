@@ -101,7 +101,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     shown = shown, answered = answered, fromSite = fromSite,
                 )
             }
-            if (!empty && keys.isEmpty() && removed.isEmpty() && offered.isEmpty() && original == null) return@mapNotNull null
+            // A facet said to have no other values is shown with none too: the answer is there to take back
+            if (!empty && keys.isEmpty() && removed.isEmpty() && offered.isEmpty() && original == null && def.key !in complete) return@mapNotNull null
             // The value's own name — a tag's as the user and the sites name it — the name the answer was given with only of a value nothing else names
             // The names of the values offered the caller did not read — a site's tags bound to tags of the layer — in one read
             val unnamed = offered.filter { names[def.key]?.containsKey(it) != true }

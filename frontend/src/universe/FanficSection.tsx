@@ -386,7 +386,8 @@ function Universes({
   corrections: Corrections;
 }) {
   const own = values.filter(has);
-  const allNamed = own.length > 0 && <AllNamed facet={UNIVERSE} named="universes" complete={complete} corrections={corrections} />;
+  // Shown with no value too: "no universe of another's" is an answer as well
+  const allNamed = <AllNamed facet={UNIVERSE} named="universes" complete={complete} corrections={corrections} />;
   if (complete)
     return (
       <Block label={label}>
@@ -523,7 +524,8 @@ function Characters({
   corrections: Corrections;
 }) {
   const own = values.filter(has);
-  const allNamed = own.length > 0 && <AllNamed facet={facet} named={named} complete={complete} corrections={corrections} />;
+  // Shown with no value too: "no main characters" is an answer as well
+  const allNamed = <AllNamed facet={facet} named={named} complete={complete} corrections={corrections} />;
   if (complete)
     return (
       <Block label={label}>
@@ -664,7 +666,8 @@ function Pairings({
   corrections: Corrections;
 }) {
   const own = values.filter(has);
-  const allNamed = own.length > 0 && <AllNamed facet={PAIRINGS} named="pairings" complete={complete} corrections={corrections} />;
+  // Shown with no value too: "no pairings" is an answer as well
+  const allNamed = <AllNamed facet={PAIRINGS} named="pairings" complete={complete} corrections={corrections} />;
   if (complete)
     return (
       <Block label={label}>

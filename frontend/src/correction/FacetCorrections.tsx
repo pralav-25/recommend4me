@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { CheckIcon, Loader2Icon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { CheckIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { api, unwrap, type FacetValueInfo, type ItemFacet, type ItemRef, type SourceInfo } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
@@ -157,22 +157,28 @@ export function MoreCandidates({
   const rest = (candidates.data ?? []).filter((c) => !keys.has(c.key));
   if (candidates.isError) return null;
   const done = candidates.data !== undefined && rest.length <= asked;
+  // The press reads the candidates when there are none yet, and shows the next ones once they are
+  // there: the button is at work while ITS press is ([AsyncButton]) — never while the candidates
+  // are read anew after answers, which waits for the work's chances
+  const more = async () => {
+    if (candidates.data === undefined) await candidates.refetch();
+    setAsked(asked + MORE_STEP);
+  };
   return (
     <>
       {rest.slice(0, asked).map((c) => (
         <FacetValue key={c.key} facet={facet} value={{ key: c.key, name: c.name, nameKey: c.nameKey, chance: c.chance ?? undefined, offered: true }} corrections={corrections} />
       ))}
       {!done && (
-        <Button
+        <AsyncButton
           variant="outline"
           size="xs"
           className="h-5 px-1.5"
-          onClick={() => setAsked(asked + MORE_STEP)}
-          disabled={candidates.isFetching}
+          onClick={more}
           title={t("MoreCandidates.showMore", { count: MORE_STEP })}
-        >
-          {candidates.isFetching ? <Loader2Icon className="animate-spin" /> : "…"}
-        </Button>
+          aria-label={t("MoreCandidates.showMore", { count: MORE_STEP })}
+          icon="…"
+        />
       )}
     </>
   );
