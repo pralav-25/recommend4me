@@ -6,6 +6,7 @@ import io.github.vlsergey.recommend4me.source.Job
 import io.github.vlsergey.recommend4me.source.JobCancelled
 import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.SourceMode
+import io.github.vlsergey.recommend4me.source.job
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import jakarta.annotation.PreDestroy
@@ -108,7 +109,7 @@ class Jobs(
     @Synchronized
     fun start(sourceId: String, mode: SourceMode): Boolean {
         val store = stores.source(sourceId) ?: return false
-        if (mode == SourceMode.BROWSER || mode !in store.source.modes) return false
+        if (!mode.job || mode !in store.source.modes) return false
         val current = runs[sourceId]?.progress?.state
         if (current == JobState.RUNNING || current == JobState.CANCELLING) return false
         val run = Run(sourceId, mode)

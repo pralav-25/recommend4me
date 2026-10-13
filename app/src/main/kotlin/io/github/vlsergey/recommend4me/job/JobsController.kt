@@ -6,6 +6,7 @@ import io.github.vlsergey.recommend4me.api.model.CatalogueProgress
 import io.github.vlsergey.recommend4me.api.model.JobStatus
 import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.SourceMode
+import io.github.vlsergey.recommend4me.source.job
 import io.github.vlsergey.recommend4me.source.Stores
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -18,7 +19,7 @@ import io.github.vlsergey.recommend4me.api.model.SourceMode as ApiSourceMode
 class JobsController(private val jobs: Jobs, private val stores: Stores, private val contexts: SourceContexts) : JobsApi {
 
     override fun listJobs(): ResponseEntity<List<JobStatus>> =
-        ResponseEntity.ok(stores.sources.filter { s -> s.source.modes.any { it != SourceMode.BROWSER } }.map { status(it.id) })
+        ResponseEntity.ok(stores.sources.filter { s -> s.source.modes.any { it.job } }.map { status(it.id) })
 
     override fun startJob(source: String, jobRequest: JobRequest): ResponseEntity<JobStatus> {
         val started = jobs.start(source, SourceMode.valueOf(jobRequest.mode.name))

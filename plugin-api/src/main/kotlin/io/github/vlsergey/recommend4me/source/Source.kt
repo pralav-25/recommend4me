@@ -15,7 +15,16 @@ enum class SourceMode {
      * requests nothing from the site.
      */
     BROWSER,
+
+    /** One work's page downloaded by the application when the user asks for it ([Source.refresh]): no catalogue, no job. */
+    PAGE,
 }
+
+/** The modes that are jobs over the catalogue, run in the background. */
+val SourceMode.job: Boolean get() = this == SourceMode.SCRAPE_ALL || this == SourceMode.UPDATES
+
+/** Whether the application downloads a work's page itself: by [SourceMode.PAGE], or by a job's own requests. */
+val Source.downloadsPages: Boolean get() = modes.any { it == SourceMode.PAGE || it.job }
 
 /**
  * A site the works come from. Implemented by a plugin and declared as a Spring bean.

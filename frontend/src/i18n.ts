@@ -28,6 +28,7 @@ export const MODE_LABEL: Record<SourceMode, string> = {
   SCRAPE_ALL: "Весь каталог",
   UPDATES: "Обновления",
   BROWSER: "Слежение в браузере",
+  PAGE: "Страница работы по запросу",
 };
 
 /**

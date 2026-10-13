@@ -27,6 +27,7 @@ neural encoder, every way of turning vectors into scores and the search are plug
 | `plugins/search-lucene` | Search by words and by meaning over one Lucene index per content type. |
 | `plugins/catalogue-wikidata` | The universes of fan fiction and their characters, from Wikidata. |
 | `plugins/suggester-bilinear` | The values a work should have — tags, universes, characters, pairings — by one model of every work and every value. |
+| `plugins/source-ao3` | archiveofourown.org, browser tracking and a work's page on request. |
 | `plugins/source-author-today` | author.today, browser tracking only. |
 | `plugins/source-ficbook` | ficbook.net, browser tracking only. |
 | `browser-extension` | The Firefox extension of the browser tracking mode. |
@@ -52,14 +53,18 @@ A source belongs to a content type (`games`, `books`). Works of one type are gra
 and ranked by one model, whichever site they came from: a book of author.today and a fanfic of
 ficbook are compared with each other.
 
-Every source has up to three modes:
+Every source has up to four modes:
 
 - **scrape all** — the whole catalogue, resumable;
 - **updates** — what is new since the last time;
 - **browser tracking** — the pages the user opens in Firefox are sent by the extension and parsed;
-  nothing is requested from the site by the application.
+  nothing is requested from the site by the application;
+- **page** — one work's page downloaded by the application when the user asks for it (the
+  "refresh" button of a work, or a work graded that is known by its card alone); no job, no crawl.
 
-author.today and ficbook have only the third: their catalogues are never scraped whole.
+author.today and ficbook have only browser tracking: their catalogues are never scraped whole.
+Archive of Our Own has browser tracking and single pages, one request at a time, five seconds
+apart, with "bot" in the user agent, as the site asks of anything automated.
 
 ## Storage
 
@@ -103,8 +108,8 @@ interface read of it is generic:
 - **texts** — overview, annotation, changelog…, declared with their search weight, whether the
   model reads their vector and under which block key (two book sources share `text:annotation`).
 - **pictures** — position 0 the cover, then screenshots; each analysed by the picture encoder.
-- **reviews** — other readers' opinions: f95zone reviews, author.today рецензии, ficbook
-  comments; each encoded whole.
+- **reviews** — other readers' opinions: f95zone reviews, author.today рецензии, ficbook and
+  Archive of Our Own comments; each encoded whole.
 - **parts** — the text of a book's chapters, cut into windows; a vector for every window.
 
 A source may keep tables of its own in its source database (its own Flyway history).

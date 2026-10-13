@@ -20,7 +20,7 @@ import io.github.vlsergey.recommend4me.model.ContributionGroup
 import io.github.vlsergey.recommend4me.api.model.ContributionGroup as ApiContributionGroup
 import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.plugin.Plugins
-import io.github.vlsergey.recommend4me.source.SourceMode
+import io.github.vlsergey.recommend4me.source.downloadsPages
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
 import io.github.vlsergey.recommend4me.work.Works
@@ -134,7 +134,7 @@ class ItemDetailsReader(
                     )
                 }
             },
-            canRefresh = store.source.modes.any { it != SourceMode.BROWSER },
+            canRefresh = store.source.downloadsPages,
             related = related(type, store, key, Corrected.facets(site, corrections), names),
         )
     }

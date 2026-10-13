@@ -22,6 +22,7 @@ folder of jars in `plugins/`:
 
 | Plugin | What it does |
 |---|---|
+| `source-ao3` | [Archive of Our Own](https://archiveofourown.org) fan works in every language, browser tracking and a work's page on request |
 | `source-author-today` | [author.today](https://author.today) books, browser tracking only |
 | `source-ficbook` | [ficbook.net](https://ficbook.net) fanfics and originals, browser tracking only |
 | `encoder-bge-m3` | texts → vectors by bge-m3 (any language, one space, 1024 numbers); the one used when its files are there |

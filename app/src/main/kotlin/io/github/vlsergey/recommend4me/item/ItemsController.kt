@@ -32,7 +32,7 @@ import io.github.vlsergey.recommend4me.rating.Grades
 import io.github.vlsergey.recommend4me.rating.GradesChanged
 import io.github.vlsergey.recommend4me.rating.LinkedGrades
 import io.github.vlsergey.recommend4me.source.SourceContexts
-import io.github.vlsergey.recommend4me.source.SourceMode
+import io.github.vlsergey.recommend4me.source.downloadsPages
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import org.slf4j.LoggerFactory
@@ -153,7 +153,7 @@ class ItemsController(
     override fun refreshItem(source: String, item: String): ResponseEntity<ItemDetails> {
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         if (store.items.find(item) == null) return ResponseEntity.notFound().build()
-        if (store.source.modes.none { it != SourceMode.BROWSER }) throw ResponseStatusException(HttpStatus.CONFLICT, "Этот источник не скачивает страницы сам: откройте работу в браузере")
+        if (!store.source.downloadsPages) throw ResponseStatusException(HttpStatus.CONFLICT, "Этот источник не скачивает страницы сам: откройте работу в браузере")
         val refreshed = try {
             store.source.refresh(item, contexts.of(source))
         } catch (e: Exception) {

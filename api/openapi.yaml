@@ -1501,7 +1501,10 @@ components:
 
     SourceMode:
       type: string
-      enum: [SCRAPE_ALL, UPDATES, BROWSER]
+      description: |
+        SCRAPE_ALL - the whole catalogue, a job; UPDATES - what is new, a job; BROWSER - the pages the
+        user opens, sent by the extension; PAGE - one work's page downloaded on the user's request
+      enum: [SCRAPE_ALL, UPDATES, BROWSER, PAGE]
 
     FacetInfo:
       type: object
