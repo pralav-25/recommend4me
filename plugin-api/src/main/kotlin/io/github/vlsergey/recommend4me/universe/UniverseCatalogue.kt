@@ -43,6 +43,12 @@ class UniverseCharacter(
     val classes: List<String> = emptyList(),
     /** The character's sex or gender as the catalogue gives it; null when it does not say. */
     val sex: CharacterSex? = null,
+    /**
+     * The catalogue's statements on the character the plugins asked for ([Source.catalogueProperties][io.github.vlsergey.recommend4me.source.Source.catalogueProperties]),
+     * by property — "P8419", its tag on Archive of Our Own — every value as the catalogue gives it:
+     * an entry by its id, any other value as its text.
+     */
+    val properties: Map<String, List<String>> = emptyMap(),
 ) {
     /** Every name in [languages]: the labels, the user's language first, then the other names. */
     val names: List<String> = (languages.mapNotNull { labels[it] } + languages.flatMap { aliases[it].orEmpty() }).distinct()
@@ -86,9 +92,10 @@ interface UniverseCatalogue {
 
     /**
      * Every entry said to be in the universe [id] and in the works, series and franchises within
-     * it, with its classes: the characters and whatever else the catalogue puts there.
+     * it, with its classes — the characters and whatever else the catalogue puts there — and its
+     * statements of [properties], the ones the plugins asked for.
      */
-    fun characters(id: String, languages: List<String>): List<UniverseCharacter>
+    fun characters(id: String, languages: List<String>, properties: Set<String> = emptySet()): List<UniverseCharacter>
 
     /** The classes [ids], named, each with whether its entries are characters; none of a catalogue without classes. */
     fun classes(ids: Collection<String>, languages: List<String>): List<UniverseClass> = emptyList()

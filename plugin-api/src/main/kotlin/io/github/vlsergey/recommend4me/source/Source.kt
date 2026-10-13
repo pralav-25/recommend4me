@@ -74,6 +74,13 @@ interface Source {
     /** The messages its jobs may leave the user ([Job.message]), by their keys: their words are among the source's. */
     val messages: Set<String> get() = emptySet()
 
+    /**
+     * The statements of the catalogues of universes the source wants of every character, by the
+     * catalogue's id: `"wikidata" to setOf("P8419")` — a character's tag on Archive of Our Own.
+     * The characters of every universe are asked for with them ([UniverseCharacter.properties][io.github.vlsergey.recommend4me.universe.UniverseCharacter.properties]).
+     */
+    val catalogueProperties: Map<String, Set<String>> get() = emptyMap()
+
     /** How the extension marks the site's pages up; null — it does not. */
     val pageDecor: PageDecor? get() = null
 

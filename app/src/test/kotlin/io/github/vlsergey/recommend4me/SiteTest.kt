@@ -107,8 +107,11 @@ class SiteTest {
 
         override fun findUniverses(name: String, languages: List<String>) = if ("space" in name.lowercase()) entries(languages).take(1) else emptyList()
         override fun universe(id: String, languages: List<String>) = entries(languages).firstOrNull { it.id == id }
-        override fun characters(id: String, languages: List<String>) = listOf(
-            UniverseCharacter("C1", en("Pilot"), mapOf("en" to listOf("The Pilot")), emptyMap(), "https://fake.example/C1", languages, listOf("K1")),
+        override fun characters(id: String, languages: List<String>, properties: Set<String>) = listOf(
+            UniverseCharacter(
+                "C1", en("Pilot"), mapOf("en" to listOf("The Pilot")), emptyMap(), "https://fake.example/C1", languages, listOf("K1"),
+                properties = if ("P1" in properties) mapOf("P1" to listOf("pilot (space)")) else emptyMap(),
+            ),
             UniverseCharacter("C2", en("Captain"), emptyMap(), en("Of the fleet"), "https://fake.example/C2", languages, listOf("K1")),
             UniverseCharacter("S1", en("Station"), emptyMap(), en("Where ships dock"), "https://fake.example/S1", languages, listOf("K2")),
         )
@@ -125,6 +128,9 @@ class SiteTest {
         override val id = "site"
         override val contentType = "books"
         override val homepage = "https://site.example"
+
+        /** A character's tag on the site, as the catalogue states it. */
+        override val catalogueProperties = mapOf("fake" to setOf("P1"))
         override val schema = SourceSchema(
             facets = listOf(
                 // The site's tags: its word, the examples of the work's tags
@@ -391,6 +397,10 @@ class SiteTest {
         assertEquals(2, added.characters)
         assertEquals(true, universes.searchUniverses("books", "space").body!!.single().added)
         assertEquals(listOf("Pilot", "The Pilot"), universes.listCharacters("books", "fake", "U1").body!!.single { it.character == "C1" }.names)
+        // The statements the site asked of the catalogue came with the characters, and are kept
+        val pilot = stores.type("books")!!.universes.characters("fake", "U1").single { it.id == "C1" }
+        assertEquals(mapOf("P1" to listOf("pilot (space)")), pilot.properties)
+        assertEquals(setOf("P1"), stores.type("books")!!.universes.find("fake", "U1")!!.properties)
 
         // The station is said to be in the universe, but a place: shown, not kept as a character
         assertEquals(3, added.total)

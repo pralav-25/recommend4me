@@ -48,7 +48,7 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue {
 
     override fun universe(id: String, languages: List<String>): UniverseEntry? = entries(listOf(id), languages).firstOrNull()
 
-    override fun characters(id: String, languages: List<String>): List<UniverseCharacter> {
+    override fun characters(id: String, languages: List<String>, properties: Set<String>): List<UniverseCharacter> {
         require(ITEM.matches(id)) { "Not an item of Wikidata: $id" }
         val langs = languages.joinToString(",") { "\"$it\"" }
         // Two subqueries, each evaluated by itself: within one, the union of the two ways makes
@@ -95,12 +95,33 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue {
                 "description" -> names.descriptions[lang] = value
             }
         }
+        val stated = statements(entries, properties)
         return byCharacter.map { (character, n) ->
             UniverseCharacter(
                 character, n.labels, n.aliases.groupBy({ it.first }, { it.second }), n.descriptions, "$PAGE$character", languages,
-                classes[character].orEmpty(), sexes[character]?.let(::sexOf),
+                classes[character].orEmpty(), sexes[character]?.let(::sexOf), stated[character].orEmpty(),
             )
         }.filter { it.names.isNotEmpty() }
+    }
+
+    /**
+     * The statements of [properties] of every entry of [entries], asked by themselves as the classes
+     * are: entry to property to its values — an item by its id, any other value as its text.
+     */
+    private fun statements(entries: String, properties: Set<String>): Map<String, Map<String, List<String>>> {
+        val asked = properties.filter { PROPERTY.matches(it) }.distinct()
+        if (asked.isEmpty()) return emptyMap()
+        val values = asked.joinToString(" ") { "wdt:$it" }
+        val out = HashMap<String, MutableMap<String, MutableList<String>>>()
+        sparql("SELECT ?c ?p ?v WHERE { { SELECT DISTINCT ?c WHERE { $entries } } VALUES ?p { $values } ?c ?p ?v . }").forEach { row ->
+            val character = row.path("c").path("value").asString().substringAfterLast('/')
+            val property = row.path("p").path("value").asString().substringAfterLast('/')
+            val v = row.path("v")
+            val value = v.path("value").asString()
+            val shown = if (v.path("type").asString("") == "uri" && value.startsWith(ENTITY)) value.removePrefix(ENTITY) else value
+            out.getOrPut(character) { HashMap() }.getOrPut(property) { ArrayList() } += shown
+        }
+        return out
     }
 
     /** One sex of the values of P21: male or female when that is all they say, anything else otherwise. */
@@ -213,6 +234,12 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue {
         private val TIMEOUT: Duration = Duration.ofSeconds(60)
         private const val TOO_MANY_REQUESTS = 429
         private val ITEM = Regex("Q\\d+")
+
+        /** A property of Wikidata: "P8419". */
+        private val PROPERTY = Regex("P\\d+")
+
+        /** The address an item of Wikidata is given by in the answers of the query service. */
+        private const val ENTITY = "http://www.wikidata.org/entity/"
 
         private fun enc(s: String) = URLEncoder.encode(s, Charsets.UTF_8)
     }

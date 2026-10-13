@@ -34,6 +34,13 @@ class WikidataCatalogueTest {
     }
 
     @Test
+    fun `the statements a plugin asks for come with the characters`() {
+        // P8419: the character's tag on Archive of Our Own
+        val hermione = catalogue.characters("Q8337", languages, setOf("P8419")).first { it.id == "Q174009" }
+        assertTrue("Hermione Granger" in hermione.properties["P8419"].orEmpty(), hermione.properties.toString())
+    }
+
+    @Test
     fun `the classes tell the characters from the places and the spells`() {
         val characters = catalogue.characters("Q8337", languages)
         val neville = characters.first { it.id == "Q190366" }

@@ -82,6 +82,9 @@ class Ao3 : Source {
         Regex("https://archiveofourown\\.org/(works|tags|users|series|collections|bookmarks)([/?#].*)?"),
     )
 
+    /** A character's tag on the site (P8419 "Archive of Our Own tag"): what its works name the character by. */
+    override val catalogueProperties = mapOf(WIKIDATA to setOf(AO3_TAG))
+
     override val signals = listOf(
         // Kudos is the site's "I liked it"
         Books.LIKED.asSignal(),
@@ -155,6 +158,10 @@ class Ao3 : Source {
     companion object {
         const val ID = "ao3"
         const val BASE = "https://archiveofourown.org"
+
+        /** The catalogue of universes the characters come from, and its property of a character's tag on the site. */
+        const val WIKIDATA = "wikidata"
+        const val AO3_TAG = "P8419"
 
         /** A work's page and its chapters. */
         private val ITEM_ADDRESS = Regex("^https?://(?:www\\.)?archiveofourown\\.org/works/(\\d+)(?:[/?#]|$)")

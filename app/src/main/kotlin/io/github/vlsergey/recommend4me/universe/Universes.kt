@@ -53,9 +53,10 @@ class Universes(
         val type = type(typeId)
         val catalogue = catalogue(catalogueId)
         val entry = catalogue.universe(id, languages) ?: throw NoSuchElementException("$catalogueId has no $id")
-        val characters = catalogue.characters(id, languages)
+        val properties = wantedProperties(catalogueId)
+        val characters = catalogue.characters(id, languages, properties)
         val classes = catalogue.classes(characters.flatMap { it.classes }.toSet(), languages)
-        type.universes.save(catalogueId, entry, characters, classes, Instant.now())
+        type.universes.save(catalogueId, entry, characters, classes, properties, Instant.now())
         // Its name and its characters' are the dictionary's, read from it by every source ([UniverseNames])
         val value = UniverseFacet.valueOf(catalogueId, id)
         val stored = type.universes.find(catalogueId, id)!!
@@ -64,14 +65,20 @@ class Universes(
         return stored
     }
 
+    /** The statements of the catalogue's characters every plugin wants ([Source.catalogueProperties][io.github.vlsergey.recommend4me.source.Source.catalogueProperties]). */
+    private fun wantedProperties(catalogueId: String): Set<String> = plugins.sources.flatMap { it.catalogueProperties[catalogueId].orEmpty() }.toSet()
+
     /**
      * The universes asked of their catalogue in other languages than the user's now — or before
-     * the texts were kept by language — asked again, one by one, in the background: their names and
-     * descriptions are then there in every language of the user.
+     * the texts were kept by language — or for other statements of their characters than the
+     * plugins want now, asked again, one by one, in the background: their names and descriptions
+     * are then there in every language of the user, and their characters' statements the plugins'.
      */
     @EventListener(ApplicationReadyEvent::class)
     fun askInNewLanguages() {
-        val stale = stores.types.filter { it.type.universes }.flatMap { t -> t.universes.all().filter { it.languages != languages }.map { t to it } }
+        val stale = stores.types.filter { it.type.universes }.flatMap { t ->
+            t.universes.all().filter { it.languages != languages || it.properties != wantedProperties(it.catalogue) }.map { t to it }
+        }
         if (stale.isEmpty()) return
         Thread({
             stale.forEach { (t, u) ->
