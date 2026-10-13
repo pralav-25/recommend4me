@@ -453,7 +453,8 @@ function OpenSuggestions({
   const inferred = d.allFacets
     .filter((f) => !except.includes(f.facet))
     .flatMap((f) => f.values)
-    .filter((v) => v.inferred && !v.corrected).length;
+    // Given by the model or drafted from the site's tags, not answered on
+    .filter((v) => (v.inferred || v.draftedFrom != null) && !v.corrected).length;
   if (suggested + inferred === 0) return null;
   return (
     <Button variant="link" size="sm" className="h-auto self-start p-0 text-xs" onClick={onMark}>

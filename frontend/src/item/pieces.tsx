@@ -335,7 +335,7 @@ function facetValueTitle(t: TFunction<"item">, facet: ItemFacet, value: FacetVal
     (chance !== undefined ? ` · ${t("FacetBadges.chance", { chance: percent(chance) })}` : "") +
     (unlikely(value) ? ` — ${t("FacetBadges.unlikely")}` : "") +
     (value.inferred ? ` · ${t("FacetBadges.inferred")}` : "") +
-    (value.draftedFrom !== undefined && !value.corrected ? ` · ${t("FacetBadges.drafted", { from: value.draftedFrom })}` : "") +
+    (value.draftedFrom != null && !value.corrected ? ` · ${t("FacetBadges.drafted", { from: value.draftedFrom })}` : "") +
     (value.implied ? ` · ${t("FacetBadges.implied")}` : "")
   );
 }

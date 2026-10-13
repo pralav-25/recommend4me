@@ -175,9 +175,9 @@ export function FanficSummary({ source, details: d, onMark }: { source: SourceIn
   const valuesOf = (key: string) => (d.allFacets.find((f) => f.facet === key)?.values ?? []).filter(has);
   const kinds = valuesOf(KIND);
   const original = universeless(kinds);
-  // The model's word the user has not answered on: values it gave, values it suggests
+  // What the user has not answered on: values the model or a draft gave, values the model suggests
   const open =
-    FANFIC_FACETS.flatMap((f) => valuesOf(f)).filter((v) => v.inferred && !v.corrected).length +
+    FANFIC_FACETS.flatMap((f) => valuesOf(f)).filter((v) => (v.inferred || v.draftedFrom != null) && !v.corrected).length +
     (suggestions.data ?? []).filter((s) => FANFIC_FACETS.includes(s.facet)).reduce((n, s) => n + s.suggested.length, 0);
 
   const line = (label: string, values: FacetValueInfo[]) =>

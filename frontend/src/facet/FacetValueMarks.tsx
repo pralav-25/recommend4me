@@ -12,7 +12,7 @@ const HALF = 0.5;
  * absent — and shows none.
  */
 export function shownChance(value: FacetValueInfo): number | undefined {
-  return value.corrected || value.draftedFrom !== undefined || value.chance == null ? undefined : value.chance;
+  return value.corrected || value.draftedFrom != null || value.chance == null ? undefined : value.chance;
 }
 
 /** "by tag" in small print by a value drafted from the site's value through the dictionary, the site's value in its title. */
@@ -38,7 +38,8 @@ export function unlikely(value: FacetValueInfo): boolean {
  */
 export function ChanceMark({ value }: { value: FacetValueInfo }) {
   const { t } = useTranslation("facet");
-  if (value.draftedFrom !== undefined && !value.corrected) return <DraftedMark from={value.draftedFrom} />;
+  // Null in the JSON for a value not drafted, as the chance: not only absent
+  if (value.draftedFrom != null && !value.corrected) return <DraftedMark from={value.draftedFrom} />;
   const chance = shownChance(value);
   if (chance === undefined) return null;
   const text = percent(chance);
