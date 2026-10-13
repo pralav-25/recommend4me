@@ -23,7 +23,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ALL_GRADES, gradeLabel, typeIcon } from "@/contenttype/types";
 import { shownChance, unlikely } from "@/facet/FacetValueMarks";
 import { compact, number, percent, score } from "@/i18n/format";
-import { label, sourceTitle, valueName } from "@/i18n/label";
+import { label, sourceShort, sourceTitle, valueName } from "@/i18n/label";
 import { placeName } from "@/part/place";
 import { useLadder } from "@/model/useModel";
 import { cn } from "@/lib/utils";
@@ -419,8 +419,8 @@ export function SignalBadges({ source, signals, className }: { source?: SourceIn
 export function SourceBadge({ type, source, className }: { type: ContentTypeInfo; source: string; className?: string }) {
   if (type.sources.length < 2) return null;
   return (
-    <Badge variant="outline" className={cn("font-normal", className)}>
-      {sourceTitle(source)}
+    <Badge variant="outline" className={cn("font-normal", className)} title={sourceTitle(source)}>
+      {sourceShort(source)}
     </Badge>
   );
 }
@@ -439,10 +439,10 @@ export function LinkedBadges({ linked, className }: { linked: LinkedItem[]; clas
           target="_blank"
           rel="noreferrer"
           onClick={(e) => e.stopPropagation()}
-          title={l.title}
+          title={`${sourceTitle(l.source)}: ${l.title}`}
           className="underline-offset-2 hover:underline"
         >
-          {sourceTitle(l.source)}
+          {sourceShort(l.source)}
         </a>
       ))}
     </span>

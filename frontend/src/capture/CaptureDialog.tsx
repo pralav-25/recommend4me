@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { findSource, useTypes } from "@/contenttype/types";
 import { ago, formatDate } from "@/i18n/format";
-import { sourceTitle } from "@/i18n/label";
+import { sourceShort, sourceTitle } from "@/i18n/label";
 import { ItemRefDialog } from "@/item/ItemRefDialog";
 
 const DEFAULT_ADDRESS = "http://127.0.0.1:8095";
@@ -126,7 +126,9 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
               <span className="w-24 shrink-0 text-xs text-muted-foreground" title={formatDate(p.capturedAt)}>
                 {ago(p.capturedAt)}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">{sourceTitle(p.source)}</span>
+              <span className="shrink-0 text-xs text-muted-foreground" title={sourceTitle(p.source)}>
+                {sourceShort(p.source)}
+              </span>
               {p.item ? (
                 <button
                   className="min-w-0 flex-1 truncate text-left underline-offset-2 hover:underline"

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import type { ContentTypeInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { sourceTitle } from "@/i18n/label";
+import { sourceShort, sourceTitle } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,7 +18,7 @@ export function SourceFilter({ type, hidden, onChange }: { type: ContentTypeInfo
     shown.length === type.sources.length
       ? null
       : shown.length === 1
-        ? sourceTitle(shown[0].id)
+        ? sourceShort(shown[0].id)
         : t("SourceFilter.someOf", { shown: shown.length, total: type.sources.length });
   return (
     <DropdownMenu>

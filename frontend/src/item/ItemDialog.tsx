@@ -15,7 +15,7 @@ import { CorrectedMark, EditButton, FieldEditor } from "@/correction/FieldEditor
 import { Links } from "@/correction/Links";
 import { titleField, useCorrections, type Corrections } from "@/correction/useCorrections";
 import { formatDate, score } from "@/i18n/format";
-import { label, sourceTitle } from "@/i18n/label";
+import { label, sourceShort, sourceTitle } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 import { Explanation } from "@/model/Explanation";
 import { Parts } from "@/part/Parts";
@@ -199,7 +199,11 @@ function Shell({
           <DialogDescription render={<div />} className="flex flex-col gap-1 text-sm text-muted-foreground">
             <FactLine source={source} summary={summary} facets={facets} />
             <span className="flex flex-wrap items-center gap-2">
-              {type.sources.length > 1 && <span className="text-xs">{sourceTitle(source.id)}</span>}
+              {type.sources.length > 1 && (
+                <span className="text-xs" title={sourceTitle(source.id)}>
+                  {sourceShort(source.id)}
+                </span>
+              )}
               <SignalBadges source={source} signals={summary.signals} />
               <LinkedBadges linked={summary.linked} className="text-xs" />
             </span>
@@ -468,7 +472,7 @@ function Ratings({ type, details: d }: { type: ContentTypeInfo; details: ItemDet
   const itemOf = (r: RatingRecord) =>
     sameItem(r, d.summary)
       ? undefined
-      : `${sourceTitle(r.source)} · ${d.summary.linked.find((l) => sameItem(l, r))?.title ?? r.item}`;
+      : `${sourceShort(r.source)} · ${d.summary.linked.find((l) => sameItem(l, r))?.title ?? r.item}`;
   return (
     <section>
       <h4 className="mb-2 text-sm font-semibold">{t("Ratings.heading")}</h4>

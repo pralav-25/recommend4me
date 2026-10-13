@@ -6,7 +6,7 @@ import { api, refKey, sameItem, unwrap, type ContentTypeInfo, type ItemRef, type
 import { AsyncButton } from "@/components/AsyncButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { sourceTitle } from "@/i18n/label";
+import { sourceShort, sourceTitle } from "@/i18n/label";
 import type { Corrections } from "./useCorrections";
 
 const FOUND = 8;
@@ -37,7 +37,9 @@ export function Links({ type, summary, corrections }: { type: ContentTypeInfo; s
       <ul className="flex flex-col gap-1 text-sm">
         {summary.linked.map((l) => (
           <li key={refKey(l)} className="flex items-center gap-2">
-            <span className="shrink-0 text-xs text-muted-foreground">{sourceTitle(l.source)}</span>
+            <span className="shrink-0 text-xs text-muted-foreground" title={sourceTitle(l.source)}>
+              {sourceShort(l.source)}
+            </span>
             <a href={l.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate underline-offset-2 hover:underline" title={l.title}>
               {l.title}
               <ExternalLinkIcon className="ml-1 inline size-3 opacity-60" />
@@ -122,8 +124,8 @@ function LinkSearch({
             >
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate text-sm">{s.title}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {sourceTitle(s.source)}
+                <span className="truncate text-xs text-muted-foreground" title={sourceTitle(s.source)}>
+                  {sourceShort(s.source)}
                   {linked(s) && ` · ${t("LinkSearch.alreadyLinked")}`}
                 </span>
               </span>

@@ -18,7 +18,7 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatDate, timeLeft } from "@/i18n/format";
-import { sourceTitle } from "@/i18n/label";
+import { sourceShort, sourceTitle } from "@/i18n/label";
 import { catalogueLabel, jobMessage, modeLabel, phaseLabel } from "./labels";
 import { ITEMS } from "@/item/lists";
 import { JobDialog } from "./JobDialog";
@@ -103,7 +103,7 @@ export function JobControl({ type, onNeedSettings }: Props) {
           <div className="flex justify-between gap-2 text-xs">
             <span className="truncate">
               <span className="hidden text-muted-foreground sm:inline">
-                {sources.length > 1 && `${sourceTitle(s.source)} · `}
+                {sources.length > 1 && `${sourceShort(s.source)} · `}
                 {s.mode === "SCRAPE_ALL" && `${t("JobControl.catalogue")} · `}
               </span>
               {s.state === "CANCELLING" ? t("JobControl.stopping") : phaseLabel(s.phase) || t("JobControl.loading")}

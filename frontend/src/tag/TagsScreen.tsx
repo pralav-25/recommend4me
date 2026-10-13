@@ -310,7 +310,9 @@ function Variants({ tag }: { tag: TagInfo }) {
         <tbody>
           {tag.variants.map((v) => (
             <tr key={`${v.source}/${v.tag}`} className="border-t">
-              <td className="py-1 pr-2 text-muted-foreground">{sourceTitle(v.source)}</td>
+              <td className="py-1 pr-2 text-muted-foreground" title={sourceTitle(v.source)}>
+                {sourceShort(v.source)}
+              </td>
               <td className="py-1 pr-2">{v.name}</td>
               <td className="py-1 pl-3 text-right tabular-nums">{v.works}</td>
               <td className="hidden py-1 pl-3 text-right tabular-nums sm:table-cell">{v.graded}</td>
