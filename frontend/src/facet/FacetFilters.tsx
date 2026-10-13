@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { label, valueName } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 
 /**
@@ -110,8 +111,8 @@ export function FacetFilters({ type, value, onChange }: { type: string; value: F
 function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: FacetSelection; onChange: (v: FacetSelection) => void }) {
   const { t } = useTranslation("facet");
   const [find, setFind] = useState("");
-  const hasWithout = facet.noneLabel !== undefined && facet.noneLabel !== "";
-  const withoutLabel = facet.noneLabel ?? "";
+  const hasWithout = facet.noneLabelKey !== undefined && facet.noneLabelKey !== "";
+  const withoutLabel = hasWithout ? label(facet.noneLabelKey!) : "";
   const choice = value[facet.id];
   const keys = facet.values.map((v) => v.key);
   const shownValues = facet.values.filter((v) => isShown(choice, v.key));
@@ -125,7 +126,7 @@ function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: 
       : shown === 0
         ? t("FacetDropdown.summaryNone")
         : shown === 1
-          ? (shownValues[0]?.name ?? withoutLabel)
+          ? (shownValues[0] ? valueName(shownValues[0]) : withoutLabel)
           : t("FacetDropdown.summaryCount", { shown, total });
 
   // The facet's own choice written anew, the shorter list; the other facets' kept
@@ -147,14 +148,14 @@ function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: 
   const none = () => choose(new Set(), hasWithout);
 
   const needle = find.trim().toLowerCase();
-  const listed = needle ? facet.values.filter((v) => v.name.toLowerCase().includes(needle)) : facet.values;
+  const listed = needle ? facet.values.filter((v) => valueName(v).toLowerCase().includes(needle)) : facet.values;
 
   if (facet.values.length === 0 && !hasWithout) return null;
   return (
     <DropdownMenu onOpenChange={(open) => !open && setFind("")}>
       <DropdownMenuTrigger render={<Button variant="outline" size="sm" className={cn(summary && "border-primary/60")} />}>
         <span className="max-w-44 truncate">
-          {facet.label}
+          {label(facet.labelKey)}
           {summary && <span className="font-semibold">: {summary}</span>}
         </span>
         <ChevronDownIcon className="opacity-60" />
@@ -184,7 +185,7 @@ function FacetDropdown({ facet, value, onChange }: { facet: FacetFilter; value: 
         <DropdownMenuSeparator />
         {listed.map((v) => (
           <DropdownMenuCheckboxItem key={v.key} checked={isShown(choice, v.key)} onCheckedChange={(on) => toggle(v.key, on)} closeOnClick={false}>
-            <span className="flex-1">{v.name}</span>
+            <span className="flex-1">{valueName(v)}</span>
             <span className="text-xs tabular-nums text-muted-foreground">{v.items}</span>
           </DropdownMenuCheckboxItem>
         ))}

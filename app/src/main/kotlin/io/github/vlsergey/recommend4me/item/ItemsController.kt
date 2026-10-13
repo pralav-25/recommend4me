@@ -1,8 +1,6 @@
 package io.github.vlsergey.recommend4me.item
 
 import io.github.vlsergey.recommend4me.api.ItemsApi
-import io.github.vlsergey.recommend4me.i18n.Label
-import io.github.vlsergey.recommend4me.i18n.failure
 import io.github.vlsergey.recommend4me.api.model.FacetFilter
 import io.github.vlsergey.recommend4me.api.model.ContributionGroup as ApiContributionGroup
 import io.github.vlsergey.recommend4me.api.model.FacetValueUse
@@ -33,6 +31,7 @@ import io.github.vlsergey.recommend4me.picture.Served
 import io.github.vlsergey.recommend4me.rating.Grades
 import io.github.vlsergey.recommend4me.rating.GradesChanged
 import io.github.vlsergey.recommend4me.rating.LinkedGrades
+import io.github.vlsergey.recommend4me.refusal.Refusal
 import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.downloadsPages
 import io.github.vlsergey.recommend4me.source.Stores
@@ -53,17 +52,7 @@ import io.github.vlsergey.recommend4me.api.model.ItemView as ApiItemView
 
 private val log = LoggerFactory.getLogger(ItemsController::class.java)
 
-private val BAD_RANGE = Label(
-    "The range “%s” is not understood: “number=from..to” is wanted",
-    "Диапазон «%s» не понят: нужно «число=от..до»",
-    "Opseg „%s” nije razumljiv: potrebno je „broj=od..do”",
-)
-private val NO_DOWNLOADS = Label(
-    "This source does not download pages by itself: open the work in the browser",
-    "Этот источник не скачивает страницы сам: откройте работу в браузере",
-    "Ovaj izvor sam ne preuzima stranice: otvorite delo u pregledaču",
-)
-private val BAD_MARK = Label("A mark is +1 or −1", "Отметка — +1 или −1", "Oznaka je +1 ili −1")
+private fun badMark(mark: Int) = Refusal.BAD_MARK.refuse(HttpStatus.BAD_REQUEST, "A mark is +1 or -1, not $mark")
 
 @RestController
 class ItemsController(
@@ -99,7 +88,9 @@ class ItemsController(
         val q = itemQuery
         // A field sent as null is the field left out: the defaults of the API's own schema
         val d = ItemQuery()
-        val ranges = q.ranges.orEmpty().map { NumberRange.parse(it) ?: throw failure(HttpStatus.BAD_REQUEST, BAD_RANGE, it) }
+        val ranges = q.ranges.orEmpty().map {
+            NumberRange.parse(it) ?: throw Refusal.BAD_RANGE.refuse(HttpStatus.BAD_REQUEST, "The range '$it' is not 'number=from..to'", "range" to it)
+        }
         val facets = q.facets.orEmpty().map { c -> FacetChoice(c.facet, c.hidden.orEmpty().toSet(), c.shown?.toSet(), c.withoutHidden == true) }
         return ResponseEntity.ok(
             list.page(
@@ -121,7 +112,7 @@ class ItemsController(
                 // A value beginning with what was typed before one only holding it
                 .sortedBy { if (it.name.lowercase().startsWith(piece)) 0 else 1 }
                 .take(limit.coerceIn(1, 500))
-                .map { FacetValueUse(it.key, it.name, it.items) }
+                .map { FacetValueUse(it.key, it.name, it.items, it.nameKey) }
                 .toList(),
         )
     }
@@ -166,19 +157,14 @@ class ItemsController(
     override fun refreshItem(source: String, item: String): ResponseEntity<ItemDetails> {
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         if (store.items.find(item) == null) return ResponseEntity.notFound().build()
-        if (!store.source.downloadsPages) throw failure(HttpStatus.CONFLICT, NO_DOWNLOADS)
+        if (!store.source.downloadsPages) throw Refusal.NO_DOWNLOADS.refuse(HttpStatus.CONFLICT, "The source $source does not download pages by itself")
         val refreshed = try {
             store.source.refresh(item, contexts.of(source))
         } catch (e: Exception) {
             log.warn("{}: {} was not loaded: {}", source, item, e.message)
-            throw failure(HttpStatus.BAD_GATEWAY, Label("The site did not answer: %s", "Сайт не ответил: %s", "Sajt nije odgovorio: %s"), e.message)
+            throw Refusal.SITE_SILENT.refuse(HttpStatus.BAD_GATEWAY, "The site did not answer: ${e.message}", "error" to (e.message ?: e.javaClass.simpleName))
         }
-        if (!refreshed) {
-            throw failure(
-                HttpStatus.CONFLICT,
-                Label("The source could not download the work's page", "Источник не смог скачать страницу работы", "Izvor nije mogao da preuzme stranicu dela"),
-            )
-        }
+        if (!refreshed) throw Refusal.REFRESH_FAILED.refuse(HttpStatus.CONFLICT, "The source $source could not download the page of $item")
         textVectors.refresh(store, only = listOf(item))
         recommendations.scoreItem(ItemKey(source, item))
         return getItem(source, item)
@@ -187,7 +173,11 @@ class ItemsController(
     override fun rateItem(source: String, item: String, ratingRequest: RatingRequest): ResponseEntity<ItemSummary> {
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         val head = store.items.find(item) ?: return ResponseEntity.notFound().build()
-        if (ratingRequest.grade !in Grades.RANGE) throw failure(HttpStatus.BAD_REQUEST, Label("A grade is from %s to %s", "Оценка — от %s до %s", "Ocena je od %s do %s"), Grades.MIN, Grades.MAX)
+        if (ratingRequest.grade !in Grades.RANGE) {
+            throw Refusal.BAD_GRADE.refuse(
+                HttpStatus.BAD_REQUEST, "A grade is ${Grades.MIN}..${Grades.MAX}, not ${ratingRequest.grade}", "min" to Grades.MIN, "max" to Grades.MAX,
+            )
+        }
         store.ratings.rate(item, head.version, ratingRequest.grade, Instant.now())
         events.publishEvent(GradesChanged(store.type, source, item))
         // The items linked to it are the same work: graded the same
@@ -239,7 +229,7 @@ class ItemsController(
         }
 
     override fun markPicture(source: String, item: String, position: Int, mark: Mark): ResponseEntity<Unit> {
-        if (mark.mark != 1 && mark.mark != -1) throw failure(HttpStatus.BAD_REQUEST, BAD_MARK)
+        if (mark.mark != 1 && mark.mark != -1) throw badMark(mark.mark)
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         val picture = store.pictures.find(item, position, null) ?: return ResponseEntity.notFound().build()
         store.marks.markPicture(item, position, picture.url, mark.mark, Instant.now())
@@ -255,7 +245,7 @@ class ItemsController(
     }
 
     override fun markReview(source: String, item: String, reviewId: String, mark: Mark): ResponseEntity<Unit> {
-        if (mark.mark != 1 && mark.mark != -1) throw failure(HttpStatus.BAD_REQUEST, BAD_MARK)
+        if (mark.mark != 1 && mark.mark != -1) throw badMark(mark.mark)
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         if (reviewId !in store.reviews.ids(item)) return ResponseEntity.notFound().build()
         store.marks.markReview(item, reviewId, mark.mark, Instant.now())
@@ -278,7 +268,7 @@ class ItemsController(
 
     override fun giveMatchFeedback(matchFeedbackRequest: MatchFeedbackRequest): ResponseEntity<Unit> {
         val r = matchFeedbackRequest
-        if (r.verdict !in -1..1) throw failure(HttpStatus.BAD_REQUEST, Label("An answer is +1, 0 or −1", "Ответ — +1, 0 или −1", "Odgovor je +1, 0 ili −1"))
+        if (r.verdict !in -1..1) throw Refusal.BAD_ANSWER.refuse(HttpStatus.BAD_REQUEST, "An answer is +1, 0 or -1, not ${r.verdict}")
         val store = stores.source(r.markSource) ?: return ResponseEntity.notFound().build()
         store.marks.setFeedback(
             MarkKind.valueOf(r.kind.value),

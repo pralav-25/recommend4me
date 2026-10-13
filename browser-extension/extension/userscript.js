@@ -1,8 +1,8 @@
 /*
  * THE USERSCRIPT FOR SAFARI ON THE IPAD, run by the Userscripts app: what the background script
  * of the Firefox extension does, done in the page itself. Not a part of the Firefox extension — its
- * manifest does not name it; the application puts it together with watch.js and page.js into
- * recommend4me.user.js (GET /userscript/recommend4me.user.js), with these given:
+ * manifest does not name it; the application puts it together with i18n.js, watch.js and page.js
+ * into recommend4me.user.js (GET /userscript/recommend4me.user.js), with these given:
  *
  *   R4M_SERVER — where the application was asked for the script, the address the iPad reaches it at;
  *   R4M_CSS    — page.css;
@@ -15,10 +15,10 @@
 /** The listeners of messages page.js registers: told when the page was sent and saved. */
 const listeners = [];
 
-/** A call to the application; answers {ok, status, data, error} as the extension's background script does. */
+/** A call to the application; answers {ok, status, data, error, problem, unreachable} as the extension's background script does. */
 function request(method, path, body) {
   return new Promise((resolve) => {
-    const failed = () => resolve({ ok: false, status: 0, error: "Приложение recommend4me не отвечает" });
+    const failed = () => resolve({ ok: false, status: 0, error: "no answer", unreachable: true });
     GM.xmlHttpRequest({
       method,
       url: `${R4M_SERVER}${path}`,
@@ -32,7 +32,12 @@ function request(method, path, body) {
           data = null;
         }
         const ok = response.status >= 200 && response.status < 300;
-        resolve(ok ? { ok, status: response.status, data } : { ok, status: response.status, error: (data && data.detail) || `HTTP ${response.status}` });
+        resolve(ok ? { ok, status: response.status, data } : {
+          ok,
+          status: response.status,
+          error: (data && data.detail) || `HTTP ${response.status}`,
+          problem: data && data.code ? { code: data.code, params: data.params || {} } : null,
+        });
       },
       onerror: failed,
       ontimeout: failed,
@@ -40,13 +45,21 @@ function request(method, path, body) {
   });
 }
 
+/** Whether page.js may call the application at [path]: its API, and the files of its words (as the background script's callable). */
+function callable(method, path) {
+  if (typeof path !== "string") return false;
+  return path.startsWith("/api/") || ((method || "GET") === "GET" && /^\/i18n\/[\w.-]+\/[\w-]+\.json$/.test(path));
+}
+
 /** The stand-in of the extension's API that watch.js and page.js call. */
 const browser = {
   runtime: {
     sendMessage: async (message) => {
       if (message.type === "server") return R4M_SERVER;
+      // No options page on the iPad: the browser's language
+      if (message.type === "language") return "";
       if (message.type === "api") {
-        if (typeof message.path !== "string" || !message.path.startsWith("/api/")) return { ok: false, status: 0, error: "not allowed" };
+        if (!callable(message.method, message.path)) return { ok: false, status: 0, error: "not allowed" };
         return request(message.method || "GET", message.path, message.body);
       }
       if (message.type === "capture") {

@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 import { api, unwrap, type ContentTypeInfo, type ScorerComparison, type ScorerQuality } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { typeTitle } from "@/contenttype/types";
 import { formatDate, number } from "@/i18n/format";
+import { scorerTitle } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 
 const comparisonKey = (type: string) => ["scorer-comparison", type];
@@ -63,7 +65,7 @@ export function ScorerComparisonDialog({
       <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <ScaleIcon className="size-5" /> {t("ScorerComparisonDialog.title", { type: type.title.toLowerCase() })}
+            <ScaleIcon className="size-5" /> {t("ScorerComparisonDialog.title", { type: typeTitle(type.id).toLowerCase() })}
           </DialogTitle>
           <DialogDescription>{t("ScorerComparisonDialog.description")}</DialogDescription>
         </DialogHeader>
@@ -127,7 +129,7 @@ function Row({ q, current, best, onChoose, busy }: { q: ScorerQuality; current: 
   return (
     <tr className={cn("border-t", current && "bg-yes/10 font-medium")}>
       <td className="px-3 py-1.5">
-        {q.title}
+        {scorerTitle(q.scorer)}
         {current && <span className="ml-1 text-xs text-muted-foreground">{t("ScorerComparisonDialog.main")}</span>}
       </td>
       {q.state === "DONE" && m ? (

@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.scorer
 
-import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.matrix.Blas
 import io.github.vlsergey.recommend4me.matrix.Floats
 import io.github.vlsergey.recommend4me.matrix.Matrix
@@ -31,11 +30,6 @@ import kotlin.math.max
  */
 class FactorizationScorer : Scorer {
     override val id = "factorization-machine"
-    override val title = Label(
-        "Factorization machine: features and their pairs",
-        "Факторизационная машина: признаки и их пары",
-        "Faktorizaciona mašina: obeležja i njihovi parovi",
-    )
     override val candidates = listOf(0.01, 0.03, 0.1, 0.3, 1.0)
     override val defaultParameter = 0.1
 

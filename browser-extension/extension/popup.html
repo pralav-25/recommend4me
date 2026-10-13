@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <link rel="stylesheet" href="popup.css">
@@ -7,13 +7,14 @@
 <body>
   <header>
     <strong>recommend4me</strong>
-    <label class="toggle"><input type="checkbox" id="enabled"> слежение</label>
+    <label class="toggle"><input type="checkbox" id="enabled"> <span data-i18n="popup.tracking"></span></label>
   </header>
-  <p id="status" class="muted">Проверяю приложение…</p>
-  <button id="send">Отправить эту страницу сейчас</button>
-  <h2>Последние страницы</h2>
+  <p id="status" class="muted" data-i18n="popup.checking"></p>
+  <button id="send" data-i18n="popup.send"></button>
+  <h2 data-i18n="popup.recent"></h2>
   <ul id="recent"></ul>
-  <footer><a href="#" id="options">Настройки</a> · <a href="#" id="app">Открыть приложение</a></footer>
+  <footer><a href="#" id="options" data-i18n="popup.options"></a> · <a href="#" id="app" data-i18n="popup.openApp"></a></footer>
+  <script src="i18n.js"></script>
   <script src="settings.js"></script>
   <script src="popup.js"></script>
 </body>

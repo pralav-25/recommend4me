@@ -15,7 +15,9 @@ class SearchDocument(
 
 /**
  * A field of a document. [list]: several short values (tags), shown joined by commas; otherwise
- * one or more texts. [name] is what the interface shows of a match in it.
+ * one or more texts. [name] is what a reader of the document — the reranker — is told the field
+ * is, a plain word ("title", "annotation", a chapter's title); the interface knows a match in it by
+ * its [key] ([SearchMatch.field]).
  */
 class SearchField(
     val key: String,
@@ -54,7 +56,11 @@ class SearchPassage(val field: String, val from: Int, val to: Int, val vector: F
  */
 class SearchResult(val line: String, val keys: List<ItemKey>, val state: Any?, val nearest: Map<ItemKey, SearchPassage> = emptyMap())
 
-/** The piece of an item's text a search found it by, with the words found marked ([highlights], start until end). */
+/**
+ * The piece of an item's text a search found it by, with the words found marked ([highlights],
+ * start until end); [field] — the [key][SearchField.key] of the field it was found in, by which
+ * the application tells where in the work it is.
+ */
 class SearchMatch(val field: String, val byMeaning: Boolean, val text: String, val highlights: List<Pair<Int, Int>>)
 
 /** What the application gives a search provider. */

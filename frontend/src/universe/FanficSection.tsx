@@ -15,6 +15,7 @@ import { useStableOrder } from "@/facet/valueOrder";
 import { OriginalOf } from "@/item/WorkFacts";
 import { percent } from "@/i18n/format";
 import i18n from "@/i18n/i18n";
+import { label as labelOfKey, valueName } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 import { SuggestedChip } from "@/suggestion/Suggestions";
 import { useCandidates, useSuggestions } from "@/suggestion/useSuggestions";
@@ -93,7 +94,10 @@ export function FanficSection({
   const facetOf = (key: string) => d.allFacets.find((f) => f.facet === key);
   const valuesOf = (key: string) => facetOf(key)?.values ?? [];
   const suggestedOf = (key: string) => suggestions.data?.find((s) => s.facet === key)?.suggested ?? [];
-  const labelOf = (key: string, fallback: string) => facetOf(key)?.label ?? source.facets.find((f) => f.key === key)?.label ?? fallback;
+  const labelOf = (key: string, fallback: string) => {
+    const labelKey = facetOf(key)?.labelKey ?? source.facets.find((f) => f.key === key)?.labelKey;
+    return labelKey ? labelOfKey(labelKey) : fallback;
+  };
 
   const original = universeless(valuesOf(KIND).filter(has));
   // The site's facet above the kind; above the universes too, unless it is the same one (ficbook's fandoms)
@@ -184,7 +188,7 @@ export function FanficSummary({ source, details: d, onMark }: { source: SourceIn
           {values.map((v) => (
             <Badge key={v.key} variant="secondary" className={cn("font-normal", v.corrected && "border-yes/50 bg-yes/15")} title={v.corrected ? undefined : t("FanficSummary.notAnswered")}>
               {v.corrected && <CheckIcon className="size-3 text-yes" />}
-              {v.name}
+              {valueName(v)}
             </Badge>
           ))}
         </div>
@@ -194,7 +198,7 @@ export function FanficSummary({ source, details: d, onMark }: { source: SourceIn
   if (original) {
     return <section className="text-sm text-muted-foreground">{kinds.map((k) => {
           const known = KINDS.find((x) => x.key === k.key);
-          return known ? t(known.label) : k.name;
+          return known ? t(known.label) : valueName(k);
         }).join(", ")}</section>;
   }
   if (kinds.length === 0 && valuesOf(UNIVERSE).length === 0) return null;
@@ -693,14 +697,14 @@ function OpenPairings({
   const [b, setB] = useState("");
   // The work's characters and the original ones: they pair with anyone, listed among the main ones or not
   const members = [
-    ...characters.map((c) => ({ key: c.key, name: c.name })),
+    ...characters.map((c) => ({ key: c.key, name: valueName(c) })),
     ...ORIGINAL_CHARACTERS.filter((o) => !characters.some((c) => c.key === o.key)).map((o) => ({ key: o.key, name: t(o.label) })),
   ];
   const known = (key: string) => members.some((c) => c.key === key);
   const ready = known(a) && known(b) && a !== b;
   // Every pair of them the work lacks, the likeliest first: the backend pairs a work's characters once it has one
   const candidates = useCandidates(item, PAIRINGS, characters.length > 0);
-  const pairs: Option[] = (candidates.data ?? []).map((c) => ({ key: c.key, name: c.name, names: [c.name], taken: false }));
+  const pairs: Option[] = (candidates.data ?? []).map((c) => ({ key: c.key, name: valueName(c), names: [valueName(c)], taken: false }));
 
   const add = async () => {
     await corrections.setFacet(PAIRINGS, { key: pairingKey(a, b) }, true);
@@ -832,8 +836,8 @@ function Named({
       <div className="flex flex-wrap items-center gap-1">
         {shown.map((c) => (
           <Badge key={c.key} variant="outline" className="border-dashed pr-0.5 font-normal">
-            <MentionsDialog type={type} item={item} facet={facet} value={c.key} name={c.name} url={c.url} summary={mentionsText(c)} universes={universes}>
-              {c.name}
+            <MentionsDialog type={type} item={item} facet={facet} value={c.key} name={valueName(c)} url={c.url} summary={mentionsText(c)} universes={universes}>
+              {valueName(c)}
               <span className="text-muted-foreground tabular-nums">({candidateMark(c)})</span>
             </MentionsDialog>
             <FacetAnswers facet={facet} value={{ key: c.key }} corrections={corrections} />

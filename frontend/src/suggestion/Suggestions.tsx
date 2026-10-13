@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { FacetAnswers } from "@/correction/FacetAnswers";
 import type { Corrections } from "@/correction/useCorrections";
 import { percent } from "@/i18n/format";
+import { label, valueName } from "@/i18n/label";
 
 /**
  * The values the application suggests adding, facet by facet, the likeliest first: each one
@@ -18,7 +19,7 @@ export function SuggestedValues({ suggestions, corrections }: { suggestions: Fac
       <div className="text-xs text-muted-foreground">{t("SuggestedValues.title")}</div>
       {shown.map((s) => (
         <div key={s.facet}>
-          <div className="mb-1 text-xs text-muted-foreground">{s.label}</div>
+          <div className="mb-1 text-xs text-muted-foreground">{label(s.labelKey)}</div>
           <div className="flex flex-wrap gap-1">
             {s.suggested.map((v) => (
               <SuggestedChip key={v.key} facet={s.facet} value={v} corrections={corrections} />
@@ -37,7 +38,7 @@ export function SuggestedChip({ facet, value, corrections }: { facet: string; va
   const chance = value.chance == null ? undefined : value.chance;
   return (
     <Badge variant="outline" className="border-dashed pr-0.5 font-normal" title={chance !== undefined ? t("SuggestedChip.chance", { chance: percent(chance) }) : undefined}>
-      {value.name}
+      {valueName(value)}
       {chance !== undefined && <span className="text-[10px] text-muted-foreground tabular-nums">{percent(chance)}</span>}
       <FacetAnswers facet={facet} value={{ key: value.key }} corrections={corrections} />
     </Badge>

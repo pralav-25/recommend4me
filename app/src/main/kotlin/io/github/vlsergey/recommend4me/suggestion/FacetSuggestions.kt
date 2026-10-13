@@ -624,7 +624,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             val current = site[facet.key].orEmpty().toSet()
             val suggested = chances[facet.key].orEmpty().values
                 .filter { !it.had && it.key !in answered && it.key !in current && it.chance > ModelValues.LIKELY }.sortedByDescending { it.chance }
-            ItemFacetSuggestions(facet, suggested, store.shownNames(facet.key, suggested.map { it.key }))
+            ItemFacetSuggestions(facet, suggested, store.names(facet.key, suggested.map { it.key }))
         }
     }
 
@@ -676,7 +676,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
         val candidates = (scored + unscored)
             .sortedWith(compareByDescending<FacetCandidate> { it.chance ?: -1.0 }.thenByDescending { it.mentions ?: 0 })
-        return ItemFacetCandidates(def, candidates, store.shownNames(facet, candidates.map { it.key }))
+        return ItemFacetCandidates(def, candidates, store.names(facet, candidates.map { it.key }))
     }
 
     /**
@@ -1009,7 +1009,7 @@ internal class FacetData(
                 m.held.put(v, 0, m.row(i), v.size)
                 present[i] = true
             }
-            val texts = TextVectors.blocks(store.schema).mapValues { it.value.first } - leaveOut
+            val texts = TextVectors.blocks(store.id, store.schema).mapValues { it.value.first } - leaveOut
             if (only == null) {
                 store.textVectors.forEach(encoder.id, texts.keys) { id, key, v -> put(id, texts.getValue(key), v) }
                 imageEncoder?.let { e -> store.pictures.forEachItemVector(e) { id, block, v -> put(id, block, v) } }

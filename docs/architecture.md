@@ -280,21 +280,67 @@ against the English — the same keys, no more and no fewer, every word of a cou
 form of that language — so a translation missing or left over does not compile either. A new
 section's files are registered there.
 
-The server words what it sends in the language of the request — `Accept-Language`: the web
-interface sends the one chosen, the browser extension the browser's; English without one. Every
-text a plugin or the application shows the user is a `Label` of the plugin API, English, Russian
-and Serbian all required, so a label missing a language does not compile: the titles of the
-content types and their grades, of the sources, scorers and catalogues; the labels of the facets,
-numbers, texts, signals, settings and of the standard values; the messages of jobs and of refused
-requests. What the model and the search read keeps one language, Russian, whatever the user reads —
-the names of the standard values kept with the works, the original characters — their texts are
-encoded once; they are shown by their labels (`SourceStore.shownNames`). The data itself — the
-works' texts, the sites' tags, the catalogue's names — is shown as it is.
+### The server sends keys, never words
+
+The server words nothing for the user. Where the API has something to show that is not data, it
+sends the key of its words — `labelKey`, `nameKey`, `messageKey`, a `Problem`'s `code` with its
+`params` — and the interface translates it. A key is `"<namespace>:<key>"`, the key within the
+namespace flat and without ":" (`I18nKeys` of the plugin API builds them):
+
+- `standard` — the application's own words, every content type's alike. The web interface keeps
+  them (`frontend/src/standard/standard-i18n.<language>.json`, typed as every section's) and lays
+  them out for the browser extension too (`/i18n/standard/<language>.json`);
+- a plugin's id — a source's (`ficbook`), a scorer's (`pairwise`), a catalogue's (`wikidata`) —
+  the words of that plugin alone. The plugin carries them among its resources,
+  `i18n/<id>.<language>.json`, and the application lays them out as they are,
+  `/i18n/<id>/<language>.json`; the interfaces read the namespaces of the plugins they show. A
+  plugin's test checks its files with the plugin API's fixture `Translations`: every language,
+  exactly the same keys, and of a source every key it needs (`I18nKeys.requiredKeys`).
+
+The keys of a plugin's namespace: `title`; of a facet, number, text, signal of its own (not a
+standard one) `facet.<key>`, `number.<key>`, `text.<key>`, `signal.<key>`, a named value of a
+signal `signal.<key>.value.<value>`; `facet.<key>.none` of a facet whose works without a value are a
+line of the filter; `setting.<key>` and `setting.<key>.hint`; `reviews` and `parts` — what it calls
+the reviews and the parts of a text it keeps; `job.<key>` — a message its jobs leave.
+
+The keys of the standard namespace the server sends:
+
+- `type.<type>.title`, `type.<type>.verb`, `type.<type>.grade.<1..5>` — of `books`, `games`;
+- `facet.<key>` of every standard facet and of the application's layer — `author`, `status`,
+  `tag`, `fandom`, `pairing`, `tags`, `kind`, `universe`, `characters`, `secondary-characters`,
+  `pairings` — and `facet.<key>.value.<value>` of a standard value: `status` — `finished`,
+  `in-progress`, `frozen`; `kind` — `fanfiction`, `realism`, `alternative-history`, `original`;
+- `number.<key>` of every standard number — `parts`, `words`, `likes`, `views`;
+- `signal.<key>` and `signal.<key>.value.<value>` of every standard signal — `read` and `liked`
+  of the value `yes`; `shelf` of `reading`, `saved`, `finished`, `disliked`, `purchased`;
+- `character.oc-female`, `character.oc-male` — the original characters;
+- `text.title` — the title among the texts the search and the model read; `part.untitled` — a
+  chapter without a title, `{{n}}` its number;
+- `model.previous` (the grade of the previous version), `model.source`, `model.pictures`,
+  `model.reviews`, `model.cover`, `model.screens`, `model.screensOneByOne`,
+  `model.reviewsOneByOne`, `model.textFragments`, `model.likePictures`, `model.likeReviews`,
+  `model.likeWorks` — the parts and blocks of the model's input;
+- `error.<code>` — a request refused, its `params` named in the words: `noField` (field),
+  `siteField` (field — the key of its label), `noValue`, `noSuchWork`, `joinTypes`, `joinSelf`,
+  `badRange` (range), `noDownloads`, `siteSilent` (error), `refreshFailed`, `badGrade` (min, max),
+  `badMark`, `badAnswer`, `noUniverses` (type), `notInCatalogue` (universe), `catalogueSilent`
+  (error), `noSuchUniverse`, `noSuchType`, `noSiteTags`, `tagSelf`, `tagAbove`, `tagBelow`,
+  `noSetting` (setting), `noScorer` (scorer), `accessRefused`, `noExtensionFolder`.
+
+What the model and the search read keeps one language, Russian, whatever the user reads — the
+names of the standard values kept with the works (`StandardValue.modelName`), the original
+characters — their texts are encoded once; the user is shown them by their keys. The data itself —
+the works' texts, the sites' tags, the catalogue's names — is shown as it is.
 
 A number every site of a content type tells alike is a standard number (`StandardNumber`): the
-chapters of a book (`Books.PARTS`), the likes of anything — likes, kudos — (`StandardNumbers.LIKES`).
-A source declares its own number as the standard one under its own key; the sources' numbers of
-one standard are one filter, one sorting and one feature of the model.
+chapters of a book (`Books.PARTS`); of any type the likes — likes, kudos —, the views — views,
+hits — and the words (`StandardNumbers`). A source declares its own number as the standard one
+under its own key; the sources' numbers of one standard are one filter, one sorting and one
+feature of the model.
+
+The list of works is sorted by one choice of every order alike: the prediction, the date of the
+update, the date the application first saw the work, the surprise, and every number the list can
+be sorted by — the standard ones first.
 
 ## The site as the interface
 

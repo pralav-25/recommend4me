@@ -1,8 +1,7 @@
 package io.github.vlsergey.recommend4me.search
 
 import io.github.vlsergey.recommend4me.correction.Corrected
-import io.github.vlsergey.recommend4me.i18n.Label
-import io.github.vlsergey.recommend4me.i18n.text
+import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.plugin.Plugins
@@ -16,6 +15,7 @@ import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
 import io.github.vlsergey.recommend4me.vector.Vectors
+import io.github.vlsergey.recommend4me.work.TextPlace
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -132,22 +132,23 @@ class Search(
             val itemFacets = TagHierarchy.corrected(facets[id].orEmpty(), facetCorrections[id].orEmpty(), hierarchies)
             val itemTexts = Corrected.texts(texts[id].orEmpty(), own)
             val docFields = ArrayList<SearchField>()
-            // The fields' names are shown with what was found, in the language of the request: the index is of their keys
-            docFields += SearchField(TITLE, TextVectors.TITLE_LABEL.text(), 1.0f, listOf(Corrected.title(head.title, own)), naming = true)
+            // The fields' names are what the reranker reads them as, plain words; where a match is the
+            // interface is told by the field's key ([places])
+            docFields += SearchField(TITLE, TITLE, 1.0f, listOf(Corrected.title(head.title, own)), naming = true)
             searchedFacets.forEach { def ->
                 val keys = itemFacets[def.key].orEmpty()
                 if (keys.isNotEmpty()) docFields += SearchField(
-                    "facet.${def.key}", def.label.text(), def.searchWeight, keys.map { names[def.key]?.get(it) ?: it }, list = true, naming = def.names,
+                    FACET + def.key, def.key, def.searchWeight, keys.map { names[def.key]?.get(it) ?: it }, list = true, naming = def.names,
                 )
             }
             schema.texts.filter { it.searchWeight > 0 }.forEach { def ->
-                itemTexts[def.key]?.let { docFields += SearchField(def.key, def.label.text(), def.searchWeight, listOf(it)) }
+                itemTexts[def.key]?.let { docFields += SearchField(def.key, def.key, def.searchWeight, listOf(it)) }
             }
             val docPassages = ArrayList<SearchPassage>()
             docFields.filter { it.key in meaningful }.forEach { f -> docPassages += passagesOf(f, vectors[id]?.get(f.key), windows[id]?.get(f.key)) }
             // The chapters read: searched by their words and by the meaning of every window of them
             parts[id].orEmpty().forEachIndexed { n, (partId, title, content) ->
-                val field = SearchField(PART + partId, title?.takeIf { it.isNotBlank() } ?: PART_LABEL.text().format(n + 1), partWeight, listOf(content), group = PARTS)
+                val field = SearchField(PART + partId, title?.takeIf { it.isNotBlank() } ?: "part ${n + 1}", partWeight, listOf(content), group = PARTS)
                 docFields += field
                 val w = partWindows[id]?.get(partId)
                 docPassages += passagesOf(field, w?.singleOrNull(), w)
@@ -240,6 +241,38 @@ class Search(
         return provider.matches(typeId, result, keys, context(type))
     }
 
+    /**
+     * Where in the work every match is, by the key of the field it was found in ([SearchMatch.field]):
+     * the title, a facet, a text by the keys of their labels; a chapter by its title, or by its number
+     * among the chapters read when it has none — the chapters of the matched items read in one go per source.
+     */
+    fun places(matches: Map<ItemKey, SearchMatch>): Map<ItemKey, TextPlace> {
+        val out = HashMap<ItemKey, TextPlace>()
+        matches.entries.groupBy { it.key.source }.forEach { (source, list) ->
+            val s = stores.source(source) ?: return@forEach
+            val inParts = list.filter { it.value.field.startsWith(PART) }.map { it.key.id }
+            val chapters = if (inParts.isEmpty()) emptyMap() else s.parts.titlesOf(inParts)
+            list.forEach { (key, match) ->
+                val field = match.field
+                out[key] = when {
+                    field == TITLE -> TextPlace(labelKey = TextVectors.TITLE_LABEL)
+                    field.startsWith(FACET) -> field.removePrefix(FACET).let { f ->
+                        TextPlace(labelKey = s.schema.facet(f)?.let { I18nKeys.facetLabel(s.id, it) } ?: I18nKeys.qualified(s.id, I18nKeys.facet(f)))
+                    }
+                    field.startsWith(PART) -> {
+                        val partId = field.removePrefix(PART)
+                        val read = chapters[key.id].orEmpty()
+                        val at = read.indexOfFirst { it.first == partId }
+                        read.getOrNull(at)?.second?.takeIf { it.isNotBlank() }?.let { TextPlace(title = it) }
+                            ?: TextPlace(part = if (at >= 0) at + 1 else null)
+                    }
+                    else -> TextPlace(labelKey = I18nKeys.textLabel(s.id, field))
+                }
+            }
+        }
+        return out
+    }
+
     @PreDestroy
     fun shutdown() {
         worker.shutdownNow()
@@ -254,11 +287,11 @@ class Search(
         /** The field of the title. */
         private const val TITLE = "title"
 
+        /** The fields of the facets: "facet.<facet key>". */
+        private const val FACET = "facet."
+
         /** The fields of the chapters: "part:<part id>", searched as one field of the index, [PARTS]. */
         private const val PART = "part:"
         private const val PARTS = "parts"
-
-        /** The name of a chapter without a title of its own, by its number. */
-        private val PART_LABEL = Label("Part %d", "Часть %d", "Deo %d")
     }
 }

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { label, sourceTitle } from "@/i18n/label";
 
 export function useSettings() {
   return useQuery({ queryKey: ["settings"], queryFn: async () => unwrap(await api.GET("/api/settings")) });
@@ -72,7 +73,7 @@ function SourceForm({ settings }: { settings: SourceSettings }) {
 
   return (
     <section className="flex flex-col gap-4 rounded-lg border p-4">
-      <h3 className="font-semibold">{settings.title}</h3>
+      <h3 className="font-semibold">{sourceTitle(settings.source)}</h3>
       {settings.values.map((v) => (
         <Field
           key={v.key}
@@ -118,7 +119,7 @@ function Field({
   return (
     <div className="grid gap-2">
       <Label htmlFor={id} className="flex items-center gap-2">
-        {v.label}
+        {label(v.labelKey)}
         {v.secret &&
           (v.set ? (
             <span className="inline-flex items-center gap-1 text-xs text-yes">
@@ -157,7 +158,7 @@ function Field({
           placeholder={v.set ? undefined : t("Field.default")}
         />
       )}
-      {v.hint && <p className="text-xs text-muted-foreground">{v.hint}</p>}
+      {v.hintKey && <p className="text-xs text-muted-foreground">{label(v.hintKey)}</p>}
     </div>
   );
 }

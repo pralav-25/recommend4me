@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.scorer
 
-import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.matrix.Floats
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import java.nio.ByteBuffer
@@ -23,7 +22,6 @@ import java.util.Random
  */
 class BoostingScorer : Scorer {
     override val id = "boosted-trees"
-    override val title = Label("Gradient-boosted trees", "Градиентный бустинг деревьев", "Gradijentni busting stabala")
     override val candidates = listOf(25.0, 50.0, 100.0, 200.0, 400.0)
     override val defaultParameter = 100.0
 

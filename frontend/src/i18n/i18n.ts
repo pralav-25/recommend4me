@@ -2,6 +2,7 @@ import i18n from "i18next";
 import LanguageDetector from "i18next-browser-languagedetector";
 import { initReactI18next } from "react-i18next";
 import { DEFAULT_LOCALE, INTL_TAG, isLocale, type Locale, LOCALES } from "./locales";
+import { pluginWords } from "./plugins";
 import { NAMESPACE_NAMES, RESOURCES } from "./resources";
 
 /** Where the language the user chose is kept. */
@@ -10,12 +11,17 @@ const STORAGE_KEY = "language";
 /**
  * THE LANGUAGE OF THE INTERFACE: the one the user chose (kept in the browser's local storage); else
  * the first of the browser's languages the interface has — "sr-Latn-RS" is Serbian — else English.
+ * The application's namespaces come with the code; the plugins' are read from the server as they
+ * are needed (`plugins.ts`).
  */
 i18n
   .use(LanguageDetector)
+  .use(pluginWords)
   .use(initReactI18next)
   .init({
     resources: RESOURCES,
+    // The bundled namespaces are not read again; the others are the plugins', read at run time
+    partialBundledLanguages: true,
     ns: NAMESPACE_NAMES,
     defaultNS: "common",
     supportedLngs: LOCALES,

@@ -1,20 +1,22 @@
 package io.github.vlsergey.recommend4me.source
 
 import io.github.vlsergey.recommend4me.contenttype.StandardFacet
-import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.contenttype.StandardNumber
+import io.github.vlsergey.recommend4me.contenttype.StandardSignal
 
 /**
  * What a source knows of its items beyond the title, and how the application uses each thing.
- * The labels are shown to the user in the language of the interface.
+ * Everything is by its key: what the user is shown it by are words of the interface — of the
+ * source's own namespace, or the standard one ([I18nKeys][io.github.vlsergey.recommend4me.i18n.I18nKeys]).
  */
 class SourceSchema(
     val facets: List<FacetDef> = emptyList(),
     val numbers: List<NumberDef> = emptyList(),
     val texts: List<TextDef> = emptyList(),
-    /** What the source calls the opinions of other people it keeps as reviews ("Reviews", "Comments"); null when it keeps none. */
-    val reviewsLabel: Label? = null,
-    /** What the source calls the parts of a work's text ("Chapters"); null when it keeps no text. */
-    val partsLabel: Label? = null,
+    /** The source keeps the opinions of other people as reviews; its name of them ("Reviews", "Comments") is its word "reviews". */
+    val reviews: Boolean = false,
+    /** The source keeps the text of a work in parts; its name of them ("Chapters") is its word "parts". */
+    val parts: Boolean = false,
     /** Whether an item has a version that changes (a game's release) or is the same work whatever is added to it (a book). */
     val versioned: Boolean = false,
     /**
@@ -47,7 +49,6 @@ class SourceSchema(
  */
 class FacetDef(
     val key: String,
-    val label: Label,
     /** The list can be filtered by it: a drop-down of its values. */
     val filter: Boolean = false,
     /** The model reads it: every value seen in at least two rated works is a feature. */
@@ -63,8 +64,8 @@ class FacetDef(
     val onCard: Boolean = false,
     /** The facet names who made the work — the author, the developer: a search for the whole name finds the work first. */
     val names: Boolean = false,
-    /** An item without a value of it is listed under this name in the filter (a game with no status is "in development"); null — no such line. */
-    val noneLabel: Label? = null,
+    /** The items without a value of it are a line of the filter (a game with no status is "in development"), named by the source's word "facet.<key>.none". */
+    val none: Boolean = false,
     /**
      * The values a work should have are worked out from its text and its other values, and shown
      * to the user to confirm or reject — for tags a site leaves to its authors, who set them
@@ -165,7 +166,6 @@ enum class NumberScale {
 
 class NumberDef(
     val key: String,
-    val label: Label,
     val scale: NumberScale = NumberScale.LOG,
     val feature: Boolean = true,
     /** The list can be sorted by it. */
@@ -175,6 +175,8 @@ class NumberDef(
     val role: NumberRole? = null,
     /** The list can be limited to the works whose number lies within a range: from so many, up to so many. */
     val filterable: Boolean = false,
+    /** The standard number of the content type this one is ([StandardNumber.asNumber]); null — the source's own. */
+    val standard: StandardNumber? = null,
 )
 
 /**
@@ -186,7 +188,6 @@ class NumberDef(
  */
 class TextDef(
     val key: String,
-    val label: Label,
     val block: String? = null,
     val searchWeight: Float = 0.5f,
     /** Encoded for the search by meaning even when the model does not read it. */
@@ -198,22 +199,28 @@ class TextDef(
 )
 
 /**
- * A kind of the user's own actions on the site ([SiteSignals]): its [label], and the names of its
- * values ([values], by the value as the source writes it); a value not named is shown as it is.
+ * A kind of the user's own actions on the site ([SiteSignals]) and the values of it the interface
+ * names ([values], by the value as the source writes it); a value not named is shown as it is.
  * Shown, NEVER READ BY THE MODEL: what the user did with a work — read it, liked it, shelved it,
  * reacted to it, hid it, followed it — is their verdict on it, the very thing the grades teach.
  */
-class SignalDef(val key: String, val label: Label, val values: Map<String, Label> = emptyMap())
+class SignalDef(
+    val key: String,
+    /** The values named by the interface's words; any other is shown as the source writes it. */
+    val values: Set<String> = emptySet(),
+    /** The standard signal of the content type this one is ([StandardSignal.asSignal]); null — the source's own. */
+    val standard: StandardSignal? = null,
+)
 
 /** A setting of a source the user can change in the interface: a cookie, a delay between requests. */
 class SettingDef(
     val key: String,
-    val label: Label,
     val kind: SettingKind = SettingKind.TEXT,
     val default: String? = null,
     /** Never sent back to the interface: only whether it is set. */
     val secret: Boolean = false,
-    val hint: Label? = null,
+    /** It has a hint, the source's word "setting.<key>.hint". */
+    val hint: Boolean = false,
 )
 
 enum class SettingKind { TEXT, NUMBER }

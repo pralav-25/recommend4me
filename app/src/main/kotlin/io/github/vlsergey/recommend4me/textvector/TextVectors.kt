@@ -1,6 +1,6 @@
 package io.github.vlsergey.recommend4me.textvector
 
-import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.correction.Corrected
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.plugin.Plugins
@@ -220,14 +220,16 @@ class TextVectors(
 
         /**
          * Every text of the source's items the models read, by its key, with the block of the
-         * models' input it is and its label: every text that has vectors — those of the source's
-         * own blocks, the lines searched by meaning (the site's line of characters) — and the title.
+         * models' input it is and the key of its label: every text that has vectors — those of the
+         * source's own blocks, the lines searched by meaning (the site's line of characters) — and the title.
          */
-        fun blocks(schema: SourceSchema): Map<String, Pair<String, Label>> =
-            schema.texts.filter { it.block != null || it.searchByMeaning }.associate { it.key to ((it.block ?: "text:${it.key}") to it.label) } +
+        fun blocks(source: String, schema: SourceSchema): Map<String, Pair<String, String>> =
+            schema.texts.filter { it.block != null || it.searchByMeaning }
+                .associate { it.key to ((it.block ?: "text:${it.key}") to I18nKeys.textLabel(source, it.key)) } +
                 (TITLE to ("text:$TITLE" to TITLE_LABEL))
 
-        val TITLE_LABEL = Label("Title", "Название", "Naslov")
+        /** The key of the label of the title among the texts: "standard:text.title". */
+        val TITLE_LABEL = I18nKeys.qualified(I18nKeys.STANDARD, "text.title")
 
         /** Texts per encoder call; their windows share batches of the graph. */
         private const val BATCH = 32

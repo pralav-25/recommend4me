@@ -4,7 +4,6 @@ import io.github.vlsergey.recommend4me.api.JobsApi
 import io.github.vlsergey.recommend4me.api.model.JobRequest
 import io.github.vlsergey.recommend4me.api.model.CatalogueProgress
 import io.github.vlsergey.recommend4me.api.model.JobStatus
-import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.SourceMode
 import io.github.vlsergey.recommend4me.source.job
@@ -46,7 +45,8 @@ class JobsController(private val jobs: Jobs, private val stores: Stores, private
             resumable = jobs.resumable(source)?.let { ApiSourceMode.valueOf(it.name) },
             phase = p.phase,
             phaseStartedAt = p.phaseStartedAt?.atOffset(ZoneOffset.UTC),
-            message = p.message?.text(),
+            messageKey = p.messageKey,
+            failure = p.failure,
             loggedIn = p.loggedIn,
             startedAt = p.startedAt?.atOffset(ZoneOffset.UTC),
             finishedAt = p.finishedAt?.atOffset(ZoneOffset.UTC),

@@ -1,6 +1,6 @@
 package io.github.vlsergey.recommend4me.item
 
-import io.github.vlsergey.recommend4me.i18n.text
+import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.api.model.FacetValueInfo
 import io.github.vlsergey.recommend4me.api.model.ItemFacet
 import io.github.vlsergey.recommend4me.api.model.ItemSummary
@@ -19,6 +19,7 @@ import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.suggestion.Chance
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.tag.TagHierarchy
+import io.github.vlsergey.recommend4me.work.TextPlace
 import io.github.vlsergey.recommend4me.work.WorkClusters
 import io.github.vlsergey.recommend4me.work.Works
 import org.springframework.stereotype.Component
@@ -100,6 +101,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             fun info(key: String, corrected: FacetValueInfo.Corrected?, offer: Boolean = false) = FacetValueInfo(
                 key = key,
                 name = name(key),
+                nameKey = store.nameKey(def.key, key),
                 corrected = corrected,
                 chance = own[key]?.chance,
                 inferred = (key in had && key !in siteKeys).takeIf { it },
@@ -108,7 +110,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             )
             ItemFacet(
                 facet = def.key,
-                label = def.label.text(),
+                labelKey = I18nKeys.facetLabel(store.id, def),
                 editable = def.editable,
                 propertyValues = keys.map { k ->
                     // Confirmed: the site or the model gave it — the model even when the user's answer
@@ -124,12 +126,14 @@ class ItemCards(private val stores: Stores, private val works: Works) {
 
     /**
      * The cards of [keys] of one content type, in their order; [matches] what a search found in
-     * them. Every source's items are read in one go.
+     * them, [places] where in the work each is ([Search.places][io.github.vlsergey.recommend4me.search.Search.places]).
+     * Every source's items are read in one go.
      */
     fun cards(
         type: TypeStore,
         keys: List<ItemKey>,
         matches: Map<ItemKey, io.github.vlsergey.recommend4me.search.SearchMatch> = emptyMap(),
+        places: Map<ItemKey, TextPlace> = emptyMap(),
         clusters: WorkClusters = works.of(type),
         /** The user's word on the works for the line searched, when searched. */
         judged: Map<ItemKey, Boolean> = emptyMap(),
@@ -152,7 +156,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val onCard = store.schema.facets.filter { it.onCard }.map { it.key }.toSet()
             val chances = store.suggestions.ofItems(ids)
             val names = onCard.associateWith { facet ->
-                store.shownNames(facet, ids.flatMap { facets[it]?.get(facet).orEmpty() + chances[it]?.get(facet)?.keys.orEmpty() })
+                store.names(facet, ids.flatMap { facets[it]?.get(facet).orEmpty() + chances[it]?.get(facet)?.keys.orEmpty() })
             }
             val numbers = store.items.numbersOf(ids)
             val pictures = store.pictures.countsOf(ids)
@@ -192,7 +196,11 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     interest = interest[id]?.interesting,
                     interestChance = predicted[id]?.interest,
                     searchMatch = matches[key]?.let { m ->
-                        SearchMatch(m.field, m.byMeaning, m.text, m.highlights.map { (s, e) -> TextRange(s, e) })
+                        val place = places[key] ?: TextPlace()
+                        SearchMatch(
+                            byMeaning = m.byMeaning, text = m.text, highlights = m.highlights.map { (s, e) -> TextRange(s, e) },
+                            labelKey = place.labelKey, title = place.title, part = place.part,
+                        )
                     },
                     searchRelevant = judged[key],
                     signals = signals[id]?.takeIf { it.isNotEmpty() },

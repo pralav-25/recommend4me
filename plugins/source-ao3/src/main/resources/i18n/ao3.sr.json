@@ -1,0 +1,21 @@
+{
+  "facet.category": "Kategorija",
+  "facet.language": "Jezik",
+  "facet.rating": "Rejting",
+  "facet.series": "Serijal",
+  "facet.warning": "Upozorenja",
+  "number.bookmarks": "Obeleživači",
+  "number.comments": "Komentari",
+  "parts": "Poglavlja",
+  "reviews": "Komentari",
+  "signal.bookmarked": "U obeleživačima",
+  "signal.bookmarked.value.yes": "da",
+  "signal.later": "Ostavljeno za kasnije",
+  "signal.later.value.yes": "da",
+  "signal.subscribed": "Pretplata na ažuriranja",
+  "signal.subscribed.value.yes": "da",
+  "text.annotation": "Opis",
+  "text.notes": "Beleške",
+  "text.pairingsLine": "Veze i likovi na sajtu",
+  "title": "Archive of Our Own"
+}

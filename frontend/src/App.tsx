@@ -1,39 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import {
-  ArrowDownWideNarrowIcon,
-  ChevronDownIcon,
-  HashIcon,
-  KeyboardIcon,
-  LayoutGridIcon,
-  ListIcon,
-  Loader2Icon,
-  RefreshCcwIcon,
-  SearchIcon,
-  SettingsIcon,
-  SparklesIcon,
-  TelescopeIcon,
-  ZapIcon,
-} from "lucide-react";
+import { KeyboardIcon, LayoutGridIcon, ListIcon, Loader2Icon, RefreshCcwIcon, SearchIcon, SettingsIcon, TelescopeIcon } from "lucide-react";
 import type { ContentTypeInfo, ItemView } from "@/api/client";
 import { CaptureDialog } from "@/capture/CaptureDialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useTypes } from "@/contenttype/types";
+import { pluginNamespacesOf, useTypes } from "@/contenttype/types";
 import { FacetFilters, NOTHING_HIDDEN, validSelection, type FacetSelection } from "@/facet/FacetFilters";
+import { usePluginNamespaces } from "@/i18n/usePluginNamespaces";
 import { NumberFilters, validRanges, type NumberRanges } from "@/number/NumberFilters";
 import { ItemBoard, type Layout } from "@/item/ItemBoard";
 import { HashItemDialog } from "@/item/ItemRefDialog";
 import { ITEMS } from "@/item/lists";
 import { BY_SCORE, validSort, type SortChoice } from "@/item/sort";
+import { SortMenu } from "@/item/SortMenu";
 import { JobControl } from "@/job/JobControl";
 import { useJobs } from "@/job/useJobs";
-import { cn } from "@/lib/utils";
 import { usePref } from "@/lib/usePref";
 import { ModelDialog } from "@/model/ModelDialog";
 import { useModel } from "@/model/useModel";
@@ -65,8 +51,10 @@ export function App() {
   const [chosen, setChosen] = usePref<string>("type", "");
   const list = types.data ?? [];
   const type = list.find((t) => t.id === chosen) ?? list[0];
+  // The sources' and the catalogue's titles and labels are their plugins' words: read before the screen is drawn
+  const worded = usePluginNamespaces(pluginNamespacesOf(list));
 
-  if (types.isLoading) {
+  if (types.isLoading || !worded) {
     return (
       <div className="flex min-h-screen items-center justify-center text-muted-foreground">
         <Loader2Icon className="size-8 animate-spin" />
@@ -156,11 +144,6 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
   }, []);
 
   const notLoggedIn = jobs.data?.some((j) => j.loggedIn === false);
-  const sortTab = search ? "RELEVANCE" : sort.sort === "NUMBER" ? `NUMBER:${sort.number}` : sort.sort;
-  const chosenNumber = type.numbers.find((n) => n.id === sort.number);
-  // One or two numbers are tabs of their own; more go into a list
-  const numberTabs = type.numbers.length <= 2 ? type.numbers : [];
-  const numberMenu = type.numbers.length > 2 ? type.numbers : [];
 
   return (
     <div className="min-h-screen">
@@ -246,83 +229,7 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
           </div>
           <SearchQualityDialog type={type.id} />
 
-          <div className="flex items-center gap-1">
-            <Tabs
-              value={sortTab}
-              onValueChange={(v) => {
-                const value = String(v);
-                if (value === "RELEVANCE") return;
-                if (value.startsWith("NUMBER:")) setSort({ sort: "NUMBER", number: value.slice("NUMBER:".length) });
-                else setSort({ sort: value as SortChoice["sort"] });
-              }}
-            >
-              <TabsList>
-                {search && (
-                  <TabsTrigger value="RELEVANCE" className="px-3">
-                    <SearchIcon /> {t("App.sort.relevance")}
-                  </TabsTrigger>
-                )}
-                {/* A phone's width holds them only with short names; while searching, the others are off and hidden there */}
-                <TabsTrigger value="SCORE" className={cn("px-2 sm:px-3", search && "hidden sm:inline-flex")} disabled={!!search}>
-                  <SparklesIcon /> <span className="sm:hidden">{t("App.sort.score.short")}</span>
-                  <span className="hidden sm:inline">{t("App.sort.score")}</span>
-                </TabsTrigger>
-                <TabsTrigger value="UPDATED" className={cn("px-2 sm:px-3", search && "hidden sm:inline-flex")} disabled={!!search}>
-                  <ArrowDownWideNarrowIcon /> <span className="sm:hidden">{t("App.sort.updated.short")}</span>
-                  <span className="hidden sm:inline">{t("App.sort.updated")}</span>
-                </TabsTrigger>
-                <TabsTrigger
-                  value="SURPRISE"
-                  className={cn("px-2 sm:px-3", search && "hidden sm:inline-flex")}
-                  disabled={!!search}
-                  title={t("App.sort.surprise.title")}
-                >
-                  <ZapIcon /> <span className="sm:hidden">{t("App.sort.surprise.short")}</span>
-                  <span className="hidden sm:inline">{t("App.sort.surprise")}</span>
-                </TabsTrigger>
-                {numberTabs.map((n) => (
-                  <TabsTrigger
-                    key={n.id}
-                    value={`NUMBER:${n.id}`}
-                    className={cn("px-2 sm:px-3", search && "hidden sm:inline-flex")}
-                    disabled={!!search}
-                    title={t("App.sort.number.title", { number: n.label })}
-                  >
-                    <HashIcon /> {n.label}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-            {numberMenu.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant={sort.sort === "NUMBER" && !search ? "secondary" : "ghost"}
-                      size="sm"
-                      disabled={!!search}
-                      className={cn(sort.sort === "NUMBER" && !search && "ring-1 ring-border")}
-                    />
-                  }
-                >
-                  <HashIcon /> {sort.sort === "NUMBER" && chosenNumber ? chosenNumber.label : t("App.sort.number")}
-                  <ChevronDownIcon className="opacity-60" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="w-auto min-w-48">
-                  <DropdownMenuRadioGroup
-                    value={sort.sort === "NUMBER" ? (sort.number ?? "") : ""}
-                    onValueChange={(v) => setSort({ sort: "NUMBER", number: String(v) })}
-                  >
-                    {numberMenu.map((n) => (
-                      <DropdownMenuRadioItem key={n.id} value={n.id}>
-                        {n.label}
-                      </DropdownMenuRadioItem>
-                    ))}
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
+          <SortMenu type={type} value={sort} searching={search !== ""} onChange={setSort} />
 
           {fresh && (
             <Button variant="secondary" size="sm" onClick={resort}>

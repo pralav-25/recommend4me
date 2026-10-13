@@ -1,0 +1,16 @@
+{
+  "facet.direction": "Category",
+  "facet.rating": "Rating",
+  "facet.series": "Series",
+  "number.comments": "Reviews",
+  "number.pages": "Pages",
+  "parts": "Parts",
+  "reviews": "Reviews",
+  "signal.followed": "Following updates",
+  "signal.followed.value.yes": "yes",
+  "text.annotation": "Description",
+  "text.dedication": "Dedication",
+  "text.notes": "Notes",
+  "text.pairingsLine": "Pairings and characters on the site",
+  "title": "Ficbook"
+}

@@ -1,6 +1,7 @@
 import { forwardRef } from "react";
 import type { Grade } from "@/api/client";
 import { ago } from "@/i18n/format";
+import { valueName } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 import { SearchJudge } from "@/search/SearchJudge";
 import type { ItemViewProps } from "./ItemCard";
@@ -23,7 +24,7 @@ import {
  */
 export const ItemRow = forwardRef<HTMLElement, ItemViewProps>(function ItemRow({ type, summary, selected, onOpen, onSelect, onRate, onJudge }, ref) {
   const facetLine = summary.facets
-    .flatMap((f) => f.values.filter((v) => v.corrected !== "REMOVED").map((v) => v.name))
+    .flatMap((f) => f.values.filter((v) => v.corrected !== "REMOVED").map(valueName))
     .join(" · ");
   return (
     <article
@@ -48,7 +49,7 @@ export const ItemRow = forwardRef<HTMLElement, ItemViewProps>(function ItemRow({
           <NumberLine type={type} summary={summary} />
           <PreviousRating type={type} summary={summary} />
           <SignalBadges source={type.sources.find((s) => s.id === summary.source)} signals={summary.signals} />
-          <LinkedBadges type={type} linked={summary.linked} />
+          <LinkedBadges linked={summary.linked} />
         </div>
         {summary.searchMatch ? (
           <SearchMatchLine match={summary.searchMatch} className="mt-1 line-clamp-2" />

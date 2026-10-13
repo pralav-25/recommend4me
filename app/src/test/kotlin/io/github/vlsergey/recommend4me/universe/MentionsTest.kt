@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.universe
 
+import io.github.vlsergey.recommend4me.work.TextPlace
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -52,18 +53,18 @@ class MentionsTest {
 
     @Test
     fun `a quote marks the names of the value where the text has them, a declined one and one with ё too`() {
-        val text = WorkText("Глава 1", "Гарри посмотрел на Гермиону.\nРон ел.\nЁлка, Гермиона и Гарри Поттер.")
+        val text = WorkText(TextPlace(part = 1), "Гарри посмотрел на Гермиону.\nРон ел.\nЁлка, Гермиона и Гарри Поттер.")
         val quotes = Naming(mentions).quotes(sequenceOf(text), "hermione")
         assertEquals(listOf("Гарри посмотрел на Гермиону.", "Ёлка, Гермиона и Гарри Поттер."), quotes.map { it.text })
         assertEquals(listOf("Гермиону"), quotes[0].highlights.map { quotes[0].text.substring(it) })
         assertEquals(listOf("Гермиона"), quotes[1].highlights.map { quotes[1].text.substring(it) })
-        assertEquals("Глава 1", quotes[0].place)
+        assertEquals(1, quotes[0].place.part)
     }
 
     @Test
     fun `a pairing is quoted by the paragraphs naming its two, both marked`() {
         val pairing = { a: String, b: String -> listOf(a, b).sorted().joinToString("|") }
-        val text = WorkText("Описание", "Гарри поцеловал Гермиону.\n\nРон ел.\nГермиона и Рон спорили.")
+        val text = WorkText(TextPlace(labelKey = "test:text.description"), "Гарри поцеловал Гермиону.\n\nРон ел.\nГермиона и Рон спорили.")
         val quotes = Naming(mentions, pairing = pairing).quotes(sequenceOf(text), "hermione|ron")
         assertEquals(listOf("Гермиона и Рон спорили."), quotes.map { it.text })
         assertEquals(listOf("Гермиона", "Рон"), quotes[0].highlights.map { quotes[0].text.substring(it) })
@@ -72,7 +73,7 @@ class MentionsTest {
     @Test
     fun `a long paragraph is cut around the names`() {
         val filler = "слово ".repeat(200)
-        val quotes = Naming(mentions).quotes(sequenceOf(WorkText("Глава 2", filler + "Гермиона пришла. " + filler)), "hermione")
+        val quotes = Naming(mentions).quotes(sequenceOf(WorkText(TextPlace(part = 2), filler + "Гермиона пришла. " + filler)), "hermione")
         val quote = quotes.single()
         assert(quote.text.length < 500) { quote.text }
         assert(quote.text.startsWith("… ") && quote.text.endsWith(" …")) { quote.text }

@@ -20,9 +20,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { ALL_GRADES, gradeLabel, sourceTitle, typeIcon } from "@/contenttype/types";
+import { ALL_GRADES, gradeLabel, typeIcon } from "@/contenttype/types";
 import { shownChance, unlikely } from "@/facet/FacetValueMarks";
 import { compact, number, percent, score } from "@/i18n/format";
+import { label, sourceTitle, valueName } from "@/i18n/label";
+import { placeName } from "@/part/place";
 import { useLadder } from "@/model/useModel";
 import { cn } from "@/lib/utils";
 import { useMarkInterest } from "./useMarkInterest";
@@ -99,7 +101,7 @@ export function RatingButtons({
           >
             <span className="font-semibold tabular-nums">{g}</span>
             {/* A phone has room for the digits only: a cut word says nothing */}
-            {labels && <span className="hidden truncate text-xs font-normal sm:inline">{gradeLabel(type, g)}</span>}
+            {labels && <span className="hidden truncate text-xs font-normal sm:inline">{gradeLabel(type.id, g)}</span>}
             {/* Where the grade stands on the scale the predictions are shown on */}
             {labels && ladder[g] !== undefined && (
               <span className="inline-flex shrink-0 items-center gap-0.5 text-xs font-normal tabular-nums opacity-70">
@@ -109,7 +111,7 @@ export function RatingButtons({
             )}
           </TooltipTrigger>
           <TooltipContent>
-            {value === g ? t("RatingButtons.takeBack") : gradeLabel(type, g)}
+            {value === g ? t("RatingButtons.takeBack") : gradeLabel(type.id, g)}
             {value !== g && ladder[g] !== undefined && ` ${t("RatingButtons.onScale", { score: score(ladder[g]) })}`} ·{" "}
             <Trans t={t} i18nKey="RatingButtons.key" values={{ grade: g }} components={{ kbd: <kbd className="font-mono" /> }} />
           </TooltipContent>
@@ -307,7 +309,7 @@ function ScoreWhy({ summary }: { summary: ItemSummary }) {
     <ul className="mt-1">
       {parts.map((g) => (
         <li key={g.part} className="flex justify-between gap-3">
-          <span className="min-w-0 truncate">{g.label}</span>
+          <span className="min-w-0 truncate">{label(g.labelKey)}</span>
           <span className="tabular-nums">
             {g.contribution > 0 ? "+" : ""}
             {g.contribution.toFixed(1)}
@@ -328,7 +330,7 @@ const CORRECTED_NOTE = {
 function facetValueTitle(t: TFunction<"item">, facet: ItemFacet, value: FacetValueInfo): string {
   const chance = shownChance(value);
   return (
-    facet.label +
+    label(facet.labelKey) +
     (value.corrected ? ` · ${t(CORRECTED_NOTE[value.corrected])}` : "") +
     (chance !== undefined ? ` · ${t("FacetBadges.chance", { chance: percent(chance) })}` : "") +
     (unlikely(value) ? ` — ${t("FacetBadges.unlikely")}` : "") +
@@ -364,11 +366,11 @@ export function FacetBadges({ facets, limit, className }: { facets: ItemFacet[];
           title={facetValueTitle(t, facet, value)}
         >
           {(value.corrected === "ADDED" || value.corrected === "CONFIRMED") && <CheckIcon className="size-3 text-yes" />}
-          {value.name}
+          {valueName(value)}
         </Badge>
       ))}
       {rest.length > 0 && (
-        <Badge variant="outline" className="font-normal text-muted-foreground" title={rest.map((r) => r.value.name).join(", ")}>
+        <Badge variant="outline" className="font-normal text-muted-foreground" title={rest.map((r) => valueName(r.value)).join(", ")}>
           +{rest.length}
         </Badge>
       )}
@@ -384,13 +386,16 @@ const FLAG = new Set(["", "true", "1", "yes"]);
  * its source gives them; a value may be several joined by ",", a yes/no one shows the name only.
  */
 function signalLabel(info: SignalInfo | undefined, key: string, value: string): string {
-  const label = info?.label ?? key;
+  const name = info ? label(info.labelKey) : key;
   const values = value
     .split(",")
     .map((v) => v.trim())
     .filter((v) => !FLAG.has(v))
-    .map((v) => info?.values[v] ?? v);
-  return values.length === 0 ? label : `${label}: ${values.join(", ")}`;
+    .map((v) => {
+      const nameKey = info?.values[v];
+      return nameKey ? label(nameKey) : v;
+    });
+  return values.length === 0 ? name : `${name}: ${values.join(", ")}`;
 }
 
 /** The user's own actions on the site: liked it, put it on a shelf. */
@@ -414,13 +419,13 @@ export function SourceBadge({ type, source, className }: { type: ContentTypeInfo
   if (type.sources.length < 2) return null;
   return (
     <Badge variant="outline" className={cn("font-normal", className)}>
-      {sourceTitle(type, source)}
+      {sourceTitle(source)}
     </Badge>
   );
 }
 
 /** The other items of the same work: the site of each, linking to its page there. */
-export function LinkedBadges({ type, linked, className }: { type: ContentTypeInfo; linked: LinkedItem[]; className?: string }) {
+export function LinkedBadges({ linked, className }: { linked: LinkedItem[]; className?: string }) {
   const { t } = useTranslation("item");
   if (linked.length === 0) return null;
   return (
@@ -436,7 +441,7 @@ export function LinkedBadges({ type, linked, className }: { type: ContentTypeInf
           title={l.title}
           className="underline-offset-2 hover:underline"
         >
-          {sourceTitle(type, l.source)}
+          {sourceTitle(l.source)}
         </a>
       ))}
     </span>
@@ -446,13 +451,16 @@ export function LinkedBadges({ type, linked, className }: { type: ContentTypeInf
 /** The numbers of a card with the labels its source gives them: "likes 1.2K". */
 export function NumberLine({ type, summary, limit = 3 }: { type: ContentTypeInfo; summary: ItemSummary; limit?: number }) {
   const declared = type.sources.find((s) => s.id === summary.source)?.numbers ?? [];
-  const label = (key: string) => declared.find((n) => n.key === key)?.label ?? key;
+  const numberLabel = (key: string) => {
+    const labelKey = declared.find((n) => n.key === key)?.labelKey;
+    return labelKey ? label(labelKey) : key;
+  };
   const entries = Object.entries(summary.numbers).slice(0, limit);
   return (
     <>
       {entries.map(([key, value]) => (
-        <span key={key} className="whitespace-nowrap" title={`${label(key)}: ${number(value)}`}>
-          <span className="text-muted-foreground/80">{label(key)}</span> {compact(value)}
+        <span key={key} className="whitespace-nowrap" title={`${numberLabel(key)}: ${number(value)}`}>
+          <span className="text-muted-foreground/80">{numberLabel(key)}</span> {compact(value)}
         </span>
       ))}
     </>
@@ -476,9 +484,10 @@ export function SearchMatchLine({ match, className }: { match: SearchMatch; clas
       at = end;
     });
   if (at < match.text.length) parts.push({ text: match.text.slice(at), found: false });
+  const field = placeName(match);
   return (
     <p className={cn("text-xs leading-snug text-muted-foreground", className)}>
-      <span className="font-medium text-foreground/70">{match.byMeaning ? t("SearchMatchLine.byMeaning", { field: match.field }) : match.field}: </span>
+      <span className="font-medium text-foreground/70">{match.byMeaning ? t("SearchMatchLine.byMeaning", { field }) : field}: </span>
       {parts.map((p, i) =>
         p.found ? (
           <mark key={i} className="rounded-sm bg-maybe/35 px-0.5 text-foreground">
@@ -501,9 +510,9 @@ export function PreviousRating({ type, summary }: { type: ContentTypeInfo; summa
     <Badge
       variant="outline"
       className={GRADE_TEXT[g]}
-      title={t("PreviousRating.title", { version: summary.previousGradeVersion ?? "", grade: gradeLabel(type, g) })}
+      title={t("PreviousRating.title", { version: summary.previousGradeVersion ?? "", grade: gradeLabel(type.id, g) })}
     >
-      {t("PreviousRating.label", { grade: gradeLabel(type, g) })}
+      {t("PreviousRating.label", { grade: gradeLabel(type.id, g) })}
     </Badge>
   );
 }

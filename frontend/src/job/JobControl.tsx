@@ -17,9 +17,9 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { toast } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { findSource, useTypes } from "@/contenttype/types";
 import { formatDate, timeLeft } from "@/i18n/format";
-import { catalogueLabel, modeLabel, phaseLabel } from "./labels";
+import { sourceTitle } from "@/i18n/label";
+import { catalogueLabel, jobMessage, modeLabel, phaseLabel } from "./labels";
 import { ITEMS } from "@/item/lists";
 import { JobDialog } from "./JobDialog";
 import { catalogueUnfinished, isActive, useCancelJob, useJobs, useStartJob } from "./useJobs";
@@ -48,8 +48,6 @@ export function JobControl({ type, onNeedSettings }: Props) {
 
   const sources = scraping(type);
   const jobOf = (source: string) => jobs.data?.find((j) => j.source === source);
-  const types = useTypes();
-  const titleOf = (source: string) => findSource(types.data, source)?.source.title ?? source;
   const ours = (jobs.data ?? []).filter((j) => sources.some((s) => s.id === j.source));
 
   // A job that has just ended: the list, the filters and the model are asked for anew, and a toast says how it went
@@ -62,7 +60,7 @@ export function JobControl({ type, onNeedSettings }: Props) {
       queryClient.invalidateQueries({ queryKey: [ITEMS] });
       queryClient.invalidateQueries({ queryKey: ["facets"] });
       queryClient.invalidateQueries({ queryKey: ["model"] });
-      const name = titleOf(job.source);
+      const name = sourceTitle(job.source);
       if (job.state === "DONE")
         toast.add({
           title: t(job.mode === "SCRAPE_ALL" ? "JobControl.catalogueLoaded" : "JobControl.updatesLoaded", { source: name }),
@@ -71,7 +69,7 @@ export function JobControl({ type, onNeedSettings }: Props) {
             : t("JobControl.result", { newItems: job.newItems }),
           type: "success",
         });
-      if (job.state === "FAILED") toast.add({ title: t("JobControl.failed", { source: name }), description: job.message, type: "error" });
+      if (job.state === "FAILED") toast.add({ title: t("JobControl.failed", { source: name }), description: jobMessage(job), type: "error" });
     }
   });
 
@@ -105,7 +103,7 @@ export function JobControl({ type, onNeedSettings }: Props) {
           <div className="flex justify-between gap-2 text-xs">
             <span className="truncate">
               <span className="hidden text-muted-foreground sm:inline">
-                {sources.length > 1 && `${titleOf(s.source)} · `}
+                {sources.length > 1 && `${sourceTitle(s.source)} · `}
                 {s.mode === "SCRAPE_ALL" && `${t("JobControl.catalogue")} · `}
               </span>
               {s.state === "CANCELLING" ? t("JobControl.stopping") : phaseLabel(s.phase) || t("JobControl.loading")}
@@ -120,7 +118,7 @@ export function JobControl({ type, onNeedSettings }: Props) {
           <Progress value={s.total > 0 ? (s.processed / s.total) * 100 : null} />
         </button>
         {running.length > 1 && (
-          <Badge variant="outline" title={running.slice(1).map((j) => titleOf(j.source)).join(", ")}>
+          <Badge variant="outline" title={running.slice(1).map((j) => sourceTitle(j.source)).join(", ")}>
             +{running.length - 1}
           </Badge>
         )}
@@ -147,7 +145,7 @@ export function JobControl({ type, onNeedSettings }: Props) {
           onClick={() => (withUpdates.length > 0 ? updateAll() : setDialog(sources[0].id))}
           disabled={start.isPending}
           className="rounded-r-none"
-          title={withUpdates.length > 0 ? t("JobControl.updatesOf", { sources: withUpdates.map((s) => s.title).join(", ") }) : undefined}
+          title={withUpdates.length > 0 ? t("JobControl.updatesOf", { sources: withUpdates.map((s) => sourceTitle(s.id)).join(", ") }) : undefined}
         >
           {withUpdates.length > 0 ? <DownloadIcon /> : <DatabaseIcon />}
           <span className="hidden sm:inline">{withUpdates.length > 0 ? t("JobControl.loadUpdates") : t("JobControl.loadCatalogue")}</span>
@@ -163,7 +161,7 @@ export function JobControl({ type, onNeedSettings }: Props) {
                 <DropdownMenuGroup key={s.id}>
                   {i > 0 && <DropdownMenuSeparator />}
                   <DropdownMenuLabel>
-                    {s.title}
+                    {sourceTitle(s.id)}
                     {catalogue && <div className="font-normal text-muted-foreground">{catalogueLabel(catalogue)}</div>}
                   </DropdownMenuLabel>
                   {s.modes.includes("UPDATES") && (
@@ -190,7 +188,7 @@ export function JobControl({ type, onNeedSettings }: Props) {
           <TooltipTrigger render={<Badge variant="outline" className="hidden cursor-pointer border-maybe/60 text-maybe sm:inline-flex" onClick={onNeedSettings} />}>
             <TriangleAlertIcon /> <span className="hidden xl:inline">{t("JobControl.notLoggedIn")}</span>
           </TooltipTrigger>
-          <TooltipContent>{t("JobControl.notLoggedInHint", { sources: notLoggedIn.map((j) => titleOf(j.source)).join(", ") })}</TooltipContent>
+          <TooltipContent>{t("JobControl.notLoggedInHint", { sources: notLoggedIn.map((j) => sourceTitle(j.source)).join(", ") })}</TooltipContent>
         </Tooltip>
       )}
       {resumable.map((j) => (
@@ -207,7 +205,7 @@ export function JobControl({ type, onNeedSettings }: Props) {
         >
           <DatabaseIcon />
           <span className="hidden 2xl:inline">
-            {sources.length > 1 ? t("JobControl.resumeSource", { source: titleOf(j.source) }) : t("JobControl.resumeCatalogue")}
+            {sources.length > 1 ? t("JobControl.resumeSource", { source: sourceTitle(j.source) }) : t("JobControl.resumeCatalogue")}
           </span>
         </Button>
       ))}

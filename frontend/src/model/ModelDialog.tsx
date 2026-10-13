@@ -5,8 +5,10 @@ import { useTranslation } from "react-i18next";
 import { api, unwrap, type ContentTypeInfo, type Grade, type GradeOnScale, type ModelCandidate, type ModelInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ALL_GRADES, gradeLabel } from "@/contenttype/types";
+import { ALL_GRADES, gradeLabel, typeTitle } from "@/contenttype/types";
 import { formatDate, number, percent, score } from "@/i18n/format";
+import { scorerTitle } from "@/i18n/label";
+import { usePluginNamespaces } from "@/i18n/usePluginNamespaces";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
 import { FeatureBars } from "./FeatureBars";
@@ -137,7 +139,7 @@ function Ladder({ type, ladder }: { type: ContentTypeInfo; ladder: GradeOnScale[
                 )}
               >
                 <div className="font-semibold tabular-nums">{score(group[0].score)}</div>
-                <div className="text-muted-foreground">{group.map((l) => `${l.grade} · ${gradeLabel(type, l.grade as Grade)}`).join(", ")}</div>
+                <div className="text-muted-foreground">{group.map((l) => `${l.grade} · ${gradeLabel(type.id, l.grade as Grade)}`).join(", ")}</div>
               </div>
             </div>
           );
@@ -196,13 +198,14 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
 
   const busy = m.training || train.isPending || choose.isPending;
   const rated = m.ratingCounts.reduce((a, b) => a + b, 0);
-  const scorerTitle = m.scorers.find((s) => s.id === m.scorer)?.title ?? m.scorer;
+  // The scorers' titles are their own words: drawn anew once they are read
+  usePluginNamespaces(m.scorers.map((s) => s.id));
 
   return (
     <>
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2">
-          <BrainCircuitIcon className="size-5" /> {t("ModelDetails.title", { type: type.title.toLowerCase() })}
+          <BrainCircuitIcon className="size-5" /> {t("ModelDetails.title", { type: typeTitle(type.id).toLowerCase() })}
         </DialogTitle>
         <DialogDescription>{t("ModelDetails.description")}</DialogDescription>
       </DialogHeader>
@@ -225,7 +228,7 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
                   onClick={() => s.id !== m.scorer && choose.mutate(s.id)}
                 >
                   {choose.isPending && choose.variables === s.id && <Loader2Icon className="animate-spin" />}
-                  {s.title}
+                  {scorerTitle(s.id)}
                 </Button>
               ))}
             </div>
@@ -242,9 +245,9 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
         {ALL_GRADES.map((g) => (
           <Stat
             key={g}
-            label={`${g} · ${gradeLabel(type, g)}`}
+            label={`${g} · ${gradeLabel(type.id, g)}`}
             value={String(m.ratingCounts[g - 1] ?? 0)}
-            hint={gradeLabel(type, g)}
+            hint={gradeLabel(type.id, g)}
             className={GRADE_BORDER[g]}
             aside={m.trained && <GradePlace grade={g} ladder={m.ladder} />}
           />
@@ -265,11 +268,11 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
             <Stat
               label={t("ModelDetails.auc")}
               value={m.metrics?.auc?.toFixed(3) ?? "—"}
-              hint={t("ModelDetails.aucHint", { grade: gradeLabel(type, 2) })}
+              hint={t("ModelDetails.aucHint", { grade: gradeLabel(type.id, 2) })}
             />
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>{scorerTitle}</span>
+            <span>{scorerTitle(m.scorer)}</span>
             {m.parameter !== undefined && <span>· {t("ModelDetails.parameter", { value: number(m.parameter) })}</span>}
             <span>· {t("ModelDetails.features", { count: m.features })}</span>
             {m.metrics && <span>· {t("ModelDetails.folds", { count: m.metrics.folds })}</span>}

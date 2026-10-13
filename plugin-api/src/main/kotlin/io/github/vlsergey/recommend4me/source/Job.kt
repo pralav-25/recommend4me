@@ -1,7 +1,5 @@
 package io.github.vlsergey.recommend4me.source
 
-import io.github.vlsergey.recommend4me.i18n.Label
-
 /**
  * A running job of a source — a scrape — as the interface shows it: the phase, how far it got,
  * how many items are new; and the user's wish to stop it.
@@ -18,8 +16,11 @@ interface Job {
     /** One thing failed and the job goes on. */
     fun error(message: String)
 
-    /** What the user should know at the end, in every language of the interface: "the cookie was not accepted". */
-    fun message(text: Label?)
+    /**
+     * What the user should know at the end — "the cookie was not accepted" — by its key among the
+     * source's [messages][Source.messages]; null — nothing.
+     */
+    fun message(key: String?)
 
     /** Whether the site saw the user's session. */
     fun session(loggedIn: Boolean?)

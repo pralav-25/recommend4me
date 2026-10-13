@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ContributionGroup } from "@/api/client";
+import { label } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 import { FeatureBars } from "./FeatureBars";
 
@@ -43,7 +44,7 @@ export function Explanation({
           <span className="min-w-0 truncate text-muted-foreground">
             ·{" "}
             {t("Explanation.strongest", {
-              part: strongest.label.toLowerCase(),
+              part: label(strongest.labelKey).toLowerCase(),
               contribution: `${strongest.contribution > 0 ? "+" : ""}${strongest.contribution.toFixed(2)}`,
             })}
           </span>
@@ -71,7 +72,7 @@ export function Explanation({
                 ) : (
                   <span />
                 )}
-                <span className="min-w-0 truncate">{g.label}</span>
+                <span className="min-w-0 truncate">{label(g.labelKey)}</span>
                 <span className="h-2 overflow-hidden rounded-full bg-muted">
                   <span
                     className={cn("block h-full rounded-full", g.contribution > 0 ? "bg-yes" : "bg-no")}

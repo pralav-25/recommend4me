@@ -1,24 +1,22 @@
 package io.github.vlsergey.recommend4me.access
 
-import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.refusal.Refusal
 import jakarta.servlet.FilterChain
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.slf4j.LoggerFactory
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.ProblemDetail
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
+import tools.jackson.databind.json.JsonMapper
 import java.net.InetAddress
 import java.net.URI
 
 private val log = LoggerFactory.getLogger(Guard::class.java)
-
-private val REFUSED = Label(
-    "Access only from this computer and from the allowed networks",
-    "Доступ только с этого компьютера и из разрешённых сетей",
-    "Pristup samo sa ovog računara i iz dozvoljenih mreža",
-)
 
 /**
  * THE GUARD OF ACCESS, three questions before anything else is done.
@@ -72,10 +70,23 @@ class Guard(settings: AccessSettings) : OncePerRequestFilter() {
             return
         }
         log.info("refused {} {}: {}", request.method, request.requestURI, refusal)
+        // Before the dispatcher: the problem written out here, as the dispatcher would answer it
+        val problem = Refusal.ACCESS_REFUSED.problem(HttpStatus.FORBIDDEN, "Access only from this machine and from the allowed networks")
+        problem.instance = runCatching { URI(request.requestURI) }.getOrNull()
         response.status = HttpServletResponse.SC_FORBIDDEN
-        response.contentType = "text/plain;charset=utf-8"
-        // Before the dispatcher: the language read off the request itself
-        response.writer.write(REFUSED.of(request.locale.language))
+        response.contentType = MediaType.APPLICATION_PROBLEM_JSON_VALUE
+        response.characterEncoding = "UTF-8"
+        response.writer.write(JSON.writeValueAsString(problemFields(problem)))
+    }
+
+    /** The fields of [problem] as RFC 9457 lays them out: its properties beside the standard ones. */
+    private fun problemFields(problem: ProblemDetail): Map<String, Any?> = buildMap {
+        put("type", problem.type.toString())
+        put("title", problem.title)
+        put("status", problem.status)
+        put("detail", problem.detail)
+        problem.instance?.let { put("instance", it.toString()) }
+        putAll(problem.properties.orEmpty())
     }
 
     private fun fromExtension(origin: String): Boolean = EXTENSION_SCHEMES.any { origin.startsWith("$it://") }
@@ -83,6 +94,7 @@ class Guard(settings: AccessSettings) : OncePerRequestFilter() {
     private fun originHost(origin: String): String = runCatching { URI(origin).host }.getOrNull().orEmpty()
 
     companion object {
+        private val JSON = JsonMapper.builder().build()
         private val LOCAL_NAMES = setOf("localhost", "127.0.0.1", "::1", "[::1]")
         private val SAFE = setOf("GET", "HEAD", "OPTIONS")
         private val EXTENSION_SCHEMES = listOf("moz-extension", "chrome-extension", "safari-web-extension")

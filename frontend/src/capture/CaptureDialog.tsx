@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { findSource, useTypes } from "@/contenttype/types";
 import { ago, formatDate } from "@/i18n/format";
+import { sourceTitle } from "@/i18n/label";
 import { ItemRefDialog } from "@/item/ItemRefDialog";
 
 const DEFAULT_ADDRESS = "http://127.0.0.1:8095";
@@ -53,7 +54,6 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
     // While the dialog is open the pages come in as the user browses
     refetchInterval: 3000,
   });
-  const titleOf = (source: string) => findSource(types.data, source)?.source.title ?? source;
   const homepageOf = (source: string) => findSource(types.data, source)?.source.homepage;
   const tracked = (patterns.data ?? []).filter((p) => p.patterns.length > 0);
 
@@ -99,10 +99,10 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
               <li key={p.source} className="flex flex-wrap items-baseline gap-x-2">
                 {homepageOf(p.source) ? (
                   <a href={homepageOf(p.source)} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline">
-                    {titleOf(p.source)}
+                    {sourceTitle(p.source)}
                   </a>
                 ) : (
-                  <span className="font-medium">{titleOf(p.source)}</span>
+                  <span className="font-medium">{sourceTitle(p.source)}</span>
                 )}
                 <span className="truncate font-mono text-xs text-muted-foreground" title={p.patterns.join("\n")}>
                   {p.patterns.length === 1 ? p.patterns[0] : t("CaptureDetails.patterns", { count: p.patterns.length })}
@@ -126,7 +126,7 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
               <span className="w-24 shrink-0 text-xs text-muted-foreground" title={formatDate(p.capturedAt)}>
                 {ago(p.capturedAt)}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">{titleOf(p.source)}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{sourceTitle(p.source)}</span>
               {p.item ? (
                 <button
                   className="min-w-0 flex-1 truncate text-left underline-offset-2 hover:underline"

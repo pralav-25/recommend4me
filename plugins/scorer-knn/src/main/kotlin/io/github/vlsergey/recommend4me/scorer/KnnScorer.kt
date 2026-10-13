@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.scorer
 
-import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.matrix.Blas
 import io.github.vlsergey.recommend4me.matrix.Floats
 import io.github.vlsergey.recommend4me.matrix.Matrix
@@ -19,7 +18,6 @@ import kotlin.math.sqrt
  */
 class KnnScorer : Scorer {
     override val id = "knn-cosine"
-    override val title = Label("Nearest rated works (kNN)", "Ближайшие оценённые (kNN)", "Najbliža ocenjena dela (kNN)")
     override val candidates = listOf(40.0, 20.0, 10.0, 5.0)
     override val defaultParameter = 10.0
 

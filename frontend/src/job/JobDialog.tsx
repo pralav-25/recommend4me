@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { compact, formatDate, timeLeft } from "@/i18n/format";
-import { catalogueLabel, modeLabel, phaseLabel } from "./labels";
+import { sourceTitle } from "@/i18n/label";
+import { catalogueLabel, jobMessage, modeLabel, phaseLabel } from "./labels";
 import { catalogueUnfinished, isActive, useCancelJob, useStartJob } from "./useJobs";
 
 type Props = {
@@ -29,6 +30,7 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
   const left = job && active ? timeLeft(job.phaseStartedAt, job.processed, job.total) : undefined;
   const catalogue = whole ? job?.catalogue : undefined;
   const resumeWhole = catalogueUnfinished(job) && !active;
+  const message = job && jobMessage(job);
   // A loaded catalogue leaves the updates to do: they are the main button then
   const updatesFirst = updates && (!whole || catalogue?.complete === true);
   const wholeLabel = resumeWhole
@@ -46,13 +48,13 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
           <>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <DatabaseIcon className="size-5" /> {t("JobDialog.title", { source: source.title })}
+                <DatabaseIcon className="size-5" /> {t("JobDialog.title", { source: sourceTitle(source.id) })}
               </DialogTitle>
               <DialogDescription>
                 <Trans
                   t={t}
                   i18nKey="JobDialog.description"
-                  values={{ source: source.title }}
+                  values={{ source: sourceTitle(source.id) }}
                   components={{ link: <a href={source.homepage} target="_blank" rel="noreferrer" className="underline underline-offset-2" /> }}
                 />
               </DialogDescription>
@@ -107,7 +109,7 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
               </div>
             )}
 
-            {job?.message && <p className="text-sm text-muted-foreground">{job.message}</p>}
+            {message && <p className="text-sm text-muted-foreground">{message}</p>}
 
             {job && !active && job.state === "DONE" && job.finishedAt && (
               <div className="flex items-center gap-2 text-sm text-yes">

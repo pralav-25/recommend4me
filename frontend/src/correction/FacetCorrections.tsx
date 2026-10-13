@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ChanceMark, unlikely } from "@/facet/FacetValueMarks";
 import { decided, useStableOrder } from "@/facet/valueOrder";
+import { label, valueName } from "@/i18n/label";
 import { OriginalOf } from "@/item/WorkFacts";
 import { cn } from "@/lib/utils";
 import { SuggestedValues } from "@/suggestion/Suggestions";
@@ -101,7 +102,7 @@ function FacetLine({ facet: f, item, corrections }: { facet: ItemFacet; item?: I
   return (
     <div>
       <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
-        {f.label}
+        {label(f.labelKey)}
         {corrections && open.length > 1 && (
           <AsyncButton variant="outline" size="xs" className="h-5 px-1.5 text-[11px]" onClick={confirmAll} title={t("FacetLine.confirmAllHint")}>
             {t("FacetLine.confirmAll", { n: open.length })}
@@ -144,7 +145,7 @@ export function MoreCandidates({
   return (
     <>
       {rest.slice(0, asked).map((c) => (
-        <FacetValue key={c.key} facet={facet} value={{ key: c.key, name: c.name, chance: c.chance ?? undefined, offered: true }} corrections={corrections} />
+        <FacetValue key={c.key} facet={facet} value={{ key: c.key, name: c.name, nameKey: c.nameKey, chance: c.chance ?? undefined, offered: true }} corrections={corrections} />
       ))}
       {!done && (
         <Button
@@ -203,7 +204,7 @@ export function FacetValue({ facet, value, corrections }: { facet: string; value
       {mine && <CheckIcon className="size-3 text-yes" aria-label={t("FacetValue.yourAnswerYes")} />}
       {/* Given by a tag under it: marked as such, not by a chance of its own */}
       {value.implied && !value.corrected && <span className="text-muted-foreground" aria-label={t("FacetValue.fromSubtag")}>↑</span>}
-      <span className={cn(removed && "line-through")}>{value.name}</span>
+      <span className={cn(removed && "line-through")}>{valueName(value)}</span>
       <ChanceMark value={value} />
       {corrections && <FacetAnswers facet={facet} value={value} corrections={corrections} />}
     </Badge>
@@ -243,7 +244,10 @@ function AddFacetValue({ source, corrections }: { source: SourceInfo; correction
   const values = known.data ?? [];
   const typed = name.trim();
   // The values kept from another facet only stand in while its own come: never taken by key
-  const existing = known.isPlaceholderData ? undefined : values.find((v) => v.name.toLowerCase() === typed.toLowerCase());
+  // Found by the name shown as well as by the data's own: of a value of the application's, they differ
+  const existing = known.isPlaceholderData
+    ? undefined
+    : values.find((v) => [v.name, valueName(v)].some((n) => n.toLowerCase() === typed.toLowerCase()));
   const isNew = typed !== "" && query === typed && known.isSuccess && !known.isPlaceholderData && !known.isFetching && !existing;
 
   const add = async () => {
@@ -261,7 +265,7 @@ function AddFacetValue({ source, corrections }: { source: SourceInfo; correction
       >
         {facets.map((f) => (
           <option key={f.key} value={f.key}>
-            {f.label}
+            {label(f.labelKey)}
           </option>
         ))}
       </select>
@@ -276,7 +280,7 @@ function AddFacetValue({ source, corrections }: { source: SourceInfo; correction
         />
         <datalist id={listId}>
           {values.map((v) => (
-            <option key={v.key} value={v.name} />
+            <option key={v.key} value={valueName(v)} />
           ))}
         </datalist>
         <AsyncButton size="icon" variant="outline" onClick={add} disabled={!typed} title={existing ? t("AddFacetValue.add") : t("AddFacetValue.addNew")} icon={<PlusIcon />} />

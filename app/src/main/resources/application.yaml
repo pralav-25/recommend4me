@@ -25,8 +25,8 @@ spring:
       enabled: true
   mvc:
     problemdetails:
-      # AN ERROR SAYS WHAT WENT WRONG: application/problem+json with the reason as "detail", which
-      # the interface shows the user as it is
+      # AN ERROR SAYS WHAT WENT WRONG: application/problem+json; a request refused carries the key of
+      # its words as "code" and their values as "params" (Refusal), "detail" in English for the log
       enabled: true
   web:
     resources:

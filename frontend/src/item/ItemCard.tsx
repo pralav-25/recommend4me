@@ -71,7 +71,7 @@ export const ItemCard = forwardRef<HTMLElement, ItemViewProps>(function ItemCard
 
         <FacetBadges facets={summary.facets} limit={SHOWN_FACET_VALUES} />
 
-        <LinkedBadges type={type} linked={summary.linked} className="text-xs text-muted-foreground" />
+        <LinkedBadges linked={summary.linked} className="text-xs text-muted-foreground" />
 
         <InterestButtons summary={summary} className="mt-auto" />
         <RatingButtons type={type} value={summary.grade as Grade | undefined} onRate={onRate} size="sm" />

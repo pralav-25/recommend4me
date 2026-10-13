@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.scorer
 
-import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.matrix.Blas
 import io.github.vlsergey.recommend4me.matrix.Floats
 import io.github.vlsergey.recommend4me.matrix.Matrix
@@ -20,7 +19,6 @@ import kotlin.math.max
  */
 class PairwiseScorer : Scorer {
     override val id = "pairwise-logistic"
-    override val title = Label("Pairwise logistic ranking", "Попарное логистическое ранжирование", "Logističko rangiranje po parovima")
     override val candidates = listOf(0.01, 0.03, 0.1, 0.3, 1.0)
     override val defaultParameter = 0.1
 

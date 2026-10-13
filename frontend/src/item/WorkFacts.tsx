@@ -3,6 +3,7 @@ import type { FacetRole, ItemFacet, ItemSummary, NumberRole, SourceInfo } from "
 import { Badge } from "@/components/ui/badge";
 import { ago, compact, formatDate, number } from "@/i18n/format";
 import { intlTag } from "@/i18n/i18n";
+import { label, valueName } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 import { FacetBadges } from "./pieces";
 
@@ -14,12 +15,14 @@ export function facetsOfRole(source: SourceInfo, facets: ItemFacet[], role: Face
 
 /** The names of the values the work has of the facets: a value the user took away is not the work's. */
 function namesOf(facets: ItemFacet[]): string[] {
-  return facets.flatMap((f) => f.values.filter((v) => v.corrected !== "REMOVED" && !v.offered).map((v) => v.name));
+  return facets.flatMap((f) => f.values.filter((v) => v.corrected !== "REMOVED" && !v.offered).map(valueName));
 }
 
 /** The numbers of the work the source gives a role, with their labels and scales. */
 function numbersOfRole(source: SourceInfo, numbers: Record<string, number>, role: NumberRole) {
-  return source.numbers.filter((n) => n.role === role && numbers[n.key] !== undefined).map((n) => ({ ...n, value: numbers[n.key] }));
+  return source.numbers
+    .filter((n) => n.role === role && numbers[n.key] !== undefined)
+    .map((n) => ({ ...n, label: label(n.labelKey), value: numbers[n.key] }));
 }
 
 /** Who made the work: "Sergey Plotnikov", "Sakrilas & VelcroFist". */
@@ -85,8 +88,8 @@ export function OriginalOf({ source, facets, facet }: { source: SourceInfo; face
   if (!original || original.values.length === 0) return null;
   return (
     <div className="mb-1 flex flex-col gap-0.5">
-      <div className="text-xs text-muted-foreground">{original.label}</div>
-      <div className="text-sm break-words">{original.values.map((v) => v.name).join(", ")}</div>
+      <div className="text-xs text-muted-foreground">{label(original.labelKey)}</div>
+      <div className="text-sm break-words">{original.values.map(valueName).join(", ")}</div>
     </div>
   );
 }
@@ -107,7 +110,7 @@ export function ContentFacts({ source, facets, except = [] }: { source: SourceIn
       {content.map((f) => (
         <div key={f.facet} className="flex flex-col gap-1">
           <OriginalOf source={source} facets={facets} facet={f.facet} />
-          <div className="text-xs text-muted-foreground">{f.label}</div>
+          <div className="text-xs text-muted-foreground">{label(f.labelKey)}</div>
           <FacetBadges facets={[f]} />
         </div>
       ))}

@@ -1,0 +1,21 @@
+{
+  "facet.category": "Category",
+  "facet.language": "Language",
+  "facet.rating": "Rating",
+  "facet.series": "Series",
+  "facet.warning": "Warnings",
+  "number.bookmarks": "Bookmarks",
+  "number.comments": "Comments",
+  "parts": "Chapters",
+  "reviews": "Comments",
+  "signal.bookmarked": "Bookmarked",
+  "signal.bookmarked.value.yes": "yes",
+  "signal.later": "Marked for later",
+  "signal.later.value.yes": "yes",
+  "signal.subscribed": "Subscribed to updates",
+  "signal.subscribed.value.yes": "yes",
+  "text.annotation": "Summary",
+  "text.notes": "Notes",
+  "text.pairingsLine": "Relationships and characters on the site",
+  "title": "Archive of Our Own"
+}

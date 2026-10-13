@@ -37,7 +37,7 @@ export function useRateItem() {
       const type = findSource(queryClient.getQueryData<ContentTypeInfo[]>(["types"]), updated.source)?.type;
       const previous = (summary.grade as Grade | undefined) ?? null;
       toast.add({
-        title: updated.grade ? (type ? gradeLabel(type, updated.grade as Grade) : String(updated.grade)) : i18n.t("RateItem.cleared", { ns: "item" }),
+        title: updated.grade ? (type ? gradeLabel(type.id, updated.grade as Grade) : String(updated.grade)) : i18n.t("RateItem.cleared", { ns: "item" }),
         description: `${summary.title} ${summary.version}`.trim(),
         timeout: 5000,
         actionProps: {

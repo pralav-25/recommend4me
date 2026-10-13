@@ -6,6 +6,7 @@ import { api, unwrap, type CharacterInfo, type ContentTypeInfo, type FacetValueI
 import { AsyncButton } from "@/components/AsyncButton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { placeName } from "@/part/place";
 import { charactersQuery, classesQuery, keptByClasses, useInclusion, useUniverses } from "./Universes";
 
 /** The characters a value is of: a character itself, the two of a pairing ("pair:a|b"). */
@@ -96,7 +97,7 @@ function Quotes({ item, facet, value }: { item: ItemRef; facet: string; value: s
         <ol className="flex flex-col gap-2">
           {list.map((q, i) => (
             <li key={i} className="flex flex-col gap-0.5 rounded-lg border px-3 py-2">
-              <span className="text-xs text-muted-foreground">{q.place}</span>
+              <span className="text-xs text-muted-foreground">{placeName(q)}</span>
               <Marked quote={q} />
             </li>
           ))}

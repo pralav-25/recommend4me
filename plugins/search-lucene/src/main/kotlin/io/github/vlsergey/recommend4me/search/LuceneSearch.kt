@@ -112,7 +112,7 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         keys.forEach { key ->
             val doc = documents[key] ?: return@forEach
             val words = snippet(state.terms, doc)
-            if (words != null) byWords[key] = SearchMatch(words.first.name, false, words.second.text, words.second.highlights)
+            if (words != null) byWords[key] = SearchMatch(words.first.key, false, words.second.text, words.second.highlights)
             // The words apart did not make the item a match, its meaning did: the phrase of the passage nearest by meaning is shown
             if (words?.third == true) return@forEach
             val passage = state.nearest[key] ?: return@forEach
@@ -128,7 +128,7 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         val nearestPhrases = byMeaning.mapValues { (_, value) ->
             val (field, phrases) = value
             val best = phrases.maxBy { phrase -> vectors[phrase]?.let { v -> q.indices.sumOf { k -> q[k].toDouble() * v[k] } } ?: -1.0 }
-            SearchMatch(field.name, true, best.take(MEANING_SNIPPET), emptyList())
+            SearchMatch(field.key, true, best.take(MEANING_SNIPPET), emptyList())
         }
         return byWords + nearestPhrases
     }

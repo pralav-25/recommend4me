@@ -1,7 +1,9 @@
 package io.github.vlsergey.recommend4me.universe
 
+import io.github.vlsergey.recommend4me.work.TextPlace
+
 /** A passage of a work's text that names a value: where in the work, the passage, and the names in it as ranges of it. */
-class Quote(val place: String, val text: String, val highlights: List<IntRange>)
+class Quote(val place: TextPlace, val text: String, val highlights: List<IntRange>)
 
 /**
  * HOW A WORK'S TEXTS NAME THE VALUES OF ONE FACET: [mentions] finds the names, [valuesOf] tells the

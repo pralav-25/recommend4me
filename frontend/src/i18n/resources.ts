@@ -41,6 +41,9 @@ import searchSr from "../search/search-i18n.sr.json";
 import settingsEn from "../settings/settings-i18n.en.json";
 import settingsRu from "../settings/settings-i18n.ru.json";
 import settingsSr from "../settings/settings-i18n.sr.json";
+import standardEn from "../standard/standard-i18n.en.json";
+import standardRu from "../standard/standard-i18n.ru.json";
+import standardSr from "../standard/standard-i18n.sr.json";
 import statusEn from "../status/status-i18n.en.json";
 import statusRu from "../status/status-i18n.ru.json";
 import statusSr from "../status/status-i18n.sr.json";
@@ -60,7 +63,8 @@ import commonSr from "./common-i18n.sr.json";
 /*
  * THE TRANSLATIONS, ONE NAMESPACE A SECTION OF THE APPLICATION: the files of a section's words lie
  * beside its code, `<section>-i18n.<language>.json`; the words shared by every section are the
- * namespace "common". Keys are flat — "Component.purpose" — and a word of a count has a key of every
+ * namespace "common"; the application's words the server sends by their keys — "standard:facet.status"
+ * — are the namespace "standard". Keys are flat — "Component.purpose" — and a word of a count has a key of every
  * plural form of its language: "works_one", "works_few", "works_many", "works_other" in Russian.
  *
  * The English files are the shape of the keys (`i18next.d.ts`); every other language is checked
@@ -106,6 +110,7 @@ const NAMESPACES = {
   screen: namespace(screenEn, screenRu, screenSr),
   search: namespace(searchEn, searchRu, searchSr),
   settings: namespace(settingsEn, settingsRu, settingsSr),
+  standard: namespace(standardEn, standardRu, standardSr),
   status: namespace(statusEn, statusRu, statusSr),
   suggestion: namespace(suggestionEn, suggestionRu, suggestionSr),
   tag: namespace(tagEn, tagRu, tagSr),
@@ -138,6 +143,7 @@ export type Resources = {
   screen: typeof screenEn;
   search: typeof searchEn;
   settings: typeof settingsEn;
+  standard: typeof standardEn;
   status: typeof statusEn;
   suggestion: typeof suggestionEn;
   tag: typeof tagEn;

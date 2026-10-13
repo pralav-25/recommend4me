@@ -2,14 +2,12 @@ package io.github.vlsergey.recommend4me.source.ficbook
 
 import io.github.vlsergey.recommend4me.contenttype.Books
 import io.github.vlsergey.recommend4me.contenttype.StandardNumbers
-import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.CardDecor
 import io.github.vlsergey.recommend4me.source.FacetDecor
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.FacetRole
 import io.github.vlsergey.recommend4me.source.NumberDef
-import io.github.vlsergey.recommend4me.source.NumberRole
 import io.github.vlsergey.recommend4me.source.NumberScale
 import io.github.vlsergey.recommend4me.source.PageDecor
 import io.github.vlsergey.recommend4me.source.PictureDecor
@@ -31,7 +29,6 @@ import io.github.vlsergey.recommend4me.universe.UniverseFacets
  */
 class Ficbook : Source {
     override val id = ID
-    override val title = Label("Ficbook", "Книга Фанфиков", "Ficbook")
     override val contentType = "books"
     override val homepage = BASE
     override val modes = setOf(SourceMode.BROWSER)
@@ -40,33 +37,30 @@ class Ficbook : Source {
         facets = listOf(
             Books.AUTHOR.asFacet(AUTHOR),
             Books.FANDOM.asFacet(FANDOM),
-            FacetDef(DIRECTION, Label("Category", "Направленность", "Kategorija"), filter = true, onCard = true, role = FacetRole.CONTENT),
-            FacetDef(RATING, Label("Rating", "Рейтинг", "Rejting"), filter = true, onCard = true, role = FacetRole.CONTENT),
+            FacetDef(DIRECTION, filter = true, onCard = true, role = FacetRole.CONTENT),
+            FacetDef(RATING, filter = true, onCard = true, role = FacetRole.CONTENT),
             Books.STATUS.asFacet(STATUS),
             Books.TAG.asFacet(TAG),
             // The pairings and characters as the authors write them: the site's strings, kept as they
             // are; the application works the characters and pairings of the universes out of them
             Books.PAIRINGS.asFacet(PAIRING),
-            FacetDef(SERIES, Label("Series", "Серия", "Serijal"), searchWeight = 0.7f, role = FacetRole.SERIES),
+            FacetDef(SERIES, searchWeight = 0.7f, role = FacetRole.SERIES),
         ),
         numbers = listOf(
-            NumberDef(WORDS, Label("Words", "Слов", "Reči"), NumberScale.LOG, sortable = true, role = NumberRole.SIZE),
-            NumberDef(PAGES, Label("Pages", "Страниц", "Stranice"), NumberScale.LOG),
+            StandardNumbers.WORDS.asNumber(WORDS),
+            NumberDef(PAGES, NumberScale.LOG),
             Books.PARTS.asNumber(PARTS),
             StandardNumbers.LIKES.asNumber(LIKES),
-            NumberDef(COMMENTS, Label("Reviews", "Отзывы", "Recenzije"), NumberScale.LOG),
+            NumberDef(COMMENTS, NumberScale.LOG),
         ),
         texts = listOf(
-            TextDef(ANNOTATION, Label("Description", "Описание", "Opis"), block = "text:annotation", searchWeight = 0.6f, role = TextRole.DESCRIPTION),
-            TextDef(NOTES, Label("Notes", "Примечания", "Napomene"), block = "text:notes", searchWeight = 0.5f, role = TextRole.NOTES),
-            TextDef(DEDICATION, Label("Dedication", "Посвящение", "Posveta"), searchWeight = 0.3f, role = TextRole.NOTES),
-            TextDef(
-                PAIRINGS_LINE, Label("Pairings and characters on the site", "Пэйринг и персонажи на сайте", "Parovi i likovi na sajtu"),
-                searchWeight = 0.7f, searchByMeaning = true,
-            ),
+            TextDef(ANNOTATION, block = "text:annotation", searchWeight = 0.6f, role = TextRole.DESCRIPTION),
+            TextDef(NOTES, block = "text:notes", searchWeight = 0.5f, role = TextRole.NOTES),
+            TextDef(DEDICATION, searchWeight = 0.3f, role = TextRole.NOTES),
+            TextDef(PAIRINGS_LINE, searchWeight = 0.7f, searchByMeaning = true),
         ),
-        reviewsLabel = Label("Reviews", "Отзывы", "Recenzije"),
-        partsLabel = Label("Parts", "Части", "Delovi"),
+        reviews = true,
+        parts = true,
         universeLine = PAIRINGS_LINE,
         // A work of the fandom "Ориджиналы" is an original one
         kindFrom = FANDOM,
@@ -88,7 +82,7 @@ class Ficbook : Source {
     override val signals = listOf(
         Books.READ.asSignal(),
         Books.LIKED.asSignal(),
-        SignalDef(SIGNAL_FOLLOWED, Label("Following updates", "Слежу за обновлениями", "Pratim ažuriranja"), mapOf(Books.YES.key to Books.YES.label)),
+        SignalDef(SIGNAL_FOLLOWED, setOf(Books.YES.key)),
     )
 
     override fun itemUrl(itemId: String) = "$BASE/readfic/$itemId"

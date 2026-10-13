@@ -1,10 +1,12 @@
 import createClient from "openapi-fetch";
-import { currentLocale } from "@/i18n/i18n";
+import i18n, { currentLocale } from "@/i18n/i18n";
+import { label } from "@/i18n/label";
 import type { components, paths } from "./schema";
 
 export const api = createClient<paths>({ baseUrl: "" });
 
-// Every request asks for the language of the interface: the server words its labels in it
+// Every request asks for the language of the interface: the server words nothing itself, but what
+// it asks of others — a catalogue's names of the universes — comes in it
 api.use({
   onRequest({ request }) {
     request.headers.set("Accept-Language", currentLocale());
@@ -13,6 +15,7 @@ api.use({
 });
 
 type Schemas = components["schemas"];
+export type Problem = Schemas["Problem"];
 export type ContentTypeInfo = Schemas["ContentTypeInfo"];
 export type SourceInfo = Schemas["SourceInfo"];
 export type SourceMode = Schemas["SourceMode"];
@@ -78,13 +81,25 @@ export type TagRef = Schemas["TagRef"];
 export type TagVariantInfo = Schemas["TagVariantInfo"];
 
 /**
- * The failure of a call as the user should read it: the backend answers an error as
- * application/problem+json with a `detail` in Russian; without one, the HTTP status.
+ * The failure of a call as the user should read it. The backend answers an error as
+ * application/problem+json ([Problem]) and words nothing for the user: what went wrong is the key
+ * of its words (`code`, "standard:error.noField") with the values they are filled with (`params`) —
+ * a value that is itself a key, the label of a field, given in its words. A problem without a code
+ * says what went wrong in its `detail`, for the log; without that either, the HTTP status.
  */
 export function failure(result: { error?: unknown; response: Response }): Error {
-  const error = result.error;
-  const detail = typeof error === "object" && error !== null && "detail" in error ? error.detail : undefined;
+  const problem = (typeof result.error === "object" && result.error !== null ? result.error : {}) as Problem;
+  if (typeof problem.code === "string" && problem.code !== "") {
+    const params = Object.fromEntries(Object.entries(problem.params ?? {}).map(([name, value]) => [name, isKey(value) ? label(value) : value]));
+    return new Error(label(problem.code, params));
+  }
+  const detail = problem.detail;
   return new Error(typeof detail === "string" && detail !== "" ? detail : `HTTP ${result.response.status}`);
+}
+
+/** A value of a problem's params that is a key of words: "<namespace>:<key>" of a namespace the interface has. */
+function isKey(value: string): boolean {
+  return /^[\w.-]+:[^\s:]+$/.test(value) && i18n.exists(value);
 }
 
 /** Returns the body of a successful response or throws with the reason the backend gave. */

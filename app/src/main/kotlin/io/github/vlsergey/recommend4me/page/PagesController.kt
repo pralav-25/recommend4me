@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.page
 
-import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.api.PagesApi
 import io.github.vlsergey.recommend4me.api.model.CardDecorInfo
 import io.github.vlsergey.recommend4me.api.model.CardView
@@ -53,7 +52,6 @@ class PagesController(
         return ResponseEntity.ok(
             PageView(
                 source = store.id,
-                sourceTitle = store.source.title.text(),
                 type = store.type,
                 decor = decor?.toApi() ?: PageDecorInfo(emptyList()),
                 itemId = itemId,
@@ -69,13 +67,13 @@ class PagesController(
         val schema = store.schema
         val wanted = decor?.facets.orEmpty().map { it.facet }.toSet() + schema.facets.filter { it.suggest || it.infer }.map { it.key }
         // First: a work just opened gets its chances made here; an answer made those it changed current itself
-        val suggested = suggestions.ofItem(store, itemId).map { it.toApi() }
+        val suggested = suggestions.ofItem(store, itemId).map { it.toApi(store) }
         suggestions.ensureFor(store, itemId)
         val site = store.items.facets(itemId)
         val corrections = store.corrections.facetsOf(itemId)
         val chances = store.suggestions.ofItems(listOf(itemId))[itemId]
         val names = wanted.associateWith { facet ->
-            store.shownNames(facet, site[facet].orEmpty() + corrections.filter { it.facet == facet }.map { it.key } + chances?.get(facet)?.keys.orEmpty())
+            store.names(facet, site[facet].orEmpty() + corrections.filter { it.facet == facet }.map { it.key } + chances?.get(facet)?.keys.orEmpty())
         }
         val texts = Corrected.texts(store.items.texts(itemId), store.corrections.fieldsOf(itemId))
         val pictureMarks = store.marks.pictureMarksOf(itemId)
@@ -83,7 +81,6 @@ class PagesController(
             summary = summary,
             facets = cards.facets(store, site, chances, corrections, names, texts, empty = true, complete = store.corrections.completeOf(itemId)) { it in wanted },
             suggestions = suggested,
-            grades = type.type.grades.map { it.text() },
             pictures = store.pictures.ofItem(itemId, plugins.imageEncoder()?.id).map { p ->
                 PagePicture(p.position, p.url, pictureMarks.firstOrNull { it.position == p.position && it.url == p.url }?.mark)
             },

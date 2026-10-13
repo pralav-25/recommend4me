@@ -13,7 +13,8 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
 });
 
-// The server words its labels in the language asked: everything read in another is read again
+// The server sends keys, not words, but what it asks of others — a catalogue's names — comes in the
+// language asked: everything read in another is read again
 i18n.on("languageChanged", () => void queryClient.invalidateQueries());
 
 /**

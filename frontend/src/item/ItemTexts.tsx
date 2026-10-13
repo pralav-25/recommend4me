@@ -5,6 +5,7 @@ import type { SourceInfo, TextValue } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { CorrectedMark, EditButton, FieldEditor } from "@/correction/FieldEditor";
 import { textField, type Corrections } from "@/correction/useCorrections";
+import { label } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 
 /** A text longer than this is cut to a few lines until opened: the length of a screen's paragraph, not meaning. */
@@ -49,7 +50,7 @@ export function ItemTexts({
       )}
       {editing && added && (
         <section>
-          <h4 className="mb-1 text-sm font-semibold">{added.label}</h4>
+          <h4 className="mb-1 text-sm font-semibold">{label(added.labelKey)}</h4>
           <FieldEditor
             value=""
             multiline
@@ -64,7 +65,7 @@ export function ItemTexts({
         <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
           {missing.map((t) => (
             <Button key={t.key} variant="ghost" size="xs" className="text-muted-foreground" onClick={() => setAdding(t.key)}>
-              <PlusIcon /> {t.label}
+              <PlusIcon /> {label(t.labelKey)}
             </Button>
           ))}
         </div>
@@ -87,11 +88,11 @@ function ItemText({ text, folded, corrections, editing }: { text: TextValue; fol
         {foldable ? (
           <button className="inline-flex items-center gap-1 text-sm font-semibold hover:underline" onClick={() => setOpen(!open)} aria-expanded={open}>
             <ChevronDownIcon className={open ? "size-4" : "size-4 -rotate-90"} />
-            {text.label}
+            {label(text.labelKey)}
             {text.spoiler && <span className="font-normal text-muted-foreground">· {t("ItemText.spoiler")}</span>}
           </button>
         ) : (
-          <h4 className="text-sm font-semibold">{text.label}</h4>
+          <h4 className="text-sm font-semibold">{label(text.labelKey)}</h4>
         )}
         {text.corrected && <CorrectedMark />}
         {editing && !editingText && (

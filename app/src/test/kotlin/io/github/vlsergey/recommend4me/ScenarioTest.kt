@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me
 
-import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.refusal.Refusal
+import io.github.vlsergey.recommend4me.refusal.Refused
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.FacetValue
@@ -24,6 +25,7 @@ import io.github.vlsergey.recommend4me.api.model.SearchJudgment
 import io.github.vlsergey.recommend4me.capture.CaptureController
 import io.github.vlsergey.recommend4me.contenttype.TypesController
 import io.github.vlsergey.recommend4me.correction.CorrectionsController
+import io.github.vlsergey.recommend4me.i18n.TranslationsController
 import io.github.vlsergey.recommend4me.item.ItemsController
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -32,7 +34,6 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
-import org.springframework.web.server.ResponseStatusException
 import java.io.File
 import java.time.Instant
 import kotlin.test.assertEquals
@@ -64,13 +65,12 @@ class ScenarioTest {
     /** A site whose pages are "<id>|<title>|<tags>|<annotation>". */
     class TestSource : Source {
         override val id = "test"
-        override val title = Label.same("Test")
         override val contentType = "books"
         override val homepage = "https://test.example"
         override val schema = SourceSchema(
-            facets = listOf(FacetDef("tag", Label("Tag", "Тег", "Tag"), filter = true, searchWeight = 0.9f, onCard = true)),
-            numbers = listOf(NumberDef("likes", Label("Likes", "Лайки", "Lajkovi"), sortable = true, filterable = true)),
-            texts = listOf(TextDef("annotation", Label("Annotation", "Аннотация", "Anotacija"), block = "text:annotation")),
+            facets = listOf(FacetDef("tag", filter = true, searchWeight = 0.9f, onCard = true)),
+            numbers = listOf(NumberDef("likes", sortable = true, filterable = true)),
+            texts = listOf(TextDef("annotation", block = "text:annotation")),
         )
         override val modes = setOf(SourceMode.BROWSER)
         override val capturePatterns = listOf(Regex("https://test\\.example/work/.*"))
@@ -98,6 +98,9 @@ class ScenarioTest {
     @Autowired
     lateinit var types: TypesController
 
+    @Autowired
+    lateinit var translations: TranslationsController
+
     private fun capture(body: String) = captures.capturePage(CaptureRequest("https://test.example/work/${body.substringBefore('|')}", body)).body!!
 
     private fun list(
@@ -111,7 +114,25 @@ class ScenarioTest {
         capture("w3|Knights|fantasy|Knights and castles")
         assertEquals(emptyList(), captures.capturePage(CaptureRequest("https://elsewhere.example/", "x")).body!!.items)
 
-        assertEquals("books", types.listTypes().body!!.single().id)
+        val type = types.listTypes().body!!.single()
+        assertEquals("books", type.id)
+        // The server words nothing: a source's own things by the keys of its namespace, the standard ones of the standard
+        val source = type.sources.single()
+        assertEquals("test:facet.tag", source.facets.single { it.key == "tag" }.labelKey)
+        assertEquals("standard:facet.universe", source.facets.single { it.key == "universe" }.labelKey)
+        assertEquals("test:number.likes", source.numbers.single().labelKey)
+        assertEquals("test:text.annotation", source.texts.single().labelKey)
+        // The words of a source's namespace are its plugin's, laid out as they are; of no plugin or language, none
+        val words = translations.translations("test", "en")
+        assertEquals(200, words.statusCode.value())
+        assertEquals("application/json;charset=UTF-8", words.headers.contentType.toString())
+        assertTrue("\"facet.tag\": \"Tag\"" in String(words.body!!, Charsets.UTF_8))
+        assertEquals(404, translations.translations("test", "ru").statusCode.value())
+        assertEquals(404, translations.translations("nobody", "en").statusCode.value())
+        assertEquals(404, translations.translations("test", "xx").statusCode.value())
+        // An id of dotted words ("author.today") is a namespace; a path is not
+        assertEquals(404, translations.translations("no.such.plugin", "en").statusCode.value())
+        assertEquals(404, translations.translations("..", "en").statusCode.value())
         val updated = list(sort = ItemSort.UPDATED)
         assertEquals(3, updated.total)
         assertEquals("w3", updated.items.first().item)
@@ -121,7 +142,10 @@ class ScenarioTest {
         assertEquals(2, list(view = ItemView.UNRATED).total)
 
         // The site's tags are its word, not corrected; the list is filtered by them
-        assertThrows<ResponseStatusException> { corrections.correctFacet("test", "w2", FacetCorrection(facet = "tag", added = true, key = "fantasy")) }
+        val siteField = assertThrows<Refused> { corrections.correctFacet("test", "w2", FacetCorrection(facet = "tag", added = true, key = "fantasy")) }
+        assertEquals(Refusal.SITE_FIELD, siteField.refusal)
+        assertEquals(mapOf("field" to "test:facet.tag"), siteField.params)
+        assertEquals("standard:error.siteField", siteField.refusal.problem(siteField.status, siteField.message!!, siteField.params).properties!!["code"])
         assertEquals(2, list(facets = listOf(FacetChoice("test.tag", hidden = listOf("romance")))).total)
         val notFantasy = list(facets = listOf(FacetChoice("test.tag", hidden = listOf("fantasy", "dragons"))))
         assertEquals(listOf("w2"), notFantasy.items.map { it.item })
@@ -138,7 +162,7 @@ class ScenarioTest {
         assertEquals(listOf("w3"), list(range = listOf("test.likes=3..")).items.map { it.item })
         // A number no source has limits nothing; a range not understood is refused
         assertEquals(3, list(range = listOf("other.parts=1..1")).total)
-        assertThrows<ResponseStatusException> { list(range = listOf("test.likes=a..2")) }
+        assertEquals(mapOf("range" to "test.likes=a..2"), assertThrows<Refused> { list(range = listOf("test.likes=a..2")) }.params)
         assertEquals("A boy finds a dragon egg", items.getItem("test", "w1").body!!.texts.single().content)
         // The source's filter facet, and the kind and the universe the application gives every book
         assertEquals(listOf("test.tag", "kind", "universe"), items.listFacets("books").body!!.map { it.id })
@@ -200,5 +224,8 @@ class ScenarioTest {
         assertNull(again.summary.interest)
         assertTrue(again.allFacets.none { f -> f.propertyValues.any { it.corrected != null } }, "answers ${again.allFacets}")
         assertEquals(3, list().total)
+        // The newest in the application first: the work seen anew, however long ago it was updated on the site
+        assertEquals("w1", list(sort = ItemSort.ADDED).items.first().item)
+        assertEquals("w3", list(sort = ItemSort.UPDATED).items.first().item)
     }
 }

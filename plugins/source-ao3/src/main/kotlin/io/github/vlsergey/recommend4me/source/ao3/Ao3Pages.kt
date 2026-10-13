@@ -84,7 +84,7 @@ class Ao3Pages(private val context: SourceContext) {
         }
         card.selectFirst("ul.required-tags span.iswip")?.let { s ->
             val status = if (s.hasClass("complete-yes")) Books.Status.FINISHED else Books.Status.IN_PROGRESS
-            items.setFacet(id, STATUS, listOf(FacetValue(status.key, status.label.ru)))
+            items.setFacet(id, STATUS, listOf(FacetValue(status.key, status.modelName)))
         }
         // The work's own tags, not those of the bookmark the user wrote under it
         val tags = card.children().filter { it.tagName() == "ul" && it.hasClass("tags") }
@@ -279,7 +279,7 @@ class Ao3Pages(private val context: SourceContext) {
         )
         chapters?.split('/')?.takeIf { it.size == 2 }?.let { (done, planned) ->
             val status = if (planned.trim() == done.trim()) Books.Status.FINISHED else Books.Status.IN_PROGRESS
-            items.setFacet(id, STATUS, listOf(FacetValue(status.key, status.label.ru)))
+            items.setFacet(id, STATUS, listOf(FacetValue(status.key, status.modelName)))
         }
         dl.selectFirst("dd.language")?.let(::language)?.let { items.setFacet(id, LANGUAGE, listOf(it)) }
     }

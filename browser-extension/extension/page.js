@@ -19,10 +19,105 @@
 
   const api = async (method, path, body) => {
     const answer = await browser.runtime.sendMessage({ type: "api", method, path, body });
-    if (!answer || !answer.ok) throw new Error((answer && answer.error) || "Приложение не ответило");
-    return answer.data;
+    if (answer && answer.ok) {
+      // Every key of the server's words the answer has can be said at once
+      await need(keysIn(answer.data));
+      return answer.data;
+    }
+    throw new Error(await problemText(answer));
   };
   const enc = encodeURIComponent;
+
+  // --- The server's words ---
+
+  /**
+   * The words of the server's keys ("<namespace>:<key>") by namespace — "standard" and the plugins'
+   * — read once for the page's life: static files of the application (/i18n/<namespace>/<language>.json).
+   * A namespace being read is its promise; one that could not be read is read again when next needed.
+   */
+  const serverWords = new Map();
+
+  function readNamespace(namespace) {
+    if (!serverWords.has(namespace)) {
+      // Kept only while still wanted: the words of a language no longer spoken are dropped
+      const done = (words) => {
+        if (serverWords.get(namespace) !== reading) return;
+        if (words) serverWords.set(namespace, words);
+        else serverWords.delete(namespace);
+      };
+      const reading = browser.runtime.sendMessage({ type: "api", method: "GET", path: `/i18n/${enc(namespace)}/${r4mLanguage}.json` }).then(
+        (answer) => done(answer && answer.ok && answer.data),
+        () => done(null),
+      );
+      serverWords.set(namespace, reading);
+    }
+    return serverWords.get(namespace);
+  }
+
+  /** The namespace of a key, "<namespace>:<key>": what comes before its ":"; null when it is no key. */
+  function namespaceOf(key) {
+    const match = typeof key === "string" && /^([\w-]+):[^\s:]+$/.exec(key);
+    return match ? match[1] : null;
+  }
+
+  /** The words of a namespace when they are read; else undefined. */
+  function wordsOf(namespace) {
+    const words = serverWords.get(namespace);
+    return words && !(words instanceof Promise) ? words : undefined;
+  }
+
+  /** Reads the namespaces of [keys] not read yet; "standard" always. */
+  async function need(keys) {
+    const namespaces = new Set(["standard", ...keys.map(namespaceOf).filter(Boolean)]);
+    await Promise.all([...namespaces].filter((n) => !wordsOf(n)).map(readNamespace));
+  }
+
+  /** The fields of the API that hold keys of the server's words. */
+  const KEY_FIELDS = ["labelKey", "nameKey", "valueKey", "code"];
+
+  /** Every key of the server's words in an answer of the API, however deep. */
+  function keysIn(data, out = []) {
+    if (Array.isArray(data)) data.forEach((x) => keysIn(x, out));
+    else if (data && typeof data === "object") {
+      Object.entries(data).forEach(([field, value]) => {
+        if (KEY_FIELDS.includes(field) && typeof value === "string") out.push(value);
+        else keysIn(value, out);
+      });
+    }
+    return out;
+  }
+
+  /** The words of the server's [key] in the language spoken, filled from [params]; a key whose words are not read is shown as it is. */
+  function said(key, params) {
+    const words = wordsOf(namespaceOf(key));
+    const text = words ? words[key.substring(key.indexOf(":") + 1)] : undefined;
+    return text !== undefined ? fill(text, params) : key;
+  }
+
+  /** The name of a value as shown: of the application's own value, by its key; of any other, as the data has it. */
+  const nameOf = (v) => (v.nameKey ? said(v.nameKey) : v.name);
+
+  /** The label of a facet as shown: by its key; a facet the application gave no label is shown by its own key. */
+  const labelOf = (facet) => (facet.labelKey ? said(facet.labelKey) : facet.facet);
+
+  /**
+   * Why a call failed, worded: a refusal by the key of its words and its params — a param that is
+   * itself a key of the server's words (the label of a field) said too —, the application silent,
+   * or else what the log has.
+   */
+  async function problemText(answer) {
+    if (!answer) return t("app.noAnswer");
+    if (answer.unreachable) return t("app.silent");
+    const problem = answer.problem;
+    if (!problem || !problem.code) return answer.error || t("app.noAnswer");
+    const params = problem.params || {};
+    await need([problem.code, ...Object.values(params)]);
+    const worded = {};
+    Object.entries(params).forEach(([name, value]) => {
+      worded[name] = namespaceOf(value) ? said(value) : value;
+    });
+    return said(problem.code, worded);
+  }
 
   /** The facet the application gives every work of a type with universes: the universes of fan fiction. */
   const UNIVERSE = "universe";
@@ -177,9 +272,19 @@
 
   // --- Loading ---
 
+  /** The language the server's words kept are of. */
+  let wordsLanguage = null;
+
   async function load() {
     loadedAt = Date.now();
     try {
+      // Chosen anew every time (i18n.js given to the page again starts from the browser's): another
+      // language chosen meanwhile, the server's words are read in it
+      setLanguage(await browser.runtime.sendMessage({ type: "language" }));
+      if (wordsLanguage !== r4mLanguage) {
+        serverWords.clear();
+        wordsLanguage = r4mLanguage;
+      }
       server = await browser.runtime.sendMessage({ type: "server" });
       view = await api("GET", `/api/pages?url=${enc(location.href)}`);
       // What moves the prediction is read apart, not waited for: a work seen first gets it at once
@@ -251,18 +356,19 @@
 
   // --- What a change looks like before the application answers ---
 
-  /** The value [key] of the [facet] as shown, put there if it is not yet. */
-  function shownValue(item, facet, key, name) {
+  /** The value [key] of the [facet] as shown, put there if it is not yet; [nameKey] — of a value of the application's own. */
+  function shownValue(item, facet, key, name, nameKey) {
     item.facets = item.facets || [];
     let f = item.facets.find((x) => x.facet === facet);
     if (!f) {
-      f = { facet, label: facet, values: [] };
+      const suggested = (item.suggestions || []).find((x) => x.facet === facet);
+      f = { facet, labelKey: suggested && suggested.labelKey, values: [] };
       item.facets.push(f);
     }
     f.values = f.values || [];
     let v = f.values.find((x) => x.key === key);
     if (!v) {
-      v = { key, name: name || key, offered: true };
+      v = { key, name: name || key, nameKey, offered: true };
       f.values.push(v);
     }
     return v;
@@ -276,7 +382,7 @@
     return (item) => {
       const s = (item.suggestions || []).find((x) => x.facet === facet);
       if (s) s.suggested = (s.suggested || []).filter((x) => x.key !== value.key);
-      const v = shownValue(item, facet, value.key, value.name);
+      const v = shownValue(item, facet, value.key, value.name, value.nameKey);
       const site = !v.offered && !v.inferred && v.corrected !== "ADDED";
       v.corrected = added ? (site ? "CONFIRMED" : "ADDED") : "REMOVED";
     };
@@ -306,9 +412,9 @@
     }
     if (item && item.summary.grade) head.appendChild(el("r4m-grade-mark", null, `★${item.summary.grade}`));
     head.appendChild(el("span", "r4m-spacer"));
-    if (pending) head.appendChild(el("r4m-saving-note", null, pending > 1 ? `сохраняю… (${pending})` : "сохраняю…"));
+    if (pending) head.appendChild(el("r4m-saving-note", null, pending > 1 ? t("panel.savingCount", { count: pending }) : t("panel.saving")));
     if (item) {
-      const open = el("a", "r4m-link", "открыть в приложении");
+      const open = el("a", "r4m-link", t("panel.open"));
       open.href = `${server}/#item=${enc(item.summary.source)}/${item.summary.item}`;
       open.target = "_blank";
       open.rel = "noopener";
@@ -317,7 +423,7 @@
     root.appendChild(head);
     if (message) root.appendChild(el("r4m-error", null, message));
     if (!item) {
-      root.appendChild(el("r4m-line", "r4m-muted", "Работа ещё не сохранена: она появится, когда страница будет отправлена приложению."));
+      root.appendChild(el("r4m-line", "r4m-muted", t("panel.unsaved")));
       place(root);
       return;
     }
@@ -325,11 +431,11 @@
 
     const score = el("r4m-line");
     if (s.prediction) {
-      score.appendChild(el("span", null, "Прогноз "));
+      score.appendChild(el("span", null, `${t("panel.prediction")} `));
       score.appendChild(el("r4m-score", scoreClass(s.prediction.score), shownScore(s.prediction.score)));
-      score.appendChild(el("span", "r4m-muted", " из 10"));
+      score.appendChild(el("span", "r4m-muted", ` ${t("panel.outOf")}`));
     } else {
-      score.appendChild(el("span", "r4m-muted", "Прогноза пока нет: модель ещё не обучена или работа ещё не разобрана"));
+      score.appendChild(el("span", "r4m-muted", t("panel.noPrediction")));
     }
     root.appendChild(score);
 
@@ -339,11 +445,11 @@
     const parts = explanation && explanation.of === keyOf(item) ? explanation.parts : null;
     if (parts && parts.length) {
       const why = el("r4m-why");
-      why.appendChild(el("span", "r4m-muted", "Почему: "));
+      why.appendChild(el("span", "r4m-muted", `${t("panel.why")} `));
       parts.slice(0, 6).forEach((c, i) => {
         if (i) why.appendChild(el("span", "r4m-muted", " · "));
         const sign = c.contribution >= 0 ? "+" : "−";
-        why.appendChild(el("span", c.contribution >= 0 ? "r4m-up" : "r4m-down", `${sign}${Math.abs(c.contribution).toFixed(1)} ${c.label}`));
+        why.appendChild(el("span", c.contribution >= 0 ? "r4m-up" : "r4m-down", `${sign}${Math.abs(c.contribution).toFixed(1)} ${said(c.labelKey)}`));
       });
       root.appendChild(why);
     }
@@ -359,7 +465,7 @@
   function facetsOf(item) {
     const out = (item.facets || []).map((facet) => ({ facet, suggestions: (item.suggestions || []).find((x) => x.facet === facet.facet) }));
     (item.suggestions || []).forEach((x) => {
-      if (!out.some((f) => f.facet.facet === x.facet)) out.push({ facet: { facet: x.facet, label: x.label, values: [] }, suggestions: x });
+      if (!out.some((f) => f.facet.facet === x.facet)) out.push({ facet: { facet: x.facet, labelKey: x.labelKey, values: [] }, suggestions: x });
     });
     return out;
   }
@@ -374,16 +480,22 @@
     if (anchor) anchor.insertAdjacentElement("afterend", root);
   }
 
+  /** The grades 1..5 of a work of the page's content type. */
+  const GRADES = [1, 2, 3, 4, 5];
+
+  /** The label of a [grade] of the page's content type, by the key of the standard words. */
+  const gradeLabel = (grade) => said(`standard:type.${view.type}.grade.${grade}`);
+
   function grades(item) {
     const s = item.summary;
     const line = el("r4m-line", "r4m-grades");
-    line.appendChild(el("span", null, "Оценка: "));
-    item.grades.forEach((label, i) => {
-      const grade = i + 1;
+    line.appendChild(el("span", null, `${t("grade.title")} `));
+    GRADES.forEach((grade) => {
+      const label = gradeLabel(grade);
       const current = s.grade === grade;
       const b = button(
         `${grade}`,
-        current ? `${label} — нажмите ещё раз, чтобы снять` : label,
+        current ? t("common.pressAgain", { what: label }) : label,
         () => current
           ? api("DELETE", `/api/items/${enc(s.source)}/${enc(s.item)}/rating`)
           : api("PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/rating`, { grade }),
@@ -395,9 +507,9 @@
       );
       line.appendChild(b);
     });
-    if (s.grade) line.appendChild(el("span", "r4m-muted", ` ${item.grades[s.grade - 1]}`));
+    if (s.grade) line.appendChild(el("span", "r4m-muted", ` ${gradeLabel(s.grade)}`));
     else if (s.previousGrade) {
-      line.appendChild(el("span", "r4m-muted", ` прошлая версия (${s.previousGradeVersion}): ${s.previousGrade}`));
+      line.appendChild(el("span", "r4m-muted", ` ${t("grade.previous", { version: s.previousGradeVersion, grade: s.previousGrade })}`));
     }
     return line;
   }
@@ -422,13 +534,13 @@
   function interest(item) {
     const s = item.summary;
     const line = el("r4m-line", "r4m-interest");
-    line.appendChild(el("span", null, "Интерес: "));
+    line.appendChild(el("span", null, `${t("interest.title")} `));
     // Not thumbs: a thumb says liked or not, and interest is another thing
-    [[true, "🤔 интересно"], [false, "🥱 неинтересно"]].forEach(([value, label]) => {
+    [[true, `🤔 ${t("interest.yes")}`], [false, `🥱 ${t("interest.no")}`]].forEach(([value, label]) => {
       const current = s.interest === value;
       line.appendChild(button(
         label,
-        current ? "Нажмите ещё раз, чтобы снять" : null,
+        current ? t("common.pressAgainAlone") : null,
         () => current
           ? api("DELETE", `/api/items/${enc(s.source)}/${enc(s.item)}/interest`)
           : api("PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/interest`, { interesting: value }),
@@ -440,9 +552,10 @@
       ));
     });
     const byGrade = interestByGrade(s);
-    if (byGrade != null) line.appendChild(el("span", "r4m-muted", ` ${byGrade ? "интересно" : "неинтересно"} — по оценке ${s.grade || s.previousGrade}`));
-    else if (s.interest == null && s.interestChance != null) {
-      line.appendChild(el("span", "r4m-muted", ` модель: интересно с вероятностью ${Math.round(s.interestChance * 100)}%`));
+    if (byGrade != null) {
+      line.appendChild(el("span", "r4m-muted", ` ${t("interest.byGrade", { interest: t(byGrade ? "interest.yes" : "interest.no"), grade: s.grade || s.previousGrade })}`));
+    } else if (s.interest == null && s.interestChance != null) {
+      line.appendChild(el("span", "r4m-muted", ` ${t("interest.byModel", { percent: Math.round(s.interestChance * 100) })}`));
     }
     return line;
   }
@@ -473,21 +586,21 @@
     const out = [];
     const on = about(facet, v.key);
     if (v.corrected === "REMOVED") {
-      out.push(button("↺", "Вернуть: вы сказали, что этого у работы нет", () => uncorrect(item, facet, v.key), "r4m-yes", unansweredShown(facet, v.key), on));
+      out.push(button("↺", t("value.restore"), () => uncorrect(item, facet, v.key), "r4m-yes", unansweredShown(facet, v.key), on));
       return out;
     }
     if (v.corrected === "ADDED" || v.corrected === "CONFIRMED") {
-      out.push(button("✕", v.corrected === "ADDED" ? "Убрать добавленное вами" : "Снять ваш ответ", () => uncorrect(item, facet, v.key), "r4m-undo", unansweredShown(facet, v.key), on));
+      out.push(button("✕", t(v.corrected === "ADDED" ? "value.removeAdded" : "value.unanswer"), () => uncorrect(item, facet, v.key), "r4m-undo", unansweredShown(facet, v.key), on));
       return out;
     }
     if (v.chance !== undefined && v.chance !== null) {
       const unlikely = v.chance < 0.5;
       out.push(Object.assign(el("r4m-chance", unlikely ? "r4m-unlikely" : null, percent(v.chance)), {
-        title: unlikely ? "Модель считает, что скорее этого у работы нет" : "Уверенность модели",
+        title: t(unlikely ? "value.unlikely" : "value.confidence"),
       }));
     }
-    out.push(button("✓", "Да, это у работы есть", () => correct(item, facet, { key: v.key }, true), "r4m-yes", answeredShown(facet, v, true), on));
-    out.push(button("✕", "Нет, этого у работы нет", () => correct(item, facet, { key: v.key }, false), "r4m-no", answeredShown(facet, v, false), on));
+    out.push(button("✓", t("value.yes"), () => correct(item, facet, { key: v.key }, true), "r4m-yes", answeredShown(facet, v, true), on));
+    out.push(button("✕", t("value.no"), () => correct(item, facet, { key: v.key }, false), "r4m-no", answeredShown(facet, v, false), on));
     return out;
   }
 
@@ -523,12 +636,12 @@
     const mine = v.corrected === "ADDED" || v.corrected === "CONFIRMED";
     const chip = el("r4m-chip", mine ? "r4m-mine" : v.corrected === "REMOVED" ? "r4m-removed-chip" : editable ? (v.offered ? "r4m-open r4m-offered" : "r4m-open") : null);
     if (saving.has(about(facet, v.key))) chip.classList.add("r4m-saving");
-    if (mine) chip.appendChild(Object.assign(el("r4m-check", null, "✓"), { title: "Ваш ответ: это у работы есть" }));
-    chip.appendChild(el("span", null, v.name));
+    if (mine) chip.appendChild(Object.assign(el("r4m-check", null, "✓"), { title: t("value.mine") }));
+    chip.appendChild(el("span", null, nameOf(v)));
     if (editable) answers(item, facet, v).forEach((e) => chip.appendChild(e));
     const at = v.key.indexOf(":");
     if (facet === UNIVERSE && v.corrected !== "REMOVED" && at > 0) {
-      chip.appendChild(button("↻", "Обновить персонажей вселенной из справочника", () =>
+      chip.appendChild(button("↻", t("universe.refresh"), () =>
         api("POST", `/api/types/${enc(view.type)}/universes`, { catalogue: v.key.substring(0, at), universe: v.key.substring(at + 1) }), "r4m-button"));
     }
     return chip;
@@ -537,14 +650,14 @@
   /** A suggested value: a dashed chip with its chance, ✓ to add it and ✕ to say the work has it not. */
   function suggestedChip(item, facet, v) {
     const chip = el("r4m-chip", "r4m-suggested");
-    chip.title = "Подсказка";
-    chip.appendChild(el("span", null, v.name));
+    chip.title = t("value.suggested");
+    chip.appendChild(el("span", null, nameOf(v)));
     chip.appendChild(el("r4m-chance", null, percent(v.chance)));
     const on = about(facet, v.key);
     // Answered, it stops being a suggestion: shown as the work's value the user added or rejected
-    const offered = { key: v.key, name: v.name, offered: true };
-    chip.appendChild(button("✓", "Да, это у работы есть", () => correct(item, facet, { key: v.key }, true), "r4m-yes", answeredShown(facet, offered, true), on));
-    chip.appendChild(button("✕", "Нет, этого у работы нет", () => correct(item, facet, { key: v.key }, false), "r4m-no", answeredShown(facet, offered, false), on));
+    const offered = { key: v.key, name: v.name, nameKey: v.nameKey, offered: true };
+    chip.appendChild(button("✓", t("value.yes"), () => correct(item, facet, { key: v.key }, true), "r4m-yes", answeredShown(facet, offered, true), on));
+    chip.appendChild(button("✕", t("value.no"), () => correct(item, facet, { key: v.key }, false), "r4m-no", answeredShown(facet, offered, false), on));
     return chip;
   }
 
@@ -569,13 +682,14 @@
     rest.slice(0, asked).forEach((c) => {
       const chip = suggestedChip(item, facet, c);
       const named = mentionsText(c.mentions);
-      if (named) chip.title = `Кандидат: ${named}`;
+      if (named) chip.title = t("candidate.title", { mentions: named });
       line.appendChild(chip);
     });
     if (all && rest.length <= asked) return;
     const b = el("button", "r4m-button r4m-more", "…");
     b.type = "button";
-    b.title = `Показать ещё ${MORE_STEP} кандидатов`;
+    // One key, not a word of every plural form: the count is always MORE_STEP, the words written for it
+    b.title = t("candidate.more", { count: MORE_STEP });
     b.addEventListener("click", async (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -589,22 +703,23 @@
     line.appendChild(b);
   }
 
-  /** The facets the user may say are all named, with how the button and its hints name them. */
+  /** The facets the user may say are all named, with the keys of how the button and its hints name them. */
   const ALL_NAMED = {
-    [UNIVERSE]: { others: "других вселенных нет", what: "вселенные" },
-    characters: { others: "других главных нет", what: "главные персонажи" },
-    "secondary-characters": { others: "других второстепенных нет", what: "второстепенные персонажи" },
-    pairings: { others: "других пэйрингов нет", what: "пэйринги" },
+    [UNIVERSE]: { others: "allNamed.universeOthers", what: "allNamed.universeWhat" },
+    characters: { others: "allNamed.charactersOthers", what: "allNamed.charactersWhat" },
+    "secondary-characters": { others: "allNamed.secondaryOthers", what: "allNamed.secondaryWhat" },
+    pairings: { others: "allNamed.pairingsOthers", what: "allNamed.pairingsWhat" },
   };
 
   /**
-   * "Других вселенных нет", "других пэйрингов нет": the user's word that the work's values of the
+   * "No other universes", "no other pairings": the user's word that the work's values of the
    * facet are all named — the others are not offered and count as rejected for the model; pressed
    * again, taken back. Shown once the work has a value of it, as in the application.
    */
   function completeButton(item, facet) {
-    const names = ALL_NAMED[facet.facet];
-    if (!names || facet.editable === false) return null;
+    const keys = ALL_NAMED[facet.facet];
+    if (!keys || facet.editable === false) return null;
+    const names = { others: t(keys.others), what: t(keys.what) };
     const own = (facet.values || []).filter((v) => v.corrected !== "REMOVED" && !v.offered);
     if (!own.length) return null;
     const s = item.summary;
@@ -612,9 +727,7 @@
     const about = `complete|${facet.facet}`;
     return button(
       complete ? `✓ ${names.others}` : names.others,
-      complete
-        ? `Названы все ${names.what} работы: остальные не предлагаются и для модели отклонены. Нажмите, чтобы снять`
-        : `Все ${names.what} работы уже названы: остальные не предлагать и считать отклонёнными`,
+      t(complete ? "allNamed.doneTitle" : "allNamed.title", { what: names.what }),
       () => api(complete ? "DELETE" : "PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/corrections/complete?facet=${enc(facet.facet)}`),
       `r4m-button r4m-complete${complete ? " r4m-current" : ""}${saving.has(about) ? " r4m-saving" : ""}`,
       (shown) => {
@@ -637,13 +750,11 @@
     return new Set([...(facet.values || []), ...((suggestions && suggestions.suggested) || [])].map((v) => v.key));
   }
 
-  /** "упоминается 3 раза" — how often the work's texts name a candidate; empty when they were not counted. */
+  /** "mentioned 3 times" — how often the work's texts name a candidate; empty when they were not counted. */
   function mentionsText(n) {
     if (n === undefined || n === null) return "";
-    if (n === 0) return "не упоминается";
-    const tens = n % 100, ones = n % 10;
-    const word = tens >= 11 && tens <= 14 ? "раз" : ones === 1 ? "раз" : ones >= 2 && ones <= 4 ? "раза" : "раз";
-    return `упоминается ${n} ${word}`;
+    if (n === 0) return t("candidate.notMentioned");
+    return t("candidate.mentions", { count: n });
   }
 
   /** A name as it is matched: any case, "ё" as "е". */
@@ -675,15 +786,19 @@
     const s = item.summary;
     const chosen = CHOSEN.includes(facet);
 
-    /** Every hint known: { name, key?, note }; and those the typing leaves, drawn up to [drawn], the one gone to by the keys [active]. */
+    /**
+     * Every hint known: { name — as shown, key, nameKey?, note }; and those the typing leaves, drawn
+     * up to [drawn], the one gone to by the keys [active].
+     */
     let hints = [];
     let shown = [];
     let drawn = 0;
     let active = -1;
 
-    function add(name, key) {
+    /** Adds a value: a hint by its key, a name typed ([key] none) by its name. */
+    function add(name, key, nameKey) {
       if (!name) return;
-      act(() => correct(item, facet, key ? { key } : { name }, true), answeredShown(facet, { key: key || name, name, offered: true }, true), about(facet, key || name));
+      act(() => correct(item, facet, key ? { key } : { name }, true), answeredShown(facet, { key: key || name, name, nameKey, offered: true }, true), about(facet, key || name));
     }
 
     function close() {
@@ -712,7 +827,7 @@
       r.addEventListener("click", () => {
         close();
         input.value = "";
-        add(h.name, h.key);
+        add(h.name, h.key, h.nameKey);
       });
       return r;
     }
@@ -767,8 +882,9 @@
         try {
           const candidates = await api("GET", `/api/items/${enc(s.source)}/${enc(s.item)}/candidates?facet=${enc(facet)}`);
           hints = candidates.map((c) => ({
-            name: c.name,
+            name: nameOf(c),
             key: c.key,
+            nameKey: c.nameKey,
             note: [c.chance !== undefined && c.chance !== null ? percent(c.chance) : "", mentionsText(c.mentions)].filter(Boolean).join(" · "),
           }));
           narrow();
@@ -785,7 +901,8 @@
         timer = setTimeout(async () => {
           try {
             const values = await api("GET", `/api/sources/${enc(s.source)}/facets/${enc(facet)}/values?query=${enc(input.value)}&limit=20`);
-            hints = values.map((v) => ({ name: v.name, note: `работ: ${v.items}` }));
+            // By its key: a value of the application's own is shown by words the name typed would not match
+            hints = values.map((v) => ({ name: nameOf(v), key: v.key, nameKey: v.nameKey, note: t("facet.works", { count: v.items }) }));
             narrow();
           } catch (e) {
             // No hints: the value is added by its name all the same
@@ -807,7 +924,7 @@
         close();
       }
     });
-    ["keyup", "keypress"].forEach((t) => input.addEventListener(t, (e) => e.stopPropagation()));
+    ["keyup", "keypress"].forEach((type) => input.addEventListener(type, (e) => e.stopPropagation()));
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       // The hint gone to by the keys; else a hint of just the name typed; else the name as it is
@@ -815,7 +932,7 @@
       const h = active >= 0 ? shown[active] : hints.find((x) => folded(x.name) === folded(typed));
       close();
       input.value = "";
-      if (h) add(h.name, h.key);
+      if (h) add(h.name, h.key, h.nameKey);
       else add(typed, null);
     });
     form.appendChild(input);
@@ -829,9 +946,9 @@
    */
   function facetBlock(item, facet, suggestions, inPanel) {
     const block = el("r4m-facet");
-    const label = el("r4m-label", null, facet.label);
+    const label = el("r4m-label", null, labelOf(facet));
     block.appendChild(label);
-    if (inPanel && facet.original) block.appendChild(el("r4m-original", null, `На сайте: ${facet.original}`));
+    if (inPanel && facet.original) block.appendChild(el("r4m-original", null, t("facet.onSite", { values: facet.original })));
     const line = el("r4m-chips");
     // A facet of the site is its word: shown, never answered on
     const editable = facet.editable !== false;
@@ -839,7 +956,7 @@
     // The work's values the user has not answered on — not those only offered
     const open = values.filter((v) => !v.corrected && !v.offered);
     if (editable && open.length > 1) {
-      label.appendChild(button(`✓ все (${open.length})`, "Подтвердить все значения без вашего ответа", async () => {
+      label.appendChild(button(t("facet.confirmAll", { count: open.length }), t("facet.confirmAllTitle"), async () => {
         for (const v of open) await correct(item, facet.facet, { key: v.key }, true);
       }, "r4m-button r4m-all", (shown) => open.forEach((v) => answeredShown(facet.facet, v, true)(shown))));
     }
@@ -849,7 +966,7 @@
     if (editable) {
       ((suggestions && suggestions.suggested) || []).forEach((v) => line.appendChild(suggestedChip(item, facet.facet, v)));
       if (!facet.complete) moreOf(item, facet.facet, line, shownKeys(facet, suggestions));
-      line.appendChild(addField(item, facet.facet, facet.label));
+      line.appendChild(addField(item, facet.facet, labelOf(facet)));
     }
     block.appendChild(line);
     return block;
@@ -861,8 +978,8 @@
    * its own after the element [decor.after]. False when the page has neither.
    */
   function facetInPlace(item, decor) {
-    const facet = (item.facets || []).find((f) => f.facet === decor.facet) || { facet: decor.facet, label: decor.facet, values: [] };
     const suggestions = (item.suggestions || []).find((x) => x.facet === decor.facet);
+    const facet = (item.facets || []).find((f) => f.facet === decor.facet) || { facet: decor.facet, labelKey: suggestions && suggestions.labelKey, values: [] };
     if (decor.after) {
       const anchor = document.querySelector(decor.after);
       if (!anchor) return false;
@@ -877,7 +994,8 @@
     const values = facet.values || [];
     elements.forEach((e) => {
       const label = lower(e.getAttribute("title") || e.textContent);
-      const v = values.find((x) => lower(x.name) === label || lower(x.key) === label);
+      // The site writes a value as the data has it; a value of the application's own, maybe as the words say it
+      const v = values.find((x) => lower(x.name) === label || lower(x.key) === label || lower(nameOf(x)) === label);
       if (!v || v.corrected === "ADDED") return;
       if (v.corrected === "REMOVED") e.classList.add("r4m-removed");
       else if (v.corrected !== "CONFIRMED" && v.chance !== undefined && v.chance !== null && v.chance < 0.5) e.classList.add("r4m-doubted");
@@ -889,7 +1007,7 @@
     values.filter((v) => v.corrected === "ADDED" || (v.inferred && v.corrected !== "REMOVED")).forEach((v) => after.appendChild(valueChip(item, decor.facet, v)));
     ((suggestions && suggestions.suggested) || []).forEach((v) => after.appendChild(suggestedChip(item, decor.facet, v)));
     if (!facet.complete) moreOf(item, decor.facet, after, shownKeys(facet, suggestions));
-    after.appendChild(addField(item, decor.facet, facet.label));
+    after.appendChild(addField(item, decor.facet, labelOf(facet)));
     const allNamed = completeButton(item, facet);
     if (allNamed) after.appendChild(allNamed);
     const last = elements[elements.length - 1];
@@ -904,8 +1022,8 @@
   function marks(current, put, remove, what, set, on) {
     const bar = el("r4m-marks", saving.has(on) ? "r4m-saving" : null);
     const to = (mark) => (current === mark ? null : mark);
-    bar.appendChild(button("+", `${what}: повод выбрать работу`, () => (current === 1 ? remove() : put(1)), `r4m-mark${current === 1 ? " r4m-current" : ""}`, (shown) => set(shown, to(1)), on));
-    bar.appendChild(button("−", `${what}: повод отказаться от неё`, () => (current === -1 ? remove() : put(-1)), `r4m-mark${current === -1 ? " r4m-current" : ""}`, (shown) => set(shown, to(-1)), on));
+    bar.appendChild(button("+", t("mark.plus", { what }), () => (current === 1 ? remove() : put(1)), `r4m-mark${current === 1 ? " r4m-current" : ""}`, (shown) => set(shown, to(1)), on));
+    bar.appendChild(button("−", t("mark.minus", { what }), () => (current === -1 ? remove() : put(-1)), `r4m-mark${current === -1 ? " r4m-current" : ""}`, (shown) => set(shown, to(-1)), on));
     return bar;
   }
 
@@ -922,7 +1040,7 @@
         current,
         (mark) => api("PUT", `${base}/${enc(id)}/mark`, { mark }),
         () => api("DELETE", `${base}/${enc(id)}/mark`),
-        "Отзыв",
+        t("mark.review"),
         (shown, mark) => {
           if (mark) shown.reviewMarks[id] = mark;
           else delete shown.reviewMarks[id];
@@ -948,7 +1066,7 @@
       done.add(picture.position);
       const base = `/api/items/${enc(s.source)}/${enc(s.item)}/pictures/${picture.position}/mark`;
       const bar = marks(
-        picture.mark, (mark) => api("PUT", base, { mark }), () => api("DELETE", base), picture.position === 0 ? "Обложка" : "Картинка",
+        picture.mark, (mark) => api("PUT", base, { mark }), () => api("DELETE", base), t(picture.position === 0 ? "mark.cover" : "mark.picture"),
         (shown, mark) => {
           const p = shown.pictures.find((x) => x.position === picture.position);
           if (p) p.mark = mark;
@@ -1016,7 +1134,7 @@
   function unsaved(badge) {
     badge.textContent = "";
     const score = el("r4m-score", "r4m-pending-score", "…");
-    score.title = "recommend4me: работа сохраняется";
+    score.title = t("card.saving");
     badge.appendChild(score);
     badge.classList.add("r4m-pending");
     return true;
@@ -1028,11 +1146,11 @@
     const scored = k.prediction !== undefined && k.prediction !== null;
     const score = scored ? el("r4m-score", scoreClass(k.prediction), shownScore(k.prediction)) : el("r4m-score", "r4m-pending-score", "…");
     const waiting = !scored && !k.grade;
-    score.title = waiting ? "recommend4me: прогноз ещё считается" : "recommend4me: прогноз из 10";
+    score.title = t(waiting ? "card.pending" : "card.prediction");
     badge.appendChild(score);
     if (k.grade) {
       const grade = el("r4m-grade-mark", null, `★${k.grade}`);
-      grade.title = "Ваша оценка";
+      grade.title = t("card.grade");
       badge.appendChild(grade);
     }
     badge.appendChild(cardInterest(badge, k, true, "🤔"));
@@ -1048,15 +1166,17 @@
    */
   function cardInterest(badge, k, value, icon) {
     const current = k.interest === value;
-    const said = interestByGrade(k);
-    const byGrade = said === value;
-    const word = value ? "Интересно" : "Неинтересно";
+    const graded = interestByGrade(k);
+    const byGrade = graded === value;
+    const word = t(value ? "interest.yesTitle" : "interest.noTitle");
     const b = el("button", `r4m-interest-mark${current ? " r4m-current" : ""}${byGrade ? " r4m-implied" : ""}`, icon);
     b.type = "button";
-    const chance = said == null && k.interest == null && k.interestChance != null ? ` (модель: интересно на ${Math.round(k.interestChance * 100)}%)` : "";
+    const chance = graded == null && k.interest == null && k.interestChance != null
+      ? ` ${t("card.interestChance", { percent: Math.round(k.interestChance * 100) })}`
+      : "";
     b.title = current
-      ? `${word} — нажмите ещё раз, чтобы снять`
-      : byGrade ? `${word} — по оценке ${k.grade || k.previousGrade}; отметить явно` : `${word}${chance}`;
+      ? t("common.pressAgain", { what: word })
+      : byGrade ? t("card.interestByGrade", { interest: word, grade: k.grade || k.previousGrade }) : `${word}${chance}`;
     b.addEventListener("click", async (e) => {
       e.preventDefault();
       e.stopPropagation();
@@ -1071,7 +1191,7 @@
       } catch (error) {
         Object.assign(k, before);
         fillBadge(badge, k);
-        badge.title = `recommend4me: отметка не сохранена — ${error.message}`;
+        badge.title = t("card.notSaved", { error: error.message });
       }
     });
     return b;

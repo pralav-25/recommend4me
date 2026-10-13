@@ -325,7 +325,7 @@ class Recommendations(
             textEncoder = plugins.textEncoder()?.id, imageEncoder = plugins.imageEncoder()?.id,
         )
         val model = TrainedModel(provisional, fitted)
-        val importance = importance(model, p.perItem, type)
+        val importance = importance(model, p.perItem)
         val meta = provisional.copy(
             topPositive = importance.filter { it.contribution > 0 }.take(TOP_FEATURES),
             topNegative = importance.filter { it.contribution < 0 }.reversed().take(TOP_FEATURES),
@@ -576,8 +576,8 @@ class Recommendations(
         return partList.mapIndexed { p, (part, members) ->
             ContributionGroup(
                 part, partLabels.getValue(part), moved(1 + dense.size + categorical.size + p),
-                members.map { Contribution(it, labels.getValue(it), features.getValue(it), it in input.categorical || it in denseOf) }
-                    .sortedByDescending { abs(it.contribution) },
+                members.map { LabelledContribution(Contribution(it, features.getValue(it), it in input.categorical || it in denseOf), labels.getValue(it)) }
+                    .sortedByDescending { abs(it.contribution.contribution) },
             )
         }.sortedByDescending { abs(it.contribution) }
     }
@@ -603,7 +603,7 @@ class Recommendations(
     }
 
     /** Mean contribution of every feature over the graded works that have it, strongest positive first. */
-    private fun importance(model: TrainedModel, perItem: List<ItemInput>, type: TypeStore): List<Contribution> {
+    private fun importance(model: TrainedModel, perItem: List<ItemInput>): List<Contribution> {
         val sums = HashMap<String, Double>()
         val counts = HashMap<String, Int>()
         perItem.take(MAX_IMPORTANCE_ITEMS).forEach { input ->
@@ -614,9 +614,8 @@ class Recommendations(
         }
         val means = sums.entries.filter { (counts[it.key] ?: 0) >= FeatureLayout.MIN_SUPPORT }.map { it.key to it.value / counts.getValue(it.key) }
         val ranked = means.sortedByDescending { it.second }
-        val shown = (ranked.take(TOP_FEATURES) + ranked.takeLast(TOP_FEATURES)).map { it.first }.distinct()
-        val labels = FeatureNames.labels(shown, type.sources)
-        return ranked.filter { it.first in labels }.map { (f, c) -> Contribution(f, labels.getValue(f), c) }
+        val shown = (ranked.take(TOP_FEATURES) + ranked.takeLast(TOP_FEATURES)).map { it.first }.toSet()
+        return ranked.filter { it.first in shown }.map { (f, c) -> Contribution(f, c) }
     }
 
     /**

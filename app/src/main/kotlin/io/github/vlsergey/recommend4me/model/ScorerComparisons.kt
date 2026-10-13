@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.model
 
-import io.github.vlsergey.recommend4me.i18n.text
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
@@ -14,8 +13,8 @@ private val log = LoggerFactory.getLogger(ScorerComparisons::class.java)
 /** Where a scorer's measuring stands. */
 enum class MeasuringState { WAITING, MEASURING, DONE, FAILED }
 
-/** One scorer in a comparison: its state, and its result once measured. */
-class ScorerMeasure(val scorer: String, val title: String) {
+/** One scorer in a comparison: its state, and its result once measured. Its title is the interface's word "<scorer>:title". */
+class ScorerMeasure(val scorer: String) {
     @Volatile var state = MeasuringState.WAITING
     @Volatile var chosen: RankingResult? = null
     @Volatile var candidates: List<RankingResult> = emptyList()
@@ -45,7 +44,7 @@ class ScorerComparisons(private val recommendations: Recommendations, private va
 
     fun start(typeId: String): ScorerComparison = comparisons.compute(typeId) { _, running ->
         if (running != null && running.finishedAt == null) return@compute running
-        ScorerComparison(Instant.now(), plugins.scorers.map { ScorerMeasure(it.id, it.title.text()) }).also { c -> executor.submit { run(typeId, c) } }
+        ScorerComparison(Instant.now(), plugins.scorers.map { ScorerMeasure(it.id) }).also { c -> executor.submit { run(typeId, c) } }
     }!!
 
     private fun run(typeId: String, comparison: ScorerComparison) {

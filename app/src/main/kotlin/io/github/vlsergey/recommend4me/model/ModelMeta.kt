@@ -1,23 +1,29 @@
 package io.github.vlsergey.recommend4me.model
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import io.github.vlsergey.recommend4me.scorer.RankingTask
 
 /**
  * What a feature adds to a work's score, in points of 0..10; for a categorical feature against the
  * average work of the catalogue — so a liked tag the work does NOT have ([present] false) shows as
- * what its absence costs.
+ * what its absence costs. What the user is shown of it ([FeatureLabel]) is told when it is shown, by the
+ * names of the moment: a model kept before its label was dropped from here is read all the same.
  */
-data class Contribution(val feature: String, val label: String, val contribution: Double, val present: Boolean = true)
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class Contribution(val feature: String, val contribution: Double, val present: Boolean = true)
+
+/** A [contribution] with what the user is shown of its feature. */
+data class LabelledContribution(val contribution: Contribution, val label: FeatureLabel)
 
 /** The out-of-fold quality of the ranking without one part of the input ([part]: as in [ContributionGroup]), of [features] columns. */
-class PartWorth(val part: String, val label: String, val features: Int, val metrics: RankingMetrics?)
+class PartWorth(val part: String, val labelKey: String, val features: Int, val metrics: RankingMetrics?)
 
 /** The out-of-fold quality of the ranking on everything, and without every part in turn — the most needed part first. */
 class ModelWorth(val scorer: String, val full: RankingMetrics?, val grades: Int, val parts: List<PartWorth>)
 
 /** What a part of a work's input moves its score by as a whole — a facet, the pictures, a text — and every feature in it. */
-data class ContributionGroup(val part: String, val label: String, val contribution: Double, val features: List<Contribution>)
+data class ContributionGroup(val part: String, val labelKey: String, val contribution: Double, val features: List<LabelledContribution>)
 
 /** Everything about a trained model but its scorer's state; kept as JSON beside it. */
 data class ModelMeta(

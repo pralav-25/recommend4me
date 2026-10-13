@@ -2,7 +2,6 @@ package io.github.vlsergey.recommend4me.source.authortoday
 
 import io.github.vlsergey.recommend4me.contenttype.Books
 import io.github.vlsergey.recommend4me.contenttype.StandardNumbers
-import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.CardDecor
 import io.github.vlsergey.recommend4me.source.FacetDecor
@@ -30,7 +29,6 @@ import io.github.vlsergey.recommend4me.source.TextRole
  */
 class AuthorToday : Source {
     override val id = ID
-    override val title = Label.same("Author.Today")
     override val contentType = "books"
     override val homepage = BASE
     override val modes = setOf(SourceMode.BROWSER)
@@ -38,26 +36,27 @@ class AuthorToday : Source {
     override val schema = SourceSchema(
         facets = listOf(
             Books.AUTHOR.asFacet(AUTHOR),
-            FacetDef(GENRE, Label("Genre", "Жанр", "Žanr"), filter = true, onCard = true, searchWeight = 0.8f, role = FacetRole.CONTENT),
-            FacetDef(FORM, Label("Form", "Форма", "Forma"), filter = true, role = FacetRole.FORM),
+            FacetDef(GENRE, filter = true, onCard = true, searchWeight = 0.8f, role = FacetRole.CONTENT),
+            FacetDef(FORM, filter = true, role = FacetRole.FORM),
             Books.TAG.asFacet(TAG),
             Books.STATUS.asFacet(STATUS),
-            FacetDef(SERIES, Label("Series", "Цикл", "Serijal"), searchWeight = 0.7f, role = FacetRole.SERIES),
+            FacetDef(SERIES, searchWeight = 0.7f, role = FacetRole.SERIES),
         ),
         numbers = listOf(
-            NumberDef(CHARS, Label("Characters", "Знаков", "Znakova"), NumberScale.LOG, sortable = true, role = NumberRole.SIZE),
-            NumberDef(VIEWS, Label("Views", "Просмотры", "Pregledi"), NumberScale.LOG, sortable = true, role = NumberRole.REACH),
+            // Characters, not words: a number of its own
+            NumberDef(CHARS, NumberScale.LOG, sortable = true, role = NumberRole.SIZE),
+            StandardNumbers.VIEWS.asNumber(VIEWS),
             StandardNumbers.LIKES.asNumber(LIKES),
-            NumberDef(COMMENTS, Label("Comments", "Комментарии", "Komentari"), NumberScale.LOG),
-            NumberDef(REVIEWS, Label("Reviews", "Рецензии", "Recenzije"), NumberScale.LOG),
-            NumberDef(AWARDS, Label("Awards", "Награды", "Nagrade"), NumberScale.LOG),
+            NumberDef(COMMENTS, NumberScale.LOG),
+            NumberDef(REVIEWS, NumberScale.LOG),
+            NumberDef(AWARDS, NumberScale.LOG),
         ),
         texts = listOf(
-            TextDef(ANNOTATION, Label("Synopsis", "Аннотация", "Sinopsis"), block = "text:annotation", searchWeight = 0.6f, role = TextRole.DESCRIPTION),
-            TextDef(NOTES, Label("Author's notes", "Примечания автора", "Napomene autora"), block = "text:notes", searchWeight = 0.5f, role = TextRole.NOTES),
+            TextDef(ANNOTATION, block = "text:annotation", searchWeight = 0.6f, role = TextRole.DESCRIPTION),
+            TextDef(NOTES, block = "text:notes", searchWeight = 0.5f, role = TextRole.NOTES),
         ),
-        reviewsLabel = Label("Reviews", "Рецензии", "Recenzije"),
-        partsLabel = Label("Chapters", "Главы", "Poglavlja"),
+        reviews = true,
+        parts = true,
         // A work of the genre "Фанфик" is fan fiction, of "Альтернативная история" our world changed
         kindFrom = GENRE,
     )
@@ -83,23 +82,13 @@ class AuthorToday : Source {
         Books.READ.asSignal(),
         Books.LIKED.asSignal(),
         SignalDef(
-            SIGNAL_REACTION, Label("Reaction", "Реакция", "Reakcija"),
-            mapOf(
-                "Perfect" to Label("excellent", "превосходно", "odlično"),
-                "Waiting" to Label("waiting for more", "жду продолжения", "čekam nastavak"),
-                "ImpossibleToPutDown" to Label("can't put it down", "не оторваться", "ne mogu da se odvojim"),
-                "Boring" to Label("boring", "скучно", "dosadno"),
-                "Funny" to Label("funny", "весело", "zabavno"),
-                "Sadly" to Label("sad", "грустно", "tužno"),
-                "Cute" to Label("very cute", "очень мило", "baš slatko"),
-                "Wisely" to Label("thought-provoking", "заставляет задуматься", "navodi na razmišljanje"),
-                "Facepalm" to Label("facepalm", "фейспалм", "fejspalm"),
-                "DoNotRecommend" to Label("don't recommend", "не рекомендую", "ne preporučujem"),
-                "Obscene" to Label("no words, printable ones", "слов нет, цензурных", "nemam reči, pristojnih"),
-                "Unclear" to Label("hard to judge", "сложно оценить", "teško je oceniti"),
+            SIGNAL_REACTION,
+            setOf(
+                "Perfect", "Waiting", "ImpossibleToPutDown", "Boring", "Funny", "Sadly",
+                "Cute", "Wisely", "Facepalm", "DoNotRecommend", "Obscene", "Unclear",
             ),
         ),
-        SignalDef(SIGNAL_HIDDEN, Label("Not interested", "Не интересно", "Ne zanima me"), mapOf(Books.YES.key to Books.YES.label)),
+        SignalDef(SIGNAL_HIDDEN, setOf(Books.YES.key)),
     )
 
     override val pageDecor = PageDecor(

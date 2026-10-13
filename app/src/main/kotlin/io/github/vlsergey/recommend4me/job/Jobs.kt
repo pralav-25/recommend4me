@@ -1,6 +1,6 @@
 package io.github.vlsergey.recommend4me.job
 
-import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.settings.Settings
 import io.github.vlsergey.recommend4me.source.Job
@@ -34,8 +34,10 @@ data class JobProgress(
     val total: Int = 0,
     val newItems: Int = 0,
     val errors: Int = 0,
-    /** In every language: shown in the language of whoever asks. */
-    val message: Label? = null,
+    /** What the user should know at the end, by the key of its words: "f95zone:job.noCookie" ([Job.message]). */
+    val messageKey: String? = null,
+    /** Why the job failed, as the code tells it: not words of the interface. */
+    val failure: String? = null,
     val loggedIn: Boolean? = null,
     val startedAt: Instant? = null,
     val finishedAt: Instant? = null,
@@ -84,7 +86,11 @@ class Jobs(
             log.warn("{}: {}", sourceId, message)
             update { it.copy(errors = it.errors + 1) }
         }
-        override fun message(text: Label?) = update { it.copy(message = text) }
+        override fun message(key: String?) {
+            val source = stores.source(sourceId)?.source
+            if (key != null && source != null && key !in source.messages) log.warn("{}: the job left the message '{}' the source does not declare", sourceId, key)
+            update { it.copy(messageKey = key?.let { k -> I18nKeys.qualified(sourceId, I18nKeys.job(k)) }) }
+        }
         override fun session(loggedIn: Boolean?) = update { it.copy(loggedIn = loggedIn) }
         override val cancelled: Boolean get() = cancelRequested
 
@@ -151,8 +157,8 @@ class Jobs(
             run.update { it.copy(state = JobState.CANCELLED, finishedAt = Instant.now()) }
         } catch (e: Exception) {
             log.error("{}: the job failed", run.sourceId, e)
-            // The failure as the code tells it: the same in every language
-            run.update { it.copy(state = JobState.FAILED, message = Label.same(e.message ?: e.javaClass.simpleName), finishedAt = Instant.now()) }
+            // The failure as the code tells it: no words of the interface
+            run.update { it.copy(state = JobState.FAILED, failure = e.message ?: e.javaClass.simpleName, finishedAt = Instant.now()) }
         }
     }
 

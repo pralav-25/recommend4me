@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ContentTypeInfo, NumberInfo } from "@/api/client";
 import { Input } from "@/components/ui/input";
+import { label } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 
 /** The range of a number the list is limited to: from so many, up to so many; an end not given is open. */
@@ -40,18 +41,19 @@ export function NumberFilters({ type, value, onChange }: { type: ContentTypeInfo
 function NumberFilter({ number, range, onChange }: { number: NumberInfo; range: NumberRange; onChange: (range: NumberRange) => void }) {
   const { t } = useTranslation("number");
   const set = range.from !== undefined || range.to !== undefined;
+  const name = label(number.labelKey);
   return (
     <div className={cn("flex items-center gap-1 rounded-lg border px-2 py-0.5 text-sm", set ? "border-primary/60" : "border-input")}>
-      <span className="text-muted-foreground">{number.label}</span>
+      <span className="text-muted-foreground">{name}</span>
       <End
-        label={t("NumberFilter.fromLabel", { label: number.label })}
+        label={t("NumberFilter.fromLabel", { label: name })}
         placeholder={t("NumberFilter.from")}
         value={range.from}
         onChange={(from) => onChange({ ...range, from })}
       />
       <span className="text-muted-foreground">–</span>
       <End
-        label={t("NumberFilter.toLabel", { label: number.label })}
+        label={t("NumberFilter.toLabel", { label: name })}
         placeholder={t("NumberFilter.to")}
         value={range.to}
         onChange={(to) => onChange({ ...range, to })}

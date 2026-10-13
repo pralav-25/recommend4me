@@ -97,7 +97,7 @@ class FicbookPages(private val context: SourceContext) {
             val text = s.text().trim()
             // The standard status by the label's class or its text; another as the site writes it, for the application to tell of
             val status = STATUSES[key] ?: STATUSES[text.lowercase()]
-            items.setFacet(id, STATUS, listOf(status?.let { FacetValue(it.key, it.label.ru) } ?: FacetValue(key, text.ifEmpty { key })))
+            items.setFacet(id, STATUS, listOf(status?.let { FacetValue(it.key, it.modelName) } ?: FacetValue(key, text.ifEmpty { key })))
         }
     }
 

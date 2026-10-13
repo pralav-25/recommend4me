@@ -7,7 +7,8 @@ import io.github.vlsergey.recommend4me.api.model.FacetValueInfo
 import io.github.vlsergey.recommend4me.api.model.RatingRequest
 import io.github.vlsergey.recommend4me.capture.CaptureController
 import io.github.vlsergey.recommend4me.contenttype.Books
-import io.github.vlsergey.recommend4me.i18n.Label
+import io.github.vlsergey.recommend4me.refusal.Refusal
+import io.github.vlsergey.recommend4me.refusal.Refused
 import io.github.vlsergey.recommend4me.correction.CorrectionsController
 import io.github.vlsergey.recommend4me.encoder.TextEncoder
 import io.github.vlsergey.recommend4me.encoder.TextKind
@@ -49,6 +50,7 @@ import io.github.vlsergey.recommend4me.universe.UniverseCatalogue
 import io.github.vlsergey.recommend4me.universe.UniverseCharacter
 import io.github.vlsergey.recommend4me.universe.UniverseClass
 import io.github.vlsergey.recommend4me.universe.UniverseEntry
+import io.github.vlsergey.recommend4me.universe.UniverseFacet
 import io.github.vlsergey.recommend4me.universe.UniversesController
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -57,12 +59,9 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
-import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.http.HttpStatus
-import org.springframework.web.server.ResponseStatusException
 import java.io.File
 import java.time.Instant
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlin.test.assertEquals
@@ -100,7 +99,6 @@ class SiteTest {
     /** A catalogue of two universes of space opera, each with the same two characters and a station, a place; its texts in English. */
     class FakeCatalogue : UniverseCatalogue {
         override val id = "fake"
-        override val title = Label.same("Fake")
         private fun en(text: String) = mapOf("en" to text)
         private fun entries(languages: List<String>) = listOf(
             UniverseEntry("U1", en("Space opera"), en("Ships and pilots"), "https://fake.example/U1", languages),
@@ -125,19 +123,18 @@ class SiteTest {
      */
     class SiteSource : Source {
         override val id = "site"
-        override val title = Label.same("Site")
         override val contentType = "books"
         override val homepage = "https://site.example"
         override val schema = SourceSchema(
             facets = listOf(
                 // The site's tags: its word, the examples of the work's tags
                 Books.TAG.asFacet(),
-                FacetDef("pairing", Label("Pairing", "Пэйринг", "Par"), infer = true, original = "pairings"),
-                FacetDef("series", Label("Series", "Серия", "Serijal"), role = FacetRole.SERIES),
+                FacetDef("pairing", infer = true, original = "pairings"),
+                FacetDef("series", role = FacetRole.SERIES),
             ),
             texts = listOf(
-                TextDef("annotation", Label("Annotation", "Аннотация", "Anotacija"), block = "text:annotation"),
-                TextDef("pairings", Label("Pairings on the site", "Пэйринги на сайте", "Parovi na sajtu"), searchByMeaning = true),
+                TextDef("annotation", block = "text:annotation"),
+                TextDef("pairings", searchByMeaning = true),
             ),
             universeLine = "pairings",
         )
@@ -245,17 +242,11 @@ class SiteTest {
         assertEquals("x1", page.itemId)
         assertEquals(".tags", page.decor.facets.single().after)
         val item = assertNotNull(page.item)
-        assertEquals(5, item.grades.size)
-        // A facet the work has no values of comes too, named: the page adds values to it — in the
-        // language of the request, English without one
-        assertEquals("Universe", item.facets.single { it.facet == "universe" }.label)
-        LocaleContextHolder.setLocale(Locale.of("ru"))
-        try {
-            val russian = pages.getPage("https://site.example/work/x1?from=list").body!!.item!!
-            assertEquals("Вселенная", russian.facets.single { it.facet == "universe" }.label)
-        } finally {
-            LocaleContextHolder.resetLocaleContext()
-        }
+        // A facet the work has no values of comes too, by the key of its label: the page adds values
+        // to it. The application's layer is labelled in the standard namespace, the site's own in its own
+        assertEquals("standard:facet.universe", item.facets.single { it.facet == "universe" }.labelKey)
+        assertEquals("site:facet.pairing", item.facets.single { it.facet == "pairing" }.labelKey)
+        assertEquals("standard:facet.tags", item.facets.single { it.facet == "tags" }.labelKey)
 
         // The work's tags are worked out from the site's: the untagged work is given those of its kind
         val given = item.facets.single { it.facet == "tags" }.propertyValues
@@ -292,8 +283,10 @@ class SiteTest {
         )
 
         // The site's word is not corrected
-        val refused = assertThrows<ResponseStatusException> { corrections.correctFacet("site", "x1", FacetCorrection(facet = "tag", added = true, key = "space")) }
-        assertTrue(refused.reason!!.contains("the site's word"), refused.reason)
+        val refused = assertThrows<Refused> { corrections.correctFacet("site", "x1", FacetCorrection(facet = "tag", added = true, key = "space")) }
+        assertEquals(Refusal.SITE_FIELD, refused.refusal)
+        // The field by the key of its label: the site's tags are a standard facet
+        assertEquals(mapOf("field" to "standard:facet.tag"), refused.params)
 
         // The work's tags are: a value given and confirmed is the user's, one taken away is shown so
         corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, key = tag("space")))
@@ -323,10 +316,16 @@ class SiteTest {
         recommendations.retrainAndScore("books")
         // What every part is worth: the ranking cross-validated without it, every part measured
         val worth = recommendations.worth("books")!!
-        // Outside a request the labels are English
-        assertTrue(worth.full != null && worth.parts.any { it.label == Books.TAG.label.en && it.metrics != null }, "parts ${worth.parts.map { it.label }}")
+        // The parts by the keys of their labels: the site's tags a standard facet, the title the standard text
+        val tagLabel = "standard:facet.${Books.TAG.key}"
+        assertTrue(worth.full != null && worth.parts.any { it.labelKey == tagLabel && it.metrics != null }, "parts ${worth.parts.map { it.labelKey }}")
         val explained = items.getItem("site", "x1").body!!.explanation
-        assertTrue(explained.any { it.label == Books.TAG.label.en && it.features.isNotEmpty() }, "parts ${explained.map { it.label }}")
+        assertTrue(explained.any { it.labelKey == tagLabel && it.features.isNotEmpty() }, "parts ${explained.map { it.labelKey }}")
+        // A feature of a value: the facet's label and the value as the data names it
+        val tagFeature = explained.single { it.labelKey == tagLabel }.features.first()
+        assertEquals(tagLabel, tagFeature.labelKey)
+        assertNotNull(tagFeature.value)
+        assertTrue(explained.all { g -> ':' in g.labelKey && g.features.all { ':' in it.labelKey } }, "every label a key: $explained")
         assertTrue(explained.zipWithNext().all { (a, b) -> abs(a.contribution) >= abs(b.contribution) }, "strongest first")
         val onPage = items.getExplanation("site", "x1").body!!
         assertTrue(onPage.isNotEmpty() && onPage.all { it.features.isEmpty() }, "on a page $onPage")
@@ -377,9 +376,10 @@ class SiteTest {
         assertNull(pages.getPage("https://site.example/about").body!!.item)
         assertEquals(404, pages.getPage("https://nowhere.example/").statusCode.value())
 
-        // An error says what is wrong
-        val error = assertThrows<ResponseStatusException> { corrections.correctFacet("site", "x1", FacetCorrection(facet = "nope", added = true, key = "x")) }
-        assertTrue(error.reason!!.contains("nope"))
+        // An error says what is wrong: by the key of its words, filled with what was asked
+        val error = assertThrows<Refused> { corrections.correctFacet("site", "x1", FacetCorrection(facet = "nope", added = true, key = "x")) }
+        assertEquals("standard:error.noField", error.refusal.key)
+        assertEquals(mapOf("field" to "nope"), error.params)
     }
 
     @Test
@@ -489,6 +489,9 @@ class SiteTest {
         // Given or offered as the model's chance falls (above): when offered, no text of the work names it
         offered.find { it.key == "oc:male" }?.let { assertEquals(0, it.mentions) }
         assertEquals("Captain", offered.find { it.key == "fake:C2" }?.name ?: "Captain")
+        // The passages naming a character, each by where it is: the annotation by the key of its label
+        val quotes = suggestionsApi.getMentions("site", "n1", "characters", "fake:C2").body!!
+        assertTrue(quotes.isNotEmpty() && quotes.all { it.labelKey == "site:text.annotation" && it.title == null && it.part == null }, "quotes $quotes")
         assertEquals(404, suggestionsApi.getCandidates("site", "n1", "nope").statusCode.value())
 
         // A character is a work's main one or its secondary one: never shown, given or offered in both
@@ -509,6 +512,10 @@ class SiteTest {
         // The original characters are many persons: in both
         corrections.correctFacet("site", "n1", FacetCorrection(facet = "characters", added = true, key = "oc:female"))
         assertTrue("oc:female" in keysOf("secondary-characters") + candidatesOf("secondary-characters"))
+        // Shown by the key of its words; its name, which the model reads, stays one language
+        val ofc = items.getItem("site", "n1").body!!.allFacets.single { it.facet == "characters" }.propertyValues.single { it.key == "oc:female" }
+        assertEquals("standard:character.oc-female", ofc.nameKey)
+        assertEquals(UniverseFacet.ORIGINAL_CHARACTERS.getValue("oc:female"), ofc.name)
 
         // The universe of a fan fiction is worked out as its characters are: given when likely, offered first when not
         capture("f1|Fleet tales|space|Ships of the fleet|")
@@ -546,6 +553,10 @@ class SiteTest {
         corrections.correctFacet("site", "o1", FacetCorrection(facet = "kind", added = true, key = "alternative-history"))
         capture("o2|A school year|school|Lessons and friends|")
         corrections.correctFacet("site", "o2", FacetCorrection(facet = "kind", added = true, key = "realism"))
+        // A standard value is shown by its key
+        val kind = items.getItem("site", "o1").body!!.allFacets.single { it.facet == "kind" }.propertyValues.single { it.key == "alternative-history" }
+        assertEquals("standard:facet.kind.value.alternative-history", kind.nameKey)
+        assertTrue(items.listFacets("books").body!!.single { it.id == "kind" }.propertyValues.any { it.nameKey == "standard:facet.kind.value.realism" })
         suggestions.refresh(store)
         assertEquals(emptyList(), suggestionsApi.getCandidates("site", "o1", "universe").body!!.map { it.key })
         assertEquals(emptyList(), suggestionsApi.getCandidates("site", "o2", "universe").body!!.map { it.key })
@@ -658,7 +669,7 @@ class SiteTest {
         tagsApi.relateTags("books", TagRelationRequest(cargo, other, TagRelation.NONE))
         // A tag never under its own descendant: other under hulls under cargo, and cargo not under other
         tagsApi.relateTags("books", TagRelationRequest(cargo, hulls, TagRelation.CHILD))
-        assertThrows<ResponseStatusException> { tagsApi.relateTags("books", TagRelationRequest(other, cargo, TagRelation.CHILD)) }
+        assertEquals(Refusal.TAG_ABOVE, assertThrows<Refused> { tagsApi.relateTags("books", TagRelationRequest(other, cargo, TagRelation.CHILD)) }.refusal)
         tagsApi.relateTags("books", TagRelationRequest(cargo, hulls, TagRelation.NONE))
         // The parent taken away: the child goes with it, not shown at all
         corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = hulls))

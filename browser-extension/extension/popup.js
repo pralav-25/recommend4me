@@ -6,8 +6,8 @@ async function render() {
   const line = document.getElementById("status");
   line.className = status.ok ? "ok" : "error";
   line.textContent = status.ok
-    ? `Приложение на ${status.server} отвечает; источники: ${status.sources.join(", ") || "нет"}`
-    : `Приложение на ${status.server} не отвечает (${status.error}). Запущено ли оно?`;
+    ? t("popup.answers", { server: status.server, sources: status.sources.join(", ") || t("popup.noSources") })
+    : t("popup.silent", { server: status.server, error: status.error });
 
   const recent = await browser.runtime.sendMessage({ type: "recent" });
   const list = document.getElementById("recent");
@@ -15,29 +15,29 @@ async function render() {
   if (!recent.length) {
     const li = document.createElement("li");
     li.className = "muted";
-    li.textContent = "Пока ничего не отправлено";
+    li.textContent = t("popup.nothingSent");
     list.appendChild(li);
   }
   recent.forEach((entry) => {
     const li = document.createElement("li");
-    const time = new Date(entry.at).toLocaleTimeString();
+    const time = new Date(entry.at).toLocaleTimeString(r4mLocale());
     if (entry.error) {
       li.className = "error";
-      li.textContent = `${time} ${entry.url} — ошибка: ${entry.error}`;
+      li.textContent = t("popup.failed", { time, url: entry.url, error: entry.error });
     } else if (!entry.source) {
       li.className = "muted";
-      li.textContent = `${time} ${entry.url} — ни одному источнику не нужна`;
+      li.textContent = t("popup.unwanted", { time, url: entry.url });
     } else {
       const parts = entry.parts || [];
       const works = entry.items.map((i) => i.title).join(", ");
-      li.textContent = `${time} ${entry.source}: ${works || (parts.length ? "" : "ничего нового")}`;
+      li.textContent = `${time} ${entry.source}: ${works || (parts.length ? "" : t("popup.nothingNew"))}`;
       // Every chapter whose text went: its title and how long it is
       parts.forEach((p) => {
         const line = document.createElement("div");
         line.className = "part";
-        const title = p.title ? `«${p.title}»` : "глава без названия";
+        const title = p.title ? t("popup.partTitle", { title: p.title }) : t("popup.untitled");
         const of = p.itemTitle && !works.includes(p.itemTitle) ? ` (${p.itemTitle})` : "";
-        line.textContent = `текст ${title}${of}: ${p.length.toLocaleString("ru-RU")} знаков`;
+        line.textContent = t("popup.partText", { title, of, length: p.length.toLocaleString(r4mLocale()) });
         li.appendChild(line);
       });
     }
@@ -68,4 +68,8 @@ document.getElementById("app").addEventListener("click", async (e) => {
   browser.tabs.create({ url: server });
 });
 
-render();
+(async () => {
+  setLanguage((await loadSettings()).language);
+  translatePage();
+  render();
+})();

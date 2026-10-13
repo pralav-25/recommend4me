@@ -11,6 +11,10 @@ dependencies {
     api(libs.jooq)
     // The pages the sources read, and the helpers of PageText
     api(libs.jsoup)
+
+    // The check of a plugin's translations reads its JSON files
+    testFixturesImplementation(platform(libs.spring.boot.bom))
+    testFixturesImplementation(libs.jackson.kotlin)
 }
 
 base.archivesName = "recommend4me-plugin-api"

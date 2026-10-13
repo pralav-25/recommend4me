@@ -21,5 +21,8 @@ class UserScriptTest {
         // page.js runs on demand, watch.js and the stand-in of the background script beside it
         assertTrue("function runPage() {" in script && "function watchPage()" in script && "GM.xmlHttpRequest" in script)
         assertTrue(Files.readString(folder.resolve("page.js")).trim() in script)
+        // The extension's words before page.js, which calls them
+        val words = Files.readString(folder.resolve("i18n.js")).trim()
+        assertTrue(words in script && script.indexOf(words) < script.indexOf("function runPage() {"))
     }
 }

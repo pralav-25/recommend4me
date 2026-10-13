@@ -56,7 +56,7 @@ async function inject(tabId, url) {
   if (!decorate) return;
   try {
     await browser.scripting.insertCSS({ target: { tabId }, files: ["page.css"] });
-    await browser.scripting.executeScript({ target: { tabId }, files: ["page.js"] });
+    await browser.scripting.executeScript({ target: { tabId }, files: ["i18n.js", "page.js"] });
   } catch (e) {
     console.warn("recommend4me: cannot show the work on", url, e);
   }
@@ -118,11 +118,23 @@ async function capture(url, html, tabId) {
 }
 
 /**
- * A call of page.js to the application: only to its API, only from the extension's own scripts.
- * Answers {ok, status, data, error}: the body as JSON, or the "detail" of an error.
+ * Whether page.js may call the application at [path]: its API, and the reading of its words — the
+ * files of an i18n namespace, /i18n/<namespace>/<language>.json.
+ */
+function callable(method, path) {
+  if (typeof path !== "string") return false;
+  return path.startsWith("/api/") || ((method || "GET") === "GET" && /^\/i18n\/[\w.-]+\/[\w-]+\.json$/.test(path));
+}
+
+/**
+ * A call of page.js to the application: only to its API and its words, only from the extension's
+ * own scripts. Answers {ok, status, data, error, problem, unreachable}: the body as JSON; of an
+ * error the key of its words and their params ({code, params} of the Problem — the interface words
+ * it), "error" the detail or the HTTP status for the log; unreachable — the application did not
+ * answer at all.
  */
 async function call(message, sender) {
-  if (sender.id !== browser.runtime.id || typeof message.path !== "string" || !message.path.startsWith("/api/")) {
+  if (sender.id !== browser.runtime.id || !callable(message.method, message.path)) {
     return { ok: false, status: 0, error: "not allowed" };
   }
   const { server } = await loadSettings();
@@ -139,17 +151,26 @@ async function call(message, sender) {
     } catch (e) {
       data = null;
     }
-    if (!response.ok) return { ok: false, status: response.status, error: (data && data.detail) || `HTTP ${response.status}` };
+    if (!response.ok) return { ok: false, status: response.status, ...problemOf(data, response.status) };
     return { ok: true, status: response.status, data };
   } catch (e) {
-    return { ok: false, status: 0, error: "Приложение recommend4me не отвечает" };
+    return { ok: false, status: 0, error: String(e.message || e), unreachable: true };
   }
+}
+
+/** What an error's body says: the detail for the log, and the key of its words with their params when it has one. */
+function problemOf(data, status) {
+  return {
+    error: (data && data.detail) || `HTTP ${status}`,
+    problem: data && data.code ? { code: data.code, params: data.params || {} } : null,
+  };
 }
 
 browser.runtime.onMessage.addListener((message, sender) => {
   if (message.type === "capture") return capture(message.url, message.html, sender.tab && sender.tab.id);
   if (message.type === "api") return call(message, sender);
   if (message.type === "server") return loadSettings().then((s) => s.server);
+  if (message.type === "language") return loadSettings().then((s) => s.language);
   if (message.type === "recent") return Promise.resolve(recent);
   if (message.type === "status") return status();
   if (message.type === "send-now") return sendNow(message.tabId);

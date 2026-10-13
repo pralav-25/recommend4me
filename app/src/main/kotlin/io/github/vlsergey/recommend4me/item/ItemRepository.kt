@@ -68,10 +68,10 @@ class ItemRepository(
         db.select(HEAD).from(ITEM).fetchSize(2000).fetchLazy().use { cursor -> cursor.forEach { action(head(it)) } }
     }
 
-    /** What the list of a content type sorts and filters by, of every item: id, version, update. */
+    /** What the list of a content type sorts and filters by, of every item: id, version, update, when the application first saw it. */
     fun keys(): List<ItemKeys> =
-        db.select(ITEM.ITEM_ID, ITEM.VERSION, ITEM.UPDATED_AT).from(ITEM).fetchSize(5000)
-            .fetch { ItemKeys(it.value1()!!, it.value2()!!, it.value3()!!) }
+        db.select(ITEM.ITEM_ID, ITEM.VERSION, ITEM.UPDATED_AT, ITEM.FIRST_SEEN_AT).from(ITEM).fetchSize(5000)
+            .fetch { ItemKeys(it.value1()!!, it.value2()!!, it.value3()!!, it.value4()!!) }
 
     fun count(): Int = db.fetchCount(ITEM)
 
@@ -339,4 +339,4 @@ class ItemRepository(
 }
 
 /** What the list sorts and filters by. */
-data class ItemKeys(val id: String, val version: String, val updatedAt: Instant)
+data class ItemKeys(val id: String, val version: String, val updatedAt: Instant, val firstSeenAt: Instant)

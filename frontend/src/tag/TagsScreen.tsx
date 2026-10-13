@@ -18,6 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
+import { typeTitle } from "@/contenttype/types";
+import { sourceTitle } from "@/i18n/label";
 import { usePref } from "@/lib/usePref";
 import { cn } from "@/lib/utils";
 import { followLink, screenHref } from "@/screen/screens";
@@ -37,10 +39,6 @@ const SIMILAR = 30;
 /** The key of the words saying how a tag's name was chosen. */
 function ruleKey(rule: TagNameRule) {
   return `Rule.${rule}` as const;
-}
-
-function sourceTitle(type: ContentTypeInfo, id: string): string {
-  return type.sources.find((s) => s.id === id)?.title ?? id;
 }
 
 /** The sites a tag is used on, each once. */
@@ -67,7 +65,7 @@ export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected
       ) : (
         <div className="hidden flex-col gap-2 text-sm text-muted-foreground lg:flex">
           <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
-            <TagsIcon className="size-5" /> {t("TagsScreen.title", { type: type.title.toLowerCase() })}
+            <TagsIcon className="size-5" /> {t("TagsScreen.title", { type: typeTitle(type.id).toLowerCase() })}
           </h1>
           <p>{t("TagsScreen.intro")}</p>
           <p>{t("TagsScreen.nameRule")}</p>
@@ -124,7 +122,7 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
                   <CombineIcon /> {row.variants.length}
                 </Badge>
               )}
-              <span className="text-xs text-muted-foreground">{sitesOf(row).map((s) => sourceTitle(type, s)).join(", ")}</span>
+              <span className="text-xs text-muted-foreground">{sitesOf(row).map((s) => sourceTitle(s)).join(", ")}</span>
               <span className="w-10 text-right text-xs tabular-nums text-muted-foreground" title={t("TagList.works")}>
                 {row.works}
               </span>
@@ -181,7 +179,7 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
           </header>
           <TagName type={type} tag={found} />
           <Related tag={found} />
-          <Variants type={type} tag={found} />
+          <Variants tag={found} />
           <Similar type={type} tag={found} />
         </>
       )}
@@ -256,7 +254,7 @@ function TagName({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
 }
 
 /** The sites' tags bound to the tag, as the sites write them, with their works. */
-function Variants({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+function Variants({ tag }: { tag: TagInfo }) {
   const { t } = useTranslation("tag");
   return (
     <section className="flex flex-col gap-1.5 text-sm">
@@ -278,7 +276,7 @@ function Variants({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
         <tbody>
           {tag.variants.map((v) => (
             <tr key={`${v.source}/${v.tag}`} className="border-t">
-              <td className="py-1 pr-2 text-muted-foreground">{sourceTitle(type, v.source)}</td>
+              <td className="py-1 pr-2 text-muted-foreground">{sourceTitle(v.source)}</td>
               <td className="py-1 pr-2">{v.name}</td>
               <td className="py-1 pl-3 text-right tabular-nums">{v.works}</td>
               <td className="hidden py-1 pl-3 text-right tabular-nums sm:table-cell">{v.graded}</td>
@@ -547,13 +545,13 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                     href={screenHref({ kind: "tags", tag: s.key })}
                     onClick={(e) => followLink(e, { kind: "tags", tag: s.key })}
                     className="break-words underline-offset-2 hover:underline"
-                    title={s.variants.map((v) => `${sourceTitle(type, v.source)}: ${v.name}`).join(" · ")}
+                    title={s.variants.map((v) => `${sourceTitle(v.source)}: ${v.name}`).join(" · ")}
                   >
                     {s.name}
                   </a>
                 )}
                 <span className="truncate text-xs text-muted-foreground">
-                  {site ? t("Similar.siteTagOf", { site: sourceTitle(type, site.source) }) : sitesOf(s).map((x) => sourceTitle(type, x)).join(", ")}
+                  {site ? t("Similar.siteTagOf", { site: sourceTitle(site.source) }) : sitesOf(s).map((x) => sourceTitle(x)).join(", ")}
                 </span>
               </div>
               <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">

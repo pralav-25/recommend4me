@@ -1,15 +1,12 @@
 package io.github.vlsergey.recommend4me.universe
 
 import io.github.vlsergey.recommend4me.correction.Corrected
-import io.github.vlsergey.recommend4me.i18n.Label
-import io.github.vlsergey.recommend4me.i18n.text
+import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.source.SourceStore
+import io.github.vlsergey.recommend4me.work.TextPlace
 
-/** The name of a chapter without a title of its own, by its number. */
-private val CHAPTER = Label("Chapter %d", "Глава %d", "Poglavlje %d")
-
-/** A text of a work and where in the work it is, in the language of the request: "Summary", "Characters on the site", "Chapter 3. The meeting". */
-class WorkText(val place: String, val text: String)
+/** A text of a work and where in the work it is: the summary, the site's line of characters, chapter 3. */
+class WorkText(val place: TextPlace, val text: String)
 
 /** The names of values of a facet: of the facet, of the keys asked for at least. */
 typealias FacetNames = (facet: String, keys: Collection<String>) -> Map<String, String>
@@ -26,13 +23,16 @@ fun SourceStore.workTexts(itemId: String, names: FacetNames = items::facetNames)
  */
 fun SourceStore.workPassages(itemId: String, names: FacetNames = items::facetNames): Sequence<WorkText> {
     val chapters = ArrayList<WorkText>()
-    parts.forEachContent(itemId) { title, content -> chapters += WorkText(title?.takeIf { it.isNotBlank() } ?: CHAPTER.text().format(chapters.size + 1), content) }
-    val labels = schema.texts.associate { it.key to it.label.text() }
-    val facetLabels = schema.facets.associate { it.key to it.label.text() }
-    val values = items.facets(itemId).flatMap { (facet, keys) ->
-        names(facet, keys).let { named -> keys.mapNotNull { named[it] } }.map { WorkText(facetLabels[facet] ?: facet, it) }
+    parts.forEachContent(itemId) { title, content ->
+        val place = title?.takeIf { it.isNotBlank() }?.let { TextPlace(title = it) } ?: TextPlace(part = chapters.size + 1)
+        chapters += WorkText(place, content)
     }
-    return Corrected.texts(items.texts(itemId), corrections.fieldsOf(itemId)).map { (key, text) -> WorkText(labels[key] ?: key, text) }.asSequence() +
+    val facetLabels = schema.facets.associate { it.key to I18nKeys.facetLabel(id, it) }
+    val values = items.facets(itemId).flatMap { (facet, keys) ->
+        names(facet, keys).let { named -> keys.mapNotNull { named[it] } }.map { WorkText(TextPlace(labelKey = facetLabels[facet]), it) }
+    }
+    return Corrected.texts(items.texts(itemId), corrections.fieldsOf(itemId))
+        .map { (key, text) -> WorkText(TextPlace(labelKey = I18nKeys.textLabel(id, key)), text) }.asSequence() +
         values.asSequence() + chapters.asSequence()
 }
 

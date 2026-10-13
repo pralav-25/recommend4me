@@ -4,15 +4,15 @@ import io.github.vlsergey.recommend4me.api.CorrectionsApi
 import io.github.vlsergey.recommend4me.api.model.FieldCorrection
 import io.github.vlsergey.recommend4me.api.model.ItemDetails
 import io.github.vlsergey.recommend4me.api.model.ItemRef
-import io.github.vlsergey.recommend4me.i18n.Label
-import io.github.vlsergey.recommend4me.i18n.failure
-import io.github.vlsergey.recommend4me.i18n.text
+import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.item.ItemDetailsReader
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.interest.LinkedInterest
 import io.github.vlsergey.recommend4me.rating.LinkedGrades
+import io.github.vlsergey.recommend4me.refusal.Refusal
+import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
@@ -27,11 +27,12 @@ import io.github.vlsergey.recommend4me.api.model.FacetCorrection as ApiFacetCorr
 
 private val log = LoggerFactory.getLogger(CorrectionsController::class.java)
 
-private val NO_FIELD = Label("The source has no field “%s”", "У источника нет поля «%s»", "Izvor nema polje „%s”")
-private val SITE_FIELD = Label(
-    "The field “%s” is the site's word, it is not corrected",
-    "Поле «%s» — слово сайта, оно не исправляется",
-    "Polje „%s” je reč sajta, ono se ne ispravlja",
+private fun noField(store: SourceStore, field: String) =
+    Refusal.NO_FIELD.refuse(HttpStatus.BAD_REQUEST, "The source ${store.id} has no field '$field'", "field" to field)
+
+/** The site's word is shown and read as it is: only the application's layer over it is corrected. */
+private fun siteField(store: SourceStore, def: FacetDef) = Refusal.SITE_FIELD.refuse(
+    HttpStatus.BAD_REQUEST, "The field '${def.key}' of ${store.id} is the site's word, it is not corrected", "field" to I18nKeys.facetLabel(store.id, def),
 )
 
 /**
@@ -77,13 +78,13 @@ class CorrectionsController(
     override fun correctFacet(source: String, item: String, facetCorrection: ApiFacetCorrection): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
         val c = facetCorrection
-        val def = store.schema.facet(c.facet) ?: throw failure(HttpStatus.BAD_REQUEST, NO_FIELD, c.facet)
+        val def = store.schema.facet(c.facet) ?: throw noField(store, c.facet)
         // The site's word is shown and read as it is: only the application's layer over it is corrected
-        if (!def.editable) throw failure(HttpStatus.BAD_REQUEST, SITE_FIELD, def.label.text())
+        if (!def.editable) throw siteField(store, def)
         val name = c.name?.trim()?.takeIf { it.isNotEmpty() }
         val key = c.key?.trim()?.takeIf { it.isNotEmpty() }
             ?: name?.let { FacetValues.keyOf(store, c.facet, it) }
-            ?: throw failure(HttpStatus.BAD_REQUEST, Label("No value given", "Не указано значение", "Vrednost nije navedena"))
+            ?: throw Refusal.NO_VALUE.refuse(HttpStatus.BAD_REQUEST, "Neither a key nor a name of a value of '${c.facet}' given")
         // The next likeliest values of the facet are offered at once
         return answered(store, item, c.facet) {
             // A name is kept for a value the site does not name: one the user made up
@@ -108,14 +109,14 @@ class CorrectionsController(
     /** The user's word that the item's values of the [facet] are all named, or its taking back; the facet's chances made current at once. */
     private fun complete(source: String, item: String, facet: String, complete: Boolean): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
-        val def = store.schema.facet(facet) ?: throw failure(HttpStatus.BAD_REQUEST, NO_FIELD, facet)
-        if (!def.editable) throw failure(HttpStatus.BAD_REQUEST, SITE_FIELD, def.label.text())
+        val def = store.schema.facet(facet) ?: throw noField(store, facet)
+        if (!def.editable) throw siteField(store, def)
         return answered(store, item, facet) { store.corrections.setComplete(item, facet, complete, Instant.now()) }
     }
 
     override fun correctField(source: String, item: String, field: String, fieldCorrection: FieldCorrection): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
-        if (!knownField(store, field)) throw failure(HttpStatus.BAD_REQUEST, NO_FIELD, field)
+        if (!knownField(store, field)) throw noField(store, field)
         store.corrections.setField(item, field, fieldCorrection.content, Instant.now())
         return corrected(store, item)
     }
@@ -137,12 +138,12 @@ class CorrectionsController(
     override fun linkItem(source: String, item: String, itemRef: ItemRef): ResponseEntity<ItemDetails> {
         val store = itemOf(source, item) ?: return ResponseEntity.notFound().build()
         val other = itemOf(itemRef.source, itemRef.item)
-            ?: throw failure(HttpStatus.BAD_REQUEST, Label("There is no such work", "Такой работы нет", "Takvo delo ne postoji"))
+            ?: throw Refusal.NO_SUCH_WORK.refuse(HttpStatus.BAD_REQUEST, "There is no work ${itemRef.source}/${itemRef.item}")
         if (other.type != store.type) {
-            throw failure(HttpStatus.BAD_REQUEST, Label("Works of different types cannot be joined", "Работы разного типа нельзя склеить", "Dela različitih vrsta ne mogu da se spoje"))
+            throw Refusal.JOIN_TYPES.refuse(HttpStatus.BAD_REQUEST, "A work of ${store.type} is not joined with one of ${other.type}")
         }
         if (other.id == store.id && itemRef.item == item) {
-            throw failure(HttpStatus.BAD_REQUEST, Label("A work cannot be joined with itself", "Работу нельзя склеить с ней самой", "Delo ne može da se spoji samo sa sobom"))
+            throw Refusal.JOIN_SELF.refuse(HttpStatus.BAD_REQUEST, "The work $source/$item is not joined with itself")
         }
         if (other.id == store.id) store.corrections.link(item, itemRef.item, Instant.now())
         else stores.typeOf(source).links.link(ItemKey(source, item), ItemKey(itemRef.source, itemRef.item), Instant.now())

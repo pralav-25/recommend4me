@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.scorer
 
-import io.github.vlsergey.recommend4me.i18n.Label
 import io.github.vlsergey.recommend4me.matrix.Matrix
 
 /**
@@ -36,11 +35,8 @@ class RankingTask(val x: Matrix, val grades: IntArray, val works: LongArray, val
  * cautious — whose quality is within one standard error of the best.
  */
 interface Scorer {
-    /** Stable: kept with the trained model. */
+    /** Stable: kept with the trained model; and the namespace of its title, which the plugin carries ([I18nKeys][io.github.vlsergey.recommend4me.i18n.I18nKeys]). */
     val id: String
-
-    /** The name shown to the user. */
-    val title: Label
 
     /** The values of the parameter, the most cautious first. */
     val candidates: List<Double>

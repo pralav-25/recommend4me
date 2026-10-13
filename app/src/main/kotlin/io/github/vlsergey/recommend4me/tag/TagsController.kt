@@ -12,23 +12,20 @@ import io.github.vlsergey.recommend4me.api.model.TagRef
 import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
 import io.github.vlsergey.recommend4me.api.model.TagRelation as ApiTagRelation
 import io.github.vlsergey.recommend4me.api.model.TagVariantInfo
-import io.github.vlsergey.recommend4me.i18n.Label
-import io.github.vlsergey.recommend4me.i18n.failure
+import io.github.vlsergey.recommend4me.refusal.Refusal
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
-import org.springframework.web.server.ResponseStatusException
 
 @RestController
 class TagsController(private val stores: Stores, private val tags: Tags) : TagsApi {
 
     /** The type and its facet of free tags; 404 for a type without one. */
     private fun of(typeId: String): Pair<TypeStore, String> {
-        val type = stores.type(typeId) ?: throw failure(HttpStatus.NOT_FOUND, Label("There is no such type", "Нет такого типа", "Takva vrsta ne postoji"))
-        val facet = tags.facetOf(type)
-            ?: throw failure(HttpStatus.NOT_FOUND, Label("This type has no site tags", "У этого типа нет тегов сайтов", "Ova vrsta nema tagove sajtova"))
+        val type = stores.type(typeId) ?: throw Refusal.NO_SUCH_TYPE.refuse(HttpStatus.NOT_FOUND, "There is no type '$typeId'")
+        val facet = tags.facetOf(type) ?: throw Refusal.NO_SITE_TAGS.refuse(HttpStatus.NOT_FOUND, "The type $typeId has no site tags")
         return type to facet
     }
 
@@ -62,11 +59,7 @@ class TagsController(private val stores: Stores, private val tags: Tags) : TagsA
     override fun relateTags(type: String, tagRelationRequest: TagRelationRequest): ResponseEntity<TagInfo> {
         val (t, facet) = of(type)
         val r = tagRelationRequest
-        val related = try {
-            tags.relate(t, facet, r.tag, r.other, TagRelation.valueOf(r.relation.name))
-        } catch (e: IllegalArgumentException) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, e.message)
-        }
+        val related = tags.relate(t, facet, r.tag, r.other, TagRelation.valueOf(r.relation.name))
         return related?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 

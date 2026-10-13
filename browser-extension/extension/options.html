@@ -1,25 +1,33 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>recommend4me — настройки</title>
+  <title data-i18n="options.title">recommend4me — settings</title>
   <link rel="stylesheet" href="popup.css">
   <style>body { width: auto; max-width: 560px; } input[type=text] { width: 100%; padding: 4px; }</style>
 </head>
 <body>
   <h1>recommend4me</h1>
   <p>
-    <label for="server">Адрес приложения</label><br>
+    <label for="server" data-i18n="options.server"></label><br>
     <input type="text" id="server" placeholder="http://127.0.0.1:8095">
   </p>
-  <p><label><input type="checkbox" id="enabled"> Отправлять страницы (режим слежения)</label></p>
-  <p><label><input type="checkbox" id="decorate"> Показывать на страницах сайтов прогноз, оценку, теги и подсказки</label></p>
-  <button id="save">Сохранить</button>
-  <p id="saved" class="ok"></p>
-  <p class="muted">
-    Расширение отправляет приложению только страницы тех сайтов, которые нужны его источникам —
-    список адресов оно берёт у самого приложения. Другие страницы никуда не уходят.
+  <p><label><input type="checkbox" id="enabled"> <span data-i18n="options.enabled"></span></label></p>
+  <p><label><input type="checkbox" id="decorate"> <span data-i18n="options.decorate"></span></label></p>
+  <p>
+    <label for="language" data-i18n="options.language"></label><br>
+    <!-- The languages by their own names: the same in every language -->
+    <select id="language">
+      <option value="" data-i18n="options.languageBrowser"></option>
+      <option value="en">English</option>
+      <option value="ru">Русский</option>
+      <option value="sr">Srpski</option>
+    </select>
   </p>
+  <button id="save" data-i18n="options.save"></button>
+  <p id="saved" class="ok"></p>
+  <p class="muted" data-i18n="options.privacy"></p>
+  <script src="i18n.js"></script>
   <script src="settings.js"></script>
   <script src="options.js"></script>
 </body>

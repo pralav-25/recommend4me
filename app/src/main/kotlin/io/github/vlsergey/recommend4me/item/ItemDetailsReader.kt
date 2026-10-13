@@ -1,6 +1,6 @@
 package io.github.vlsergey.recommend4me.item
 
-import io.github.vlsergey.recommend4me.i18n.text
+import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.api.model.FeatureContribution
 import io.github.vlsergey.recommend4me.api.model.ItemDetails
 import io.github.vlsergey.recommend4me.api.model.NumberValue
@@ -16,8 +16,8 @@ import io.github.vlsergey.recommend4me.api.model.ReviewMatch
 import io.github.vlsergey.recommend4me.api.model.TextValue
 import io.github.vlsergey.recommend4me.correction.Corrected
 import io.github.vlsergey.recommend4me.mark.MarkKind
-import io.github.vlsergey.recommend4me.model.Contribution
 import io.github.vlsergey.recommend4me.model.ContributionGroup
+import io.github.vlsergey.recommend4me.model.LabelledContribution
 import io.github.vlsergey.recommend4me.api.model.ContributionGroup as ApiContributionGroup
 import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.plugin.Plugins
@@ -28,10 +28,13 @@ import io.github.vlsergey.recommend4me.work.Works
 import org.springframework.stereotype.Component
 import java.time.ZoneOffset
 
-fun Contribution.toApi() = FeatureContribution(feature = feature, label = label, contribution = contribution, present = present)
+fun LabelledContribution.toApi() = FeatureContribution(
+    feature = contribution.feature, labelKey = label.labelKey, value = label.value, valueKey = label.valueKey,
+    contribution = contribution.contribution, present = contribution.present,
+)
 
 fun ContributionGroup.toApi(withFeatures: Boolean = true) =
-    ApiContributionGroup(part = part, label = label, contribution = contribution, features = if (withFeatures) features.map { it.toApi() } else emptyList())
+    ApiContributionGroup(part = part, labelKey = labelKey, contribution = contribution, features = if (withFeatures) features.map { it.toApi() } else emptyList())
 
 /** Everything the dialog of a work shows. */
 @Component
@@ -60,7 +63,7 @@ class ItemDetailsReader(
         if (withChances) suggestions.ensureFor(store, key.id)
         val chances = store.suggestions.ofItems(listOf(key.id))[key.id]
         val names = schema.facets.associate { def ->
-            def.key to store.shownNames(
+            def.key to store.names(
                 def.key,
                 site[def.key].orEmpty() + corrections.filter { it.facet == def.key }.map { it.key } + chances?.get(def.key)?.keys.orEmpty(),
             )
@@ -88,10 +91,10 @@ class ItemDetailsReader(
             titleCorrected = Corrected.TITLE in fields,
             allFacets = cards.facets(store, site, chances, corrections, names, texts, complete = store.corrections.completeOf(key.id)) { true },
             texts = schema.texts.filter { it.key !in originals }.mapNotNull { def ->
-                texts[def.key]?.let { TextValue(def.key, def.label.text(), it, def.spoiler, Corrected.textField(def.key) in fields) }
+                texts[def.key]?.let { TextValue(def.key, I18nKeys.textLabel(store.id, def.key), it, def.spoiler, Corrected.textField(def.key) in fields) }
             },
             allNumbers = schema.numbers.mapNotNull { def ->
-                numbers[def.key]?.let { NumberValue(def.key, def.label.text(), it, Corrected.numberField(def.key) in fields) }
+                numbers[def.key]?.let { NumberValue(def.key, I18nKeys.numberLabel(store.id, def), it, Corrected.numberField(def.key) in fields) }
             },
             // Of a graded work, what a model that had not seen it says is read apart (heldOut): it is
             // fitted for the asking, and every correction would wait a second or more for it
@@ -172,7 +175,7 @@ class ItemDetailsReader(
                 val items = cards.cards(type, ids.map { ItemKey(store.id, it) }).sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
                 // A value the user added is named as they wrote it
                 val name = names[def.key]?.get(value) ?: own.firstNotNullOfOrNull { c -> c.name.takeIf { c.key == value && c.added } } ?: value
-                RelatedWorks(facet = def.key, label = def.label.text(), role = roles.getValue(def.role!!), value = value, name = name, items = items)
+                RelatedWorks(facet = def.key, labelKey = I18nKeys.facetLabel(store.id, def), role = roles.getValue(def.role!!), value = value, name = name, items = items)
             }
         }
     }

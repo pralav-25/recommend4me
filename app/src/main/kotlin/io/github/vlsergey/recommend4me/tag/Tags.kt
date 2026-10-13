@@ -1,7 +1,7 @@
 package io.github.vlsergey.recommend4me.tag
 
-import io.github.vlsergey.recommend4me.i18n.Label
-import io.github.vlsergey.recommend4me.i18n.text
+import io.github.vlsergey.recommend4me.refusal.Refusal
+import org.springframework.http.HttpStatus
 import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.rating.Grades
@@ -252,7 +252,7 @@ class Tags(
      * under one of its own descendants or ancestors.
      */
     fun relate(type: TypeStore, facet: String, tag: String, other: String, relation: TagRelation): NamedTag? {
-        require(tag != other) { Label("A tag cannot be linked with itself", "Тег не может быть связан сам с собой", "Tag ne može da se poveže sam sa sobom").text() }
+        if (tag == other) throw Refusal.TAG_SELF.refuse(HttpStatus.BAD_REQUEST, "The tag $tag is not related to itself")
         val a = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
         val b = TagRepository.idOf(other)?.takeIf(type.tags::exists) ?: return null
         val before = stats(type, facet)
@@ -267,22 +267,14 @@ class Tags(
                 type.sources.forEach { s -> s.corrections.moveFacetValues(facet, listOf(other), tag) }
             }
             TagRelation.CHILD -> {
-                require(other !in hierarchy.ancestors(tag)) {
-                    Label(
-                        "This tag is above already — as a child tag it would be its own parent",
-                        "Этот тег уже выше — подтегом он стал бы своим же надтегом",
-                        "Ovaj tag je već iznad — kao podređeni bio bi sopstveni nadređeni",
-                    ).text()
+                if (other in hierarchy.ancestors(tag)) {
+                    throw Refusal.TAG_ABOVE.refuse(HttpStatus.BAD_REQUEST, "The tag $other is above $tag already: as its child it would be its own parent")
                 }
                 type.tags.setParent(b, a, true, now)
             }
             TagRelation.PARENT -> {
-                require(other !in hierarchy.descendants(tag)) {
-                    Label(
-                        "This tag is below already — as a parent tag it would be its own child",
-                        "Этот тег уже ниже — надтегом он стал бы своим же подтегом",
-                        "Ovaj tag je već ispod — kao nadređeni bio bi sopstveni podređeni",
-                    ).text()
+                if (other in hierarchy.descendants(tag)) {
+                    throw Refusal.TAG_BELOW.refuse(HttpStatus.BAD_REQUEST, "The tag $other is below $tag already: as its parent it would be its own child")
                 }
                 type.tags.setParent(a, b, true, now)
             }

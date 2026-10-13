@@ -1,6 +1,6 @@
 package io.github.vlsergey.recommend4me.item
 
-import io.github.vlsergey.recommend4me.i18n.text
+import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.api.model.FacetFilter
 import io.github.vlsergey.recommend4me.api.model.FacetValueUse
 import io.github.vlsergey.recommend4me.api.model.ItemPage
@@ -20,7 +20,8 @@ import java.time.Instant
 import kotlin.math.abs
 
 enum class ItemView { UNRATED, RATED, ALL }
-enum class ItemOrder { SCORE, UPDATED, NUMBER, SURPRISE }
+/** The orders of the list; ADDED — the newest in the application first, by when it first saw the work. */
+enum class ItemOrder { SCORE, UPDATED, ADDED, NUMBER, SURPRISE }
 
 /**
  * What a filter facet shows: a work with a value [shown] — when given, those alone, every other
@@ -75,7 +76,7 @@ class ItemList(
      * One row of the list before its card is read; [expected] — the prediction times the chance of
      * interest — is what the list is sorted by first, [number] what it is sorted by otherwise.
      */
-    private class Row(val key: ItemKey, val updatedAt: Instant, val graded: Boolean, val prediction: Double?, val expected: Double?, val number: Double?)
+    private class Row(val key: ItemKey, val updatedAt: Instant, val firstSeenAt: Instant, val graded: Boolean, val prediction: Double?, val expected: Double?, val number: Double?)
 
     fun page(
         typeId: String,
@@ -134,7 +135,7 @@ class ItemList(
                 // The score as the scale shows it — below its 0 it is 0: a chance multiplying a negative
                 // score would put the likelier interesting work lower. Equal, the prediction decides
                 val expected = p?.let { if (chance != null) it.score.coerceAtLeast(0.0) * chance else it.score }
-                rows += Row(key, k.updatedAt, k.id in grades, p?.score, expected, numbers[k.id] ?: surprises[k.id])
+                rows += Row(key, k.updatedAt, k.firstSeenAt, k.id in grades, p?.score, expected, numbers[k.id] ?: surprises[k.id])
             }
         }
         // An item is graded by its own grade: a linked one has the work's written to it ([LinkedGrades][io.github.vlsergey.recommend4me.rating.LinkedGrades])
@@ -154,12 +155,13 @@ class ItemList(
             )
             order == ItemOrder.NUMBER || order == ItemOrder.SURPRISE ->
                 viewed.sortedWith(compareByDescending<Row> { it.number ?: Double.NEGATIVE_INFINITY }.thenByDescending { it.updatedAt })
+            order == ItemOrder.ADDED -> viewed.sortedWith(compareByDescending<Row> { it.firstSeenAt }.thenByDescending { it.updatedAt })
             else -> viewed.sortedByDescending { it.updatedAt }
         }
         val pageKeys = sorted.drop(offset.coerceAtLeast(0)).take(limit.coerceIn(1, 500)).map { it.key }
         val matches = found?.let { search.matches(typeId, it, pageKeys) }.orEmpty()
         val judged = found?.let { type.searchJudgments.of(it.line) }.orEmpty()
-        return ItemPage(total = sorted.size, items = cards.cards(type, pageKeys, matches, clusters, judged))
+        return ItemPage(total = sorted.size, items = cards.cards(type, pageKeys, matches, search.places(matches), clusters, judged))
     }
 
     /** The values of the number [numberId] (shared, or "<source>.<key>") of the source's items, as the user corrected them; null when the source has no such number. */
@@ -201,9 +203,10 @@ class ItemList(
     /** The filter facets of a content type: their values with how many works have each, and the works with none. */
     fun facets(typeId: String): List<FacetFilter> {
         val type = stores.type(typeId) ?: return emptyList()
-        class Group(val label: String, val noneLabel: String?) {
+        class Group(val labelKey: String, val noneLabelKey: String?) {
             val uses = HashMap<String, Int>()
             val names = HashMap<String, String>()
+            val nameKeys = HashMap<String, String>()
             var with = 0
         }
         val groups = LinkedHashMap<String, Group>()
@@ -212,22 +215,25 @@ class ItemList(
             total += s.items.count()
             val corrections = s.corrections.allFacets().groupBy { it.itemId }
             s.schema.facets.filter { it.filter }.forEach { def ->
-                val group = groups.getOrPut(filterId(s, def)) { Group(def.label.text(), def.noneLabel?.text()) }
+                val group = groups.getOrPut(filterId(s, def)) {
+                    Group(I18nKeys.facetLabel(s.id, def), if (def.none) I18nKeys.facetNoneLabel(s.id, def) else null)
+                }
                 valuesOf(s, def, corrections).values.forEach { keys ->
                     if (keys.isNotEmpty()) group.with++
                     keys.forEach { group.uses.merge(it, 1, Int::plus) }
                 }
-                group.names += s.shownNames(def.key, group.uses.keys)
+                group.names += s.names(def.key, group.uses.keys)
+                group.uses.keys.forEach { key -> s.nameKey(def.key, key)?.let { group.nameKeys.putIfAbsent(key, it) } }
                 corrections.values.flatten().filter { it.facet == def.key && it.name != null }.forEach { group.names.putIfAbsent(it.key, it.name!!) }
             }
         }
         return groups.map { (id, g) ->
             FacetFilter(
                 id = id,
-                label = g.label,
-                noneLabel = g.noneLabel,
+                labelKey = g.labelKey,
+                noneLabelKey = g.noneLabelKey,
                 itemsWithout = total - g.with,
-                propertyValues = g.uses.entries.sortedByDescending { it.value }.map { (key, n) -> FacetValueUse(key, g.names[key] ?: key, n) },
+                propertyValues = g.uses.entries.sortedByDescending { it.value }.map { (key, n) -> FacetValueUse(key, g.names[key] ?: key, n, g.nameKeys[key]) },
             )
         }
     }

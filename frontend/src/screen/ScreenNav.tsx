@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { ContentTypeInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { typeIcon } from "@/contenttype/types";
+import { typeIcon, typeTitle } from "@/contenttype/types";
 import { LanguageBarMenu, LanguageSubmenu } from "@/i18n/LanguageMenu";
 import { cn } from "@/lib/utils";
 import { ModelLabel } from "@/model/ModelDialog";
@@ -46,10 +46,10 @@ function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFun
         typeId: tp.id,
         label: (
           <>
-            <Icon /> {tp.title}
+            <Icon /> {typeTitle(tp.id)}
           </>
         ),
-        title: t("Menu.works.title", { type: tp.title }),
+        title: t("Menu.works.title", { type: typeTitle(tp.id) }),
         active: screen.kind === "works" && tp.id === type.id,
       };
     }),
@@ -78,7 +78,7 @@ function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFun
           <TagsIcon /> {t("Menu.tags")}
         </>
       ),
-      title: t("Menu.tags.title", { type: type.title.toLowerCase() }),
+      title: t("Menu.tags.title", { type: typeTitle(type.id).toLowerCase() }),
       active: screen.kind === "tags",
     },
     { key: "model", open: onModel, label: <ModelLabel type={type} />, title: t("Menu.model.title"), active: false },

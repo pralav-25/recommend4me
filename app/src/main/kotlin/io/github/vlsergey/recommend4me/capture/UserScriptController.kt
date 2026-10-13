@@ -1,7 +1,6 @@
 package io.github.vlsergey.recommend4me.capture
 
-import io.github.vlsergey.recommend4me.i18n.Label
-import io.github.vlsergey.recommend4me.i18n.text
+import io.github.vlsergey.recommend4me.refusal.Refusal
 import io.github.vlsergey.recommend4me.source.Stores
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.beans.factory.annotation.Value
@@ -15,12 +14,9 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 
-/** What the script says it does, in the language of the request it is installed by; %s — the application's address. */
-private val DESCRIPTION = Label(
-    "Sends the open pages of books and games to the recommend4me application (%s) and shows the prediction, the grade, the tags and the hints on them",
-    "Отправляет открытые страницы книг и игр в приложение recommend4me (%s) и показывает на них прогноз, оценку, теги и подсказки",
-    "Šalje otvorene stranice knjiga i igara aplikaciji recommend4me (%s) i na njima prikazuje predviđanje, ocenu, tagove i savete",
-)
+/** What the script says it does — metadata of the script, not words of the interface; %s — the application's address. */
+private const val DESCRIPTION =
+    "Sends the open pages of books and games to the recommend4me application (%s) and shows the prediction, the grade, the tags and the hints on them"
 
 /**
  * THE USERSCRIPT FOR SAFARI ON THE IPAD — the browser tracking and the site as the application's
@@ -40,14 +36,15 @@ class UserScriptController(
     @Value("\${recommend4me.extension-dir:}") private val extensionDir: String,
 ) {
 
-    @GetMapping("/userscript/recommend4me.user.js", produces = ["application/javascript;charset=utf-8"])
+    // Not "produces": a refusal is answered as a problem, in JSON
+    @GetMapping("/userscript/recommend4me.user.js")
     fun userScript(request: HttpServletRequest): ResponseEntity<String> {
         val folder = extensionDir.takeIf { it.isNotBlank() }?.let { Path.of(it).toAbsolutePath().normalize() }
             ?.takeIf { Files.isRegularFile(it.resolve("page.js")) }
-            ?: return ResponseEntity.status(HttpStatus.NOT_FOUND).contentType(MediaType.TEXT_PLAIN).body(Label("There is no extension folder", "Нет папки расширения", "Nema fascikle proširenja").text())
+            ?: throw Refusal.NO_EXTENSION_FOLDER.refuse(HttpStatus.NOT_FOUND, "There is no extension folder (recommend4me.extension-dir): '$extensionDir'")
         // Every page of the hosts of the sources: the script asks the application which it wants
         val hosts = stores.sources.mapNotNull { s -> runCatching { URI(s.source.homepage).host?.removePrefix("www.") }.getOrNull() }.distinct()
-        return ResponseEntity.ok().header("Cache-Control", "no-store").body(assemble(folder, serverOf(request), hosts, json))
+        return ResponseEntity.ok().header("Cache-Control", "no-store").contentType(SCRIPT).body(assemble(folder, serverOf(request), hosts, json))
     }
 
     /** The address the script was asked for at: the proxy's name and scheme when there is one. */
@@ -59,6 +56,8 @@ class UserScriptController(
     }
 
     companion object {
+        private val SCRIPT = MediaType.parseMediaType("application/javascript;charset=utf-8")
+
         /** The script of the extension's [folder] calling the application at [server], run on the pages of [hosts]. */
         fun assemble(folder: Path, server: String, hosts: List<String>, json: JsonMapper): String {
             fun read(name: String) = Files.readString(folder.resolve(name))
@@ -68,7 +67,7 @@ class UserScriptController(
                 appendLine("// @name         recommend4me")
                 appendLine("// @namespace    https://github.com/vlsergey/recommend4me")
                 appendLine("// @version      $version")
-                appendLine("// @description  " + DESCRIPTION.text().format(server))
+                appendLine("// @description  " + DESCRIPTION.format(server))
                 hosts.forEach { host ->
                     appendLine("// @match        *://$host/*")
                     appendLine("// @match        *://*.$host/*")
@@ -82,6 +81,8 @@ class UserScriptController(
                 appendLine("(() => {")
                 appendLine("const R4M_SERVER = ${json.writeValueAsString(server)};")
                 appendLine("const R4M_CSS = ${json.writeValueAsString(read("page.css"))};")
+                // The extension's words and t(): page.js calls them
+                appendLine(read("i18n.js"))
                 appendLine("function runPage() {")
                 appendLine(read("page.js"))
                 appendLine("}")

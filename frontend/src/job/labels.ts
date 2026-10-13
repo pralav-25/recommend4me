@@ -1,6 +1,7 @@
-import type { CatalogueProgress, SourceMode } from "@/api/client";
+import type { CatalogueProgress, JobStatus, SourceMode } from "@/api/client";
 import { number } from "@/i18n/format";
 import i18n from "@/i18n/i18n";
+import { label } from "@/i18n/label";
 
 /** The phases of a job the application names: its own and the ones the sources name. */
 const PHASES = ["dictionary", "feed", "catalogue", "details", "pages", "covers", "pictures", "reviews", "parts", "vectors", "scoring"] as const;
@@ -15,6 +16,15 @@ function isPhase(phase: string): phase is Phase {
 export function phaseLabel(phase: string | undefined): string {
   if (!phase) return "";
   return isPhase(phase) ? i18n.t(`Phase.${phase}`, { ns: "job" }) : phase;
+}
+
+/**
+ * What a job leaves the user to know at its end: the words of its key — "f95zone:job.noCookie" —
+ * and why it failed, as the code tells it; nothing when it says nothing.
+ */
+export function jobMessage(job: JobStatus): string | undefined {
+  const said = [job.messageKey ? label(job.messageKey) : undefined, job.failure].filter((s) => s !== undefined && s !== "");
+  return said.length > 0 ? said.join(" — ") : undefined;
 }
 
 export function modeLabel(mode: SourceMode): string {

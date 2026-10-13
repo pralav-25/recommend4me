@@ -1,0 +1,21 @@
+{
+  "facet.category": "Категория",
+  "facet.language": "Язык",
+  "facet.rating": "Рейтинг",
+  "facet.series": "Серия",
+  "facet.warning": "Предупреждения",
+  "number.bookmarks": "Закладки",
+  "number.comments": "Комментарии",
+  "parts": "Главы",
+  "reviews": "Комментарии",
+  "signal.bookmarked": "В закладках",
+  "signal.bookmarked.value.yes": "да",
+  "signal.later": "Отложено на потом",
+  "signal.later.value.yes": "да",
+  "signal.subscribed": "Подписка на обновления",
+  "signal.subscribed.value.yes": "да",
+  "text.annotation": "Описание",
+  "text.notes": "Примечания",
+  "text.pairingsLine": "Отношения и персонажи на сайте",
+  "title": "Archive of Our Own"
+}

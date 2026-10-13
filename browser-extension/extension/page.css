@@ -139,7 +139,7 @@ r4m-panel .r4m-down {
   background: #eaeef2;
 }
 
-/* "✓ все (N)" by the facet's name */
+/* "✓ all (N)" by the facet's name */
 [data-r4m].r4m-button.r4m-all {
   margin-left: 8px;
   height: 18px;
@@ -148,7 +148,7 @@ r4m-panel .r4m-down {
   font-weight: 500;
 }
 
-/* "других вселенных нет", "других пэйрингов нет": a toggle, filled when pressed */
+/* "no other universes", "no other pairings": a toggle, filled when pressed */
 [data-r4m].r4m-button.r4m-complete {
   margin-left: 8px;
   height: 18px;

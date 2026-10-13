@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { gradeLabel, sourceTitle, useSource } from "@/contenttype/types";
+import { gradeLabel, useSource } from "@/contenttype/types";
 import { FacetCorrections } from "@/correction/FacetCorrections";
 import { CorrectedMark, EditButton, FieldEditor } from "@/correction/FieldEditor";
 import { Links } from "@/correction/Links";
 import { titleField, useCorrections, type Corrections } from "@/correction/useCorrections";
 import { formatDate, score } from "@/i18n/format";
+import { label, sourceTitle } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 import { Explanation } from "@/model/Explanation";
 import { Parts } from "@/part/Parts";
@@ -198,9 +199,9 @@ function Shell({
           <DialogDescription render={<div />} className="flex flex-col gap-1 text-sm text-muted-foreground">
             <FactLine source={source} summary={summary} facets={facets} />
             <span className="flex flex-wrap items-center gap-2">
-              {type.sources.length > 1 && <span className="text-xs">{source.title}</span>}
+              {type.sources.length > 1 && <span className="text-xs">{sourceTitle(source.id)}</span>}
               <SignalBadges source={source} signals={summary.signals} />
-              <LinkedBadges type={type} linked={summary.linked} className="text-xs" />
+              <LinkedBadges linked={summary.linked} className="text-xs" />
             </span>
           </DialogDescription>
         </div>
@@ -237,7 +238,7 @@ function Shell({
           <ChevronRightIcon />
         </Button>
         <Button variant="outline" size="sm" nativeButton={false} render={<a href={summary.url} target="_blank" rel="noreferrer" />} title={t("ItemDialog.openOnSite")}>
-          <ExternalLinkIcon /> {source.title}
+          <ExternalLinkIcon /> {sourceTitle(source.id)}
         </Button>
         {d?.canRefresh && <RefreshButton item={ref} />}
         <Button
@@ -293,6 +294,9 @@ function Details({
   // A graded work is told by a model that had not seen it: fitted for the asking, read apart
   const graded = d.summary.grade != null;
   const heldOut = useHeldOut(ref, graded);
+  // What the source calls its reviews and the parts of a text, else the words of every source
+  const reviewsLabel = source.reviewsLabelKey ? label(source.reviewsLabelKey) : t("ItemDialog.reviews");
+  const partsLabel = source.partsLabelKey ? label(source.partsLabelKey) : t("ItemDialog.parts");
 
   return (
     <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
@@ -397,16 +401,16 @@ function Details({
             <PictureMatches item={ref} matches={d.pictureMatches} />
           </Part>
         )}
-        <Part title={source.reviewsLabel ?? t("ItemDialog.reviews")}>
-          <Reviews item={ref} label={source.reviewsLabel ?? t("ItemDialog.reviews")} reviews={d.reviews} total={d.reviewCount} explained={marking} />
+        <Part title={reviewsLabel}>
+          <Reviews item={ref} label={reviewsLabel} reviews={d.reviews} total={d.reviewCount} explained={marking} />
         </Part>
         {marking && (
           <Part title={t("ItemDialog.similarReviews")}>
             <ReviewMatches item={ref} matches={d.reviewMatches} />
           </Part>
         )}
-        <Part title={source.partsLabel ?? t("ItemDialog.parts")}>
-          <Parts item={ref} label={source.partsLabel ?? t("ItemDialog.parts")} parts={d.parts} />
+        <Part title={partsLabel}>
+          <Parts item={ref} label={partsLabel} parts={d.parts} />
         </Part>
       </div>
     </div>
@@ -464,7 +468,7 @@ function Ratings({ type, details: d }: { type: ContentTypeInfo; details: ItemDet
   const itemOf = (r: RatingRecord) =>
     sameItem(r, d.summary)
       ? undefined
-      : `${sourceTitle(type, r.source)} · ${d.summary.linked.find((l) => sameItem(l, r))?.title ?? r.item}`;
+      : `${sourceTitle(r.source)} · ${d.summary.linked.find((l) => sameItem(l, r))?.title ?? r.item}`;
   return (
     <section>
       <h4 className="mb-2 text-sm font-semibold">{t("Ratings.heading")}</h4>
@@ -479,7 +483,7 @@ function Ratings({ type, details: d }: { type: ContentTypeInfo; details: ItemDet
               {itemOf(r) && <span className="truncate text-xs text-muted-foreground">{itemOf(r)}</span>}
             </span>
             <span className={cn("shrink-0", GRADE_TEXT[r.grade as Grade])}>
-              {r.grade} · {gradeLabel(type, r.grade as Grade)}
+              {r.grade} · {gradeLabel(type.id, r.grade as Grade)}
             </span>
             <AsyncButton
               variant="ghost"

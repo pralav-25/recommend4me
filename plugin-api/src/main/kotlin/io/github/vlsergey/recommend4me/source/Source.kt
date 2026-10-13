@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.source
 
-import io.github.vlsergey.recommend4me.i18n.Label
 import java.time.Instant
 
 /** How a source gets its items. */
@@ -35,11 +34,12 @@ val Source.downloadsPages: Boolean get() = modes.any { it == SourceMode.PAGE || 
  * ([migrations]) in the same source database.
  */
 interface Source {
-    /** Stable: the name of the source's folder, of its databases and the first half of every item key. */
+    /**
+     * Stable: the name of the source's folder, of its databases and the first half of every item
+     * key; and the namespace of its words, which the plugin carries in every language of the
+     * interface ([I18nKeys][io.github.vlsergey.recommend4me.i18n.I18nKeys]) — its title among them.
+     */
     val id: String
-
-    /** The name shown to the user: the site's own, as it is known in each language — "Книга Фанфиков", "Ficbook". */
-    val title: Label
 
     /** The content type the source's works belong to: `games`, `books`. */
     val contentType: String
@@ -68,8 +68,11 @@ interface Source {
      */
     fun itemIdOf(url: String): String? = null
 
-    /** The user's own actions on the site the source reads ([SiteSignals]), with the names to show. */
+    /** The user's own actions on the site the source reads ([SiteSignals]). */
     val signals: List<SignalDef> get() = emptyList()
+
+    /** The messages its jobs may leave the user ([Job.message]), by their keys: their words are among the source's. */
+    val messages: Set<String> get() = emptySet()
 
     /** How the extension marks the site's pages up; null — it does not. */
     val pageDecor: PageDecor? get() = null

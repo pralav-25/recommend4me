@@ -138,6 +138,17 @@ class PartRepository(private val db: DSLContext) {
         return out
     }
 
+    /** The titles of every part of the items [ids] that has a text, in their order — the texts not read: item to (part, title). */
+    fun titlesOf(ids: Collection<String>): Map<String, List<Pair<String, String?>>> {
+        val out = HashMap<String, MutableList<Pair<String, String?>>>()
+        ids.distinct().chunked(BATCH).forEach { chunk ->
+            db.select(PART.ITEM_ID, PART.PART_ID, PART.TITLE).from(PART)
+                .where(PART.ITEM_ID.`in`(chunk), PART.CONTENT.isNotNull).orderBy(PART.ITEM_ID, PART.POSITION)
+                .fetch { out.getOrPut(it.value1()!!) { ArrayList() } += it.value2()!! to it.value3() }
+        }
+        return out
+    }
+
     /** The window vectors by [encoder] of the parts of the items [ids]: item to part to its windows in order. */
     fun windowsByParts(ids: Collection<String>, encoder: String): Map<String, Map<String, List<FloatArray>>> {
         val out = HashMap<String, MutableMap<String, MutableList<FloatArray>>>()

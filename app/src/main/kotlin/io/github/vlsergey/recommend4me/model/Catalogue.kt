@@ -85,7 +85,7 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
             }
             if (textEncoder != null) {
                 // The title and the site's lines too: every text that has vectors
-                val blocks = TextVectors.blocks(s.schema).mapValues { it.value.first }
+                val blocks = TextVectors.blocks(s.id, s.schema).mapValues { it.value.first }
                 s.textVectors.forEach(textEncoder.id, blocks.keys) { id, key, v -> put(id, blocks.getValue(key), v) }
             }
             if (imageEncoder != null) {
@@ -176,7 +176,7 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
         val s = type.source(key.source) ?: return emptyMap()
         val out = HashMap<String, FloatArray>()
         plugins.textEncoder()?.let { encoder ->
-            val blocks = TextVectors.blocks(s.schema).mapValues { it.value.first }
+            val blocks = TextVectors.blocks(s.id, s.schema).mapValues { it.value.first }
             s.textVectors.ofMany(listOf(key.id), encoder.id)[key.id]?.forEach { (k, v) -> blocks[k]?.let { out[it] = v } }
         }
         plugins.imageEncoder()?.let { encoder -> s.pictures.itemVectorsOf(listOf(key.id), encoder.id)[key.id]?.let(out::putAll) }

@@ -37,6 +37,15 @@ the file name field. It lasts until Firefox is closed; after the application is 
 The address of the application (by default `http://127.0.0.1:8095`) is set on the extension's
 options page.
 
+## Languages
+
+The extension speaks English, Russian and Serbian (Latin script): the language chosen on the
+options page, else the first of the browser's languages it has, else English (the userscript —
+the browser's). Its own words are in `extension/i18n.js`, the same keys in every language. The
+application sends no words, only the keys of its words (`"<namespace>:<key>"`); the content script
+reads the words of the namespaces it meets once for the page's life, `/i18n/<namespace>/<language>.json`
+of the application. The description in the manifest is in `extension/_locales`.
+
 ## Development
 
 ```bash

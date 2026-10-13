@@ -6,6 +6,7 @@ import { api, ensureOk, unwrap, type CharacterInfo, type ContentTypeInfo, type F
 import { AsyncButton } from "@/components/AsyncButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { typeTitle } from "@/contenttype/types";
 import { ago, formatDate } from "@/i18n/format";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
@@ -73,7 +74,7 @@ export function UniversesScreen({ type, selected }: { type: ContentTypeInfo; sel
     <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-4">
       <header className="flex flex-col gap-1">
         <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <OrbitIcon className="size-5" /> {t("UniversesScreen.title", { type: type.title.toLowerCase() })}
+          <OrbitIcon className="size-5" /> {t("UniversesScreen.title", { type: typeTitle(type.id).toLowerCase() })}
         </h1>
         <p className="text-sm text-muted-foreground">{t("UniversesScreen.description")}</p>
       </header>

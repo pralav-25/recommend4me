@@ -7,8 +7,9 @@ info:
     some of them; a model learns the order of the grades and puts every other work on the user's
     own 0..10 scale.
 
-    An error is answered as application/problem+json (the Problem schema): its "detail" says, in
-    the user's language, what went wrong.
+    An error is answered as application/problem+json (the Problem schema). The server words nothing
+    for the user: what went wrong is the key of its words ("code", "standard:error.noField") and the
+    values they are filled with ("params"); "detail" says it in English, for the log.
 
 tags:
   - name: types
@@ -1574,7 +1575,9 @@ components:
   schemas:
     Problem:
       type: object
-      description: An error (RFC 9457)
+      description: |
+        An error (RFC 9457). The server words nothing for the user: what went wrong is the key of
+        its words (code) and the values they are filled with (params); detail is for the log
       properties:
         title:
           type: string
@@ -1582,7 +1585,15 @@ components:
           type: integer
         detail:
           type: string
-          description: What went wrong, as the user is shown it
+          description: What went wrong, in English, for the log
+        code:
+          type: string
+          description: The key of the words of what went wrong - "standard:error.noField"
+        params:
+          type: object
+          description: The values the words are filled with, by their names
+          additionalProperties:
+            type: string
         instance:
           type: string
 
@@ -1596,18 +1607,12 @@ components:
 
     ContentTypeInfo:
       type: object
-      required: [id, title, grades, verb, sources, numbers, filterNumbers, universes]
+      description: |
+        A content type. Its title, grades and verb are words of the interface by its id
+        ("standard:type.<id>.title", "standard:type.<id>.grade.<1..5>", "standard:type.<id>.verb")
+      required: [id, sources, numbers, filterNumbers, universes]
       properties:
         id:
-          type: string
-        title:
-          type: string
-        grades:
-          type: array
-          description: The labels of the grades 1..5
-          items:
-            type: string
-        verb:
           type: string
         universes:
           type: boolean
@@ -1629,11 +1634,12 @@ components:
 
     SourceInfo:
       type: object
-      required: [id, title, homepage, modes, texts, facets, numbers, versioned, picturesTell, signals]
+      description: |
+        A source. Its id is the namespace of its own words ("/i18n/<id>/<language>.json"): its title
+        is "<id>:title"
+      required: [id, homepage, modes, texts, facets, numbers, versioned, picturesTell, signals]
       properties:
         id:
-          type: string
-        title:
           type: string
         homepage:
           type: string
@@ -1653,10 +1659,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TextInfo'
-        reviewsLabel:
+        reviewsLabelKey:
           type: string
-        partsLabel:
+          description: The key of what the source calls the reviews it keeps ("ficbook:reviews"); none - it keeps none
+        partsLabelKey:
           type: string
+          description: The key of what the source calls the parts of a work's text ("ao3:parts"); none - it keeps no text
         versioned:
           type: boolean
         picturesTell:
@@ -1690,15 +1698,15 @@ components:
 
     SignalInfo:
       type: object
-      required: [key, label, values]
+      required: [key, labelKey, values]
       properties:
         key:
           type: string
-        label:
+        labelKey:
           type: string
         values:
           type: object
-          description: The names of the values; a value not named is shown as it is
+          description: The keys of the names of the values, by the value; a value not named is shown as it is
           additionalProperties:
             type: string
 
@@ -1711,7 +1719,7 @@ components:
 
     FacetInfo:
       type: object
-      required: [id, key, label, filter, onCard, suggest, infer, editable]
+      required: [id, key, labelKey, filter, onCard, suggest, infer, editable]
       properties:
         id:
           type: string
@@ -1719,8 +1727,9 @@ components:
         key:
           type: string
           description: The facet's key within its source
-        label:
+        labelKey:
           type: string
+          description: The key of its label - "standard:facet.status", "ficbook:facet.direction"
         filter:
           type: boolean
         onCard:
@@ -1753,15 +1762,16 @@ components:
 
     NumberInfo:
       type: object
-      required: [id, key, label]
+      required: [id, key, labelKey]
       properties:
         id:
           type: string
           description: The number as the sorting and the model know it - its shared key, or "<source>.<key>"
         key:
           type: string
-        label:
+        labelKey:
           type: string
+          description: The key of its label - "standard:number.likes", "ao3:number.bookmarks"
         scale:
           type: string
           description: LOG - a count spread over orders of magnitude (views, likes); LINEAR - a number of a fixed range (a rating)
@@ -1771,11 +1781,11 @@ components:
 
     TextInfo:
       type: object
-      required: [key, label, spoiler]
+      required: [key, labelKey, spoiler]
       properties:
         key:
           type: string
-        label:
+        labelKey:
           type: string
         spoiler:
           type: boolean
@@ -1792,11 +1802,12 @@ components:
       type: string
       description: |
         SCORE - by prediction times the chance of interest (ItemSummary.interestChance; the prediction
-        alone without a model of interest), then by prediction; UPDATED - newest update first; NUMBER - by a number, the largest
+        alone without a model of interest), then by prediction; UPDATED - newest update first; ADDED - the
+        newest in the application first (first seen); NUMBER - by a number, the largest
         first; SURPRISE - the graded works the model that had not seen them (ItemSummary.heldOut)
         puts furthest from where the user's grade stands, first - below the lowest grade's place a
         work of it is no surprise, nor above the highest's; works without one last
-      enum: [SCORE, UPDATED, NUMBER, SURPRISE]
+      enum: [SCORE, UPDATED, ADDED, NUMBER, SURPRISE]
       default: SCORE
 
     FacetValueInfo:
@@ -1807,6 +1818,12 @@ components:
           type: string
         name:
           type: string
+          description: The value's name as the data has it - the site's, the catalogue's, the user's
+        nameKey:
+          type: string
+          description: |
+            Of a value of the application's own - a standard value ("standard:facet.status.value.finished"),
+            an original character - the key of its name, shown instead of name
         corrected:
           type: string
           enum: [ADDED, CONFIRMED, REMOVED]
@@ -1833,12 +1850,12 @@ components:
 
     ItemFacet:
       type: object
-      required: [facet, label, values, editable]
+      required: [facet, labelKey, values, editable]
       properties:
         facet:
           type: string
           description: The facet's key within its source
-        label:
+        labelKey:
           type: string
         editable:
           type: boolean
@@ -1996,11 +2013,17 @@ components:
 
     SearchMatch:
       type: object
-      required: [field, byMeaning, text, highlights]
+      required: [byMeaning, text, highlights]
+      description: |
+        Where it was found: a field by the key of its label (labelKey), or a chapter - by its title as
+        the data has it (title), or by its number when it has none (part, 1-based)
       properties:
-        field:
+        labelKey:
           type: string
-          description: The name of the field it was found in, as the user is shown it
+        title:
+          type: string
+        part:
+          type: integer
         byMeaning:
           type: boolean
           description: Found by meaning alone; the text is then the phrase of the field nearest by meaning
@@ -2182,15 +2205,15 @@ components:
 
     FacetFilter:
       type: object
-      required: [id, label, itemsWithout, values]
+      required: [id, labelKey, itemsWithout, values]
       properties:
         id:
           type: string
-        label:
+        labelKey:
           type: string
-        noneLabel:
+        noneLabelKey:
           type: string
-          description: The name of the works without a value of the facet; none - they are not a line of the filter
+          description: The key of the name of the works without a value of the facet; none - they are not a line of the filter
         itemsWithout:
           type: integer
         values:
@@ -2206,16 +2229,19 @@ components:
           type: string
         name:
           type: string
+        nameKey:
+          type: string
+          description: Of a value of the application's own, the key of its name, shown instead of name (FacetValueInfo.nameKey)
         items:
           type: integer
 
     TextValue:
       type: object
-      required: [key, label, content, spoiler, corrected]
+      required: [key, labelKey, content, spoiler, corrected]
       properties:
         key:
           type: string
-        label:
+        labelKey:
           type: string
         content:
           type: string
@@ -2226,11 +2252,11 @@ components:
 
     NumberValue:
       type: object
-      required: [key, label, value, corrected]
+      required: [key, labelKey, value, corrected]
       properties:
         key:
           type: string
-        label:
+        labelKey:
           type: string
         value:
           type: number
@@ -2337,12 +2363,12 @@ components:
 
     RelatedWorks:
       type: object
-      required: [facet, label, role, value, name, items]
+      required: [facet, labelKey, role, value, name, items]
       properties:
         facet:
           type: string
           description: The facet's key within the source
-        label:
+        labelKey:
           type: string
         role:
           $ref: '#/components/schemas/FacetRole'
@@ -2508,12 +2534,12 @@ components:
 
     ContributionGroup:
       type: object
-      required: [part, label, contribution, features]
+      required: [part, labelKey, contribution, features]
       properties:
         part:
           type: string
           description: The part of the input switched off as a whole - "facet:<id>", a block, "part:pictures"
-        label:
+        labelKey:
           type: string
         contribution:
           type: number
@@ -2527,11 +2553,20 @@ components:
 
     FeatureContribution:
       type: object
-      required: [feature, label, contribution, present]
+      required: [feature, labelKey, contribution, present]
+      description: |
+        A feature: the key of the label of what it is of (a facet, a number, a block of the model's
+        input, "standard:model.previous", "standard:model.source"), and of a feature of one value
+        that value - as the data names it (value), or the key of its name (valueKey: a standard value,
+        a source's title)
       properties:
         feature:
           type: string
-        label:
+        labelKey:
+          type: string
+        value:
+          type: string
+        valueKey:
           type: string
         contribution:
           type: number
@@ -2616,8 +2651,12 @@ components:
           type: integer
         errors:
           type: integer
-        message:
+        messageKey:
           type: string
+          description: What the user should know at the end, by the key of its words - "f95zone:job.noCookie"
+        failure:
+          type: string
+          description: Why the job failed, as the code tells it - not words of the interface
         loggedIn:
           type: boolean
         startedAt:
@@ -2650,11 +2689,10 @@ components:
 
     ScorerInfo:
       type: object
-      required: [id, title]
+      description: A scorer; its id is the namespace of its words, its title "<id>:title"
+      required: [id]
       properties:
         id:
-          type: string
-        title:
           type: string
 
     ScorerChoice:
@@ -2715,12 +2753,12 @@ components:
 
     PartWorth:
       type: object
-      required: [part, label, features]
+      required: [part, labelKey, features]
       properties:
         part:
           type: string
           description: The part as the explanation names it - "facet:<id>", a block, "part:pictures"
-        label:
+        labelKey:
           type: string
         features:
           type: integer
@@ -2749,12 +2787,11 @@ components:
 
     ScorerQuality:
       type: object
-      required: [scorer, title, state, candidates]
+      required: [scorer, state, candidates]
       properties:
         scorer:
           type: string
-        title:
-          type: string
+          description: The scorer's id; its title "<scorer>:title"
         state:
           type: string
           enum: [WAITING, MEASURING, DONE, FAILED]
@@ -2837,11 +2874,11 @@ components:
 
     SettingValue:
       type: object
-      required: [key, label, kind, secret, set]
+      required: [key, labelKey, kind, secret, set]
       properties:
         key:
           type: string
-        label:
+        labelKey:
           type: string
         kind:
           type: string
@@ -2853,17 +2890,16 @@ components:
         value:
           type: string
           description: The value; never given for a secret
-        hint:
+        hintKey:
           type: string
 
     SourceSettings:
       type: object
-      required: [source, title, values]
+      required: [source, values]
       properties:
         source:
           type: string
-        title:
-          type: string
+          description: The source's id; its title "<source>:title"
         values:
           type: array
           items:
@@ -2986,6 +3022,9 @@ components:
           type: string
         name:
           type: string
+        nameKey:
+          type: string
+          description: Of a value of the application's own, the key of its name, shown instead of name (FacetValueInfo.nameKey)
         chance:
           type: number
           format: double
@@ -2993,7 +3032,7 @@ components:
 
     FacetSuggestions:
       type: object
-      required: [facet, label, suggested]
+      required: [facet, labelKey, suggested]
       description: |
         The values of a facet the work lacks and more likely has than not, the likeliest first - to
         confirm or reject. The chances of the values it has come with the values (FacetValueInfo).
@@ -3003,7 +3042,7 @@ components:
         facet:
           type: string
           description: The facet's key within the item's source
-        label:
+        labelKey:
           type: string
         suggested:
           type: array
@@ -3077,7 +3116,7 @@ components:
       description: |
         The work as a page shows it. What moves its prediction is read apart (getExplanation): of a
         graded work it is the held-out model's, fitted for the asking
-      required: [summary, facets, suggestions, grades, pictures, reviewMarks, ratings]
+      required: [summary, facets, suggestions, pictures, reviewMarks, ratings]
       properties:
         summary:
           $ref: '#/components/schemas/ItemSummary'
@@ -3093,11 +3132,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FacetSuggestions'
-        grades:
-          type: array
-          description: The labels of the grades 1..5 of the work's content type
-          items:
-            type: string
         pictures:
           type: array
           items:
@@ -3114,12 +3148,11 @@ components:
 
     PageView:
       type: object
-      required: [source, sourceTitle, type, decor]
+      required: [source, type, decor]
       properties:
         source:
           type: string
-        sourceTitle:
-          type: string
+          description: The source's id; its title "<source>:title"
         type:
           type: string
           description: The content type of the source's works
@@ -3179,6 +3212,9 @@ components:
           type: string
         name:
           type: string
+        nameKey:
+          type: string
+          description: Of a value of the application's own, the key of its name, shown instead of name (FacetValueInfo.nameKey)
         chance:
           type: number
           format: double
@@ -3195,11 +3231,17 @@ components:
 
     MentionQuote:
       type: object
-      required: [place, text, highlights]
+      required: [text, highlights]
+      description: |
+        Where in the work the passage is: a text or a facet of it by the key of its label (labelKey),
+        or a chapter - by its title as the data has it (title), by its number when it has none (part, 1-based)
       properties:
-        place:
+        labelKey:
           type: string
-          description: Where in the work the passage is - "Описание", a chapter's title
+        title:
+          type: string
+        part:
+          type: integer
         text:
           type: string
           description: A paragraph, or the part of a long one around the names, cut with "…"

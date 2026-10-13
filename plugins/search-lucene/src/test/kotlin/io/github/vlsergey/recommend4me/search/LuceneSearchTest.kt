@@ -43,7 +43,8 @@ class LuceneSearchTest {
             assertEquals(listOf("3"), search.search("books", "драконы", context).keys.map { it.id })
 
             val match = search.matches("books", clothes, clothes.keys, context).getValue(ItemKey("test", "2"))
-            assertEquals("Аннотация", match.field)
+            // The field by its key: the application tells where in the work it is
+            assertEquals("annotation", match.field)
             assertTrue(match.highlights.isNotEmpty())
         }
     }
@@ -82,7 +83,7 @@ class LuceneSearchTest {
             assertEquals("part:1", nearest.field)
             assertEquals(chapter.substring(scene), nearest.text(withChapter))
             val shown = search.matches("books", found, listOf(ItemKey("test", "4")), byMeaning).getValue(ItemKey("test", "4"))
-            assertEquals("Глава 1", shown.field)
+            assertEquals("part:1", shown.field)
             assertTrue(shown.byMeaning && shown.text.startsWith("Наутро"), shown.text)
             // Removed, the item's passages go with it
             search.update("books", emptyList(), listOf(ItemKey("test", "4")))
@@ -106,7 +107,7 @@ class LuceneSearchTest {
             search.rebuild("books", sequenceOf(doc))
             val found = search.search("books", "голышом", byMeaning)
             val shown = search.matches("books", found, found.keys, byMeaning).getValue(ItemKey("test", "8"))
-            assertEquals("Теги", shown.field)
+            assertEquals("tags", shown.field)
             assertEquals(tags, shown.text)
         }
     }

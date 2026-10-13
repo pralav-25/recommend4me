@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { CorrectedMark, EditButton, FieldEditor } from "@/correction/FieldEditor";
 import { numberField, type Corrections } from "@/correction/useCorrections";
 import { number } from "@/i18n/format";
+import { label } from "@/i18n/label";
 
 /** The numbers of the item, each correctable; a number the source declares but the item lacks can be given. */
 export function ItemNumbers({ numbers, source, corrections }: { numbers: NumberValue[]; source?: SourceInfo; corrections: Corrections }) {
@@ -20,7 +21,7 @@ export function ItemNumbers({ numbers, source, corrections }: { numbers: NumberV
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-sm">
         {numbers.map((n) => (
           <div key={n.key} className="group/number contents">
-            <dt className="text-muted-foreground">{n.label}</dt>
+            <dt className="text-muted-foreground">{label(n.labelKey)}</dt>
             <dd className="flex min-w-0 items-center gap-1">
               {editing === n.key ? (
                 <FieldEditor
@@ -48,7 +49,7 @@ export function ItemNumbers({ numbers, source, corrections }: { numbers: NumberV
         ))}
         {adding && (
           <>
-            <dt className="text-muted-foreground">{adding.label}</dt>
+            <dt className="text-muted-foreground">{label(adding.labelKey)}</dt>
             <dd>
               <FieldEditor
                 value=""
@@ -66,7 +67,7 @@ export function ItemNumbers({ numbers, source, corrections }: { numbers: NumberV
         <div className="mt-1 flex flex-wrap gap-1">
           {missing.map((n) => (
             <Button key={n.key} variant="ghost" size="xs" className="text-muted-foreground" onClick={() => setEditing(n.key)}>
-              <PlusIcon /> {n.label}
+              <PlusIcon /> {label(n.labelKey)}
             </Button>
           ))}
         </div>

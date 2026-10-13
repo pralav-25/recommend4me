@@ -135,7 +135,7 @@ class AuthorTodayPages(private val context: SourceContext) {
         val icon = e.selectFirst(".book-status-icon") ?: return null
         val text = icon.parent()?.text()?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return null
         // The standard status; another as the site writes it, for the application to tell of
-        return STATUSES[text]?.let { FacetValue(it.key, it.label.ru) } ?: FacetValue(text, text.replaceFirstChar { it.uppercase() })
+        return STATUSES[text]?.let { FacetValue(it.key, it.modelName) } ?: FacetValue(text, text.replaceFirstChar { it.uppercase() })
     }
 
     private fun series(e: Element): FacetValue? =
