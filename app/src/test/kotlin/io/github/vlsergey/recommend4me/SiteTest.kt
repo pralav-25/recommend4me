@@ -800,6 +800,11 @@ class SiteTest {
         val boundAbove = tagsApi.createTagAbove("books", TagAboveRequest("fake", "E3", bind.tags.map { it.key }, craft.key)).body!!
         assertEquals(craft.key to listOf("E3"), boundAbove.key to boundAbove.catalogueEntries.map { it.entry })
         assertEquals(setOf(hulls, cargo), boundAbove.children.map { it.key }.toSet())
+        // The hulls put under the cargo too: right under the craft over the cargo's head — offered to be taken away
+        tagsApi.relateTags("books", TagRelationRequest(hulls, cargo, TagRelation.PARENT))
+        val over = tagsApi.listHierarchyOffers("books").body!!.single { it.kind == HierarchyOfferKind.UNLINK }
+        assertEquals(listOf(hulls, craft.key, cargo), over.tags.map { it.key })
+        tagsApi.relateTags("books", TagRelationRequest(hulls, cargo, TagRelation.NONE))
         tagsApi.relateTags("books", TagRelationRequest(craft.key, hulls, TagRelation.NONE))
         tagsApi.relateTags("books", TagRelationRequest(craft.key, cargo, TagRelation.NONE))
         tagsApi.bindTagEntry("books", TagEntryRequest(craft.key, "fake", "E3", false))

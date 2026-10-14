@@ -92,15 +92,18 @@ enum class HierarchyKind {
 
     /** The tag [HierarchyOffer.existing], of the entry's name, bound to it and put above the tags. */
     BIND_PARENT,
+
+    /** The first tag right under the second no more: it is under it through the third already. */
+    UNLINK,
 }
 
 /**
- * An offer of the tags' graph: its [kind], the tags it is of, the entry of [catalogue] it is by, the
+ * An offer of the tags' graph: its [kind], the tags it is of, the entry of [catalogue] it is by — none of the user's graph alone ([HierarchyKind.UNLINK]) — the
  * way up from the first tag's entry, how many graded works it changes, and how many levels up the
  * catalogue the tags meet — of a new tag, the farther of the two of its nearest pair.
  */
 class HierarchyOffer(
-    val kind: HierarchyKind, val catalogue: String, val tags: List<String>, val entry: TagEntryRef?, val way: List<TagEntryRef>, val graded: Int, val levels: Int,
+    val kind: HierarchyKind, val catalogue: String?, val tags: List<String>, val entry: TagEntryRef?, val way: List<TagEntryRef>, val graded: Int, val levels: Int,
     /** Of [HierarchyKind.BIND_PARENT], the tag of the entry's name to bind and put above. */
     val existing: String? = null,
 )
@@ -340,15 +343,28 @@ class Tags(
 
         /**
          * Every tag under another by their entries — one of its entries a kind of one of the other's,
-         * the nearest way — but of two related already, by the user's word or through others.
+         * the nearest way — but of two related already, by the user's word or through others, and
+         * but over the head of a tag between: one whose entry is above the child's and under the
+         * parent's, or one the child is under by the user's word whose entry is under the parent's.
          */
-        fun links(): List<EntryLink> = reached.flatMap { (child, ways) ->
-            val related = n.hierarchy.ancestors(child) + n.hierarchy.descendants(child) + child
-            val nearest = LinkedHashMap<String, List<TagEntryRef>>()
-            ways.entries.filter { it.value.size > 1 }.sortedBy { it.value.size }.forEach { (ref, way) ->
-                tagsOf[ref].orEmpty().filter { it !in related }.forEach { nearest.putIfAbsent(it, way) }
+        fun links(): List<EntryLink> {
+            val upFrom = HashMap<TagEntryRef, Set<TagEntryRef>>()
+            fun above(ref: TagEntryRef) = upFrom.getOrPut(ref) { up(listOf(ref)).keys - ref }
+            return reached.flatMap { (child, ways) ->
+                val related = n.hierarchy.ancestors(child) + n.hierarchy.descendants(child) + child
+                // What stands between: the entries of other tags above its own, and the entries of the tags it is under by the user's word
+                val between = ways.filter { (ref, way) -> way.size > 1 && tagsOf[ref].orEmpty().any { it != child } }.keys +
+                    n.hierarchy.ancestors(child).flatMap { refsOf[it].orEmpty() }
+                val nearest = LinkedHashMap<String, List<TagEntryRef>>()
+                ways.entries.filter { it.value.size > 1 }.sortedBy { it.value.size }.forEach { (ref, way) ->
+                    tagsOf[ref].orEmpty().filter { it !in related }.forEach { parent ->
+                        // Not over the head of a tag between: that one is offered, and above it the parent
+                        val over = between.any { b -> parent !in tagsOf[b].orEmpty() && ref in above(b) }
+                        if (!over) nearest.putIfAbsent(parent, way)
+                    }
+                }
+                nearest.map { (parent, way) -> EntryLink(child, parent, way) }
             }
-            nearest.map { (parent, way) -> EntryLink(child, parent, way) }
         }
 
         /** The label of every entry of [refs] in the user's first language that has one; else its id. */
@@ -387,6 +403,14 @@ class Tags(
             val gets = graded(l.child) - graded(l.parent) - rejected(l.parent)
             val loses = rejected(l.parent) - rejected(l.child)
             out += HierarchyOffer(HierarchyKind.LINK, l.way.first().catalogue, listOf(l.child, l.parent), null, l.way, (gets + loses).size, l.way.size - 1)
+        }
+        // A link over the head: a tag right under another it is under through a third already — the link changes no work
+        n.stats.keys.forEach { child ->
+            val parents = n.hierarchy.parentsOf(child)
+            parents.forEach { parent ->
+                val via = parents.firstOrNull { it != parent && parent in n.hierarchy.ancestors(it) } ?: return@forEach
+                out += HierarchyOffer(HierarchyKind.UNLINK, null, listOf(child, parent, via), null, emptyList(), 0, 0)
+            }
         }
         // One entry, two tags
         graph.tagsOf.forEach { (ref, keys) ->

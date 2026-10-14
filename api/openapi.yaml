@@ -3668,12 +3668,13 @@ components:
       type: string
       description: >
         LINK - the first tag under the second; MERGE - the two tags one; NEW_PARENT - a new tag of the entry above the
-        tags; BIND_PARENT - the tag of the entry's name (existing) bound to it and put above the tags
-      enum: [LINK, MERGE, NEW_PARENT, BIND_PARENT]
+        tags; BIND_PARENT - the tag of the entry's name (existing) bound to it and put above the tags; UNLINK - the first
+        tag right under the second no more, under it through the third already - of the user's graph, no catalogue's
+      enum: [LINK, MERGE, NEW_PARENT, BIND_PARENT, UNLINK]
 
     HierarchyOffer:
       type: object
-      required: [kind, catalogue, tags, path, graded, levels]
+      required: [kind, tags, path, graded, levels]
       properties:
         kind:
           $ref: '#/components/schemas/HierarchyOfferKind'
@@ -3681,7 +3682,7 @@ components:
           type: string
         tags:
           type: array
-          description: LINK - the child, then the parent; MERGE - the two, the one of more works first, which the other is merged into; NEW_PARENT - the tags under the new one, the most graded first
+          description: LINK - the child, then the parent; UNLINK - the child, the parent, the tag between; MERGE - the two, the one of more works first, which the other is merged into; NEW_PARENT - the tags under the new one, the most graded first
           items:
             $ref: '#/components/schemas/TagRef'
         entry:

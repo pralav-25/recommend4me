@@ -208,11 +208,12 @@ function HierarchyOffers({ type }: { type: ContentTypeInfo }) {
     const [first, second] = o.tags;
     if (o.kind === "LINK") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "PARENT" } }));
     else if (o.kind === "MERGE") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "MERGED" } }));
+    else if (o.kind === "UNLINK") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "NONE" } }));
     else
       unwrap(
         await api.POST("/api/types/{type}/tags/above", {
           ...path,
-          body: { catalogue: o.catalogue, entry: o.entry!, children: o.tags.map((r) => r.key), tag: o.existing?.key },
+          body: { catalogue: o.catalogue!, entry: o.entry!, children: o.tags.map((r) => r.key), tag: o.existing?.key },
         }),
       );
     await changed();
@@ -261,6 +262,11 @@ function HierarchyOffers({ type }: { type: ContentTypeInfo }) {
                       ))}
                     </>
                   )}
+                  {o.kind === "UNLINK" && (
+                    <>
+                      <TagLink tag={o.tags[0]} /> {t("Hierarchy.under")} <TagLink tag={o.tags[1]} /> — {t("Hierarchy.through")} <TagLink tag={o.tags[2]} />
+                    </>
+                  )}
                   {o.kind === "NEW_PARENT" && (
                     <>
                       {t("Hierarchy.newTag")}{" "}
@@ -277,11 +283,17 @@ function HierarchyOffers({ type }: { type: ContentTypeInfo }) {
                     </>
                   )}
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  {sourceTitle(o.catalogue)}: {o.kind === "MERGE" ? t("Hierarchy.sameEntry", { entry: `${o.path[0]} (${o.entry})` }) : o.path.join(" → ")} ·{" "}
-                  {o.kind !== "MERGE" && <>{t("Hierarchy.levels", { count: o.levels })} · </>}
-                  {t("Hierarchy.graded", { count: o.graded })}
-                </span>
+                {o.kind === "UNLINK" ? (
+                  <span className="text-xs text-muted-foreground">
+                    {o.tags[0].name} → {o.tags[2].name} → {o.tags[1].name} · {t("Hierarchy.noWorks")}
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground">
+                    {sourceTitle(o.catalogue!)}: {o.kind === "MERGE" ? t("Hierarchy.sameEntry", { entry: `${o.path[0]} (${o.entry})` }) : o.path.join(" → ")} ·{" "}
+                    {o.kind !== "MERGE" && <>{t("Hierarchy.levels", { count: o.levels })} · </>}
+                    {t("Hierarchy.graded", { count: o.graded })}
+                  </span>
+                )}
               </div>
               <AsyncButton variant="outline" size="sm" onClick={() => act(o)} title={t(`Hierarchy.${o.kind}.title`)}>
                 {t(`Hierarchy.${o.kind}.label`)}
