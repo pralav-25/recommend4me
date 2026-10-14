@@ -4,7 +4,8 @@ import { useTranslation } from "react-i18next";
 import { api, unwrap, type Grade, type ItemRef, type ItemSummary } from "@/api/client";
 import { toast } from "@/components/ui/toast";
 import { ItemDialog } from "./ItemDialog";
-import { readItemHash, writeItemHash } from "./itemHash";
+import { writeTopHash } from "./dialogStack";
+import { readItemHash } from "./itemHash";
 import { itemKey } from "./lists";
 import { useRateItem } from "./useRateItem";
 
@@ -54,9 +55,11 @@ export function HashItemDialog() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
+  // Closed — or never opened, of an item the application does not know: the address names the
+  // dialog left on top, or none
   const close = useCallback(() => {
     setItem(null);
-    writeItemHash(null);
+    writeTopHash();
   }, []);
   return <ItemRefDialog item={item} onClose={close} />;
 }

@@ -23,7 +23,7 @@ import { PictureMatches, Pictures } from "@/picture/Pictures";
 import { ReviewMatches, Reviews } from "@/review/Reviews";
 import { useSuggestions } from "@/suggestion/useSuggestions";
 import { FANFIC_FACETS, FanficSection, FanficSummary } from "@/universe/FanficSection";
-import { writeItemHash } from "./itemHash";
+import { useStackedDialog } from "./dialogStack";
 import { ItemNumbers } from "./ItemNumbers";
 import { ItemTexts } from "./ItemTexts";
 import { itemKey } from "./lists";
@@ -65,14 +65,9 @@ export function ItemDialog({ items, index, total, onIndex, onRate, ratedLeaves }
     if (index !== null && index >= items.length) onIndex(items.length > 0 ? items.length - 1 : null);
   }, [index, items.length, onIndex]);
 
-  // The address names the open work, for a link to it; closing the dialog takes it out
-  const source = summary?.source;
-  const item = summary?.item;
-  useEffect(() => {
-    if (source === undefined || item === undefined) return;
-    writeItemHash({ source, item });
-    return () => writeItemHash(null);
-  }, [source, item]);
+  // The address names the open work, for a link to it, and the keys are this dialog's — while it
+  // is on top: a related work's dialog opened over it takes both, and gives them back closed
+  const onTop = useStackedDialog(summary ? { source: summary.source, item: summary.item } : null);
 
   const rate = (grade: Grade | null) => {
     if (!summary || index === null) return;
@@ -84,6 +79,7 @@ export function ItemDialog({ items, index, total, onIndex, onRate, ratedLeaves }
     if (!summary || index === null) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!onTop()) return;
       if ((e.target as HTMLElement).closest("input, textarea, select")) return;
       if (e.key === "ArrowRight" || e.key === "j") {
         onIndex(Math.min(index + 1, items.length - 1));
@@ -106,7 +102,8 @@ export function ItemDialog({ items, index, total, onIndex, onRate, ratedLeaves }
   });
 
   return (
-    <Dialog open={summary !== undefined} onOpenChange={(open) => !open && onIndex(null)}>
+    // Esc or a press outside closes the dialog on top alone, not the one under it too
+    <Dialog open={summary !== undefined} onOpenChange={(open) => !open && onTop() && onIndex(null)}>
       <DialogContent className="flex h-[92vh] max-w-6xl flex-col gap-0 overflow-hidden p-0">
         {summary && index !== null && of && (
           // A work that fails to draw says so in the dialog, and the next one is drawn anew

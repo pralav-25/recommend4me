@@ -7,6 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { facetQuery, isFiltered, useFacets, type FacetSelection } from "@/facet/FacetFilters";
 import { rangeParams, type NumberRanges } from "@/number/NumberFilters";
 import { ItemCard } from "./ItemCard";
+import { workDialogOpen } from "./dialogStack";
 import { ItemDialog } from "./ItemDialog";
 import { ItemRow } from "./ItemRow";
 import { ITEMS } from "./lists";
@@ -123,11 +124,12 @@ export function ItemBoard({ type, view, sort, search, facets, sources, ranges, l
     return getComputedStyle(grid.current).gridTemplateColumns.split(" ").length;
   };
 
-  // Keys of the board; the dialog has its own while it is open
+  // Keys of the board; a work's dialog has its own while it is open — this board's, or one a link opened over it
   useEffect(() => {
     if (opened !== null) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (workDialogOpen()) return;
       if ((e.target as HTMLElement).closest("input, textarea, select, [role=dialog], [role=menu]")) return;
       const move = (to: number) => {
         e.preventDefault();
