@@ -31,7 +31,9 @@ data class WorkLikenessChanged(val type: String)
  * the description of each ([TextRole.DESCRIPTION], as the user corrected them) as two texts read
  * together. A pair is read once and kept with the hash of both texts; read again only when either
  * changes — a new grade reads its work against the catalogue, a new work against the graded ones.
- * When a pass has read anything, the model is told ([WorkLikenessChanged]).
+ * Every work's text is kept hashed as a pass read all its pairs ([WorkText]): a pass looks only at
+ * the pairs of the works changed since. When a pass has read anything, the model is told
+ * ([WorkLikenessChanged]).
  *
  * The work waits [DELAY_SECONDS] after the last change: grades and pages come in bursts. What a
  * pass has read is kept chunk by chunk: a pass cut short goes on from there the next time.
@@ -74,17 +76,54 @@ class WorkLikenessReading(private val stores: Stores, private val plugins: Plugi
         val texts = texts(type)
         val graded = type.sources.flatMap { s -> s.ratings.gradedItems().map { ItemKey(s.id, it) } }.filter { it in texts }
         if (graded.isEmpty()) return 0
-        val known = type.workLikeness.hashes(reranker.id)
+        val likeness = type.workLikeness
+        // ONLY THE PAIRS OF THE WORKS CHANGED since the last pass that read them all — a new text, a
+        // work new, graded or no longer graded: the pairs of the rest are as they were
+        val gradedSet = graded.toHashSet()
+        val now = texts.mapValues { (key, text) -> WorkText(Vectors.keyOf(text), key in gradedSet) }
+        val known = likeness.texts(reranker.id)
+        val changed = now.filter { (key, text) -> known[key] != text }.keys
+        val gone = known.keys - texts.keys
+        if (changed.isEmpty()) {
+            if (gone.isNotEmpty()) likeness.keepTexts(reranker.id, emptyMap(), gone)
+            return 0
+        }
         val wanted = ArrayList<PairScore>()
-        graded.forEach { g ->
-            val first = texts.getValue(g)
-            texts.forEach { (item, second) ->
-                if (item == g) return@forEach
-                val hash = Vectors.keyOf(first + "\u0001" + second)
-                if (known[g to item] != hash) wanted += PairScore(g, item, hash, 0f)
+        val restamped = ArrayList<PairScore>()
+        fun check(g: ItemKey, item: ItemKey, stored: Long?) {
+            val hash = pairHash(now.getValue(g).hash, now.getValue(item).hash)
+            when {
+                stored == hash -> {}
+                // Kept with the hash of the two texts together, as a pair was before the works' own:
+                // read from these texts, its hash made anew, not read again
+                stored == Vectors.keyOf(texts.getValue(g) + "\u0001" + texts.getValue(item)) -> {
+                    restamped += PairScore(g, item, hash, 0f)
+                    if (restamped.size >= CHUNK) {
+                        likeness.restamp(reranker.id, restamped)
+                        restamped.clear()
+                    }
+                }
+                else -> wanted += PairScore(g, item, hash, 0f)
             }
         }
-        if (wanted.isEmpty()) return 0
+        // A graded work changed: its every pair as the graded one; a work changed: its pairs as the
+        // one read, against the graded works not read as changed already
+        val changedGraded = changed.filter { it in gradedSet }.toHashSet()
+        changedGraded.forEach { g ->
+            val stored = likeness.hashesOfGraded(reranker.id, g)
+            texts.keys.forEach { item -> if (item != g) check(g, item, stored[item]) }
+        }
+        val others = graded.filter { it !in changedGraded }
+        if (others.isNotEmpty()) changed.forEach { item ->
+            val stored = likeness.hashesOfItem(reranker.id, item)
+            others.forEach { g -> if (g != item) check(g, item, stored[g]) }
+        }
+        likeness.restamp(reranker.id, restamped)
+        log.info("{}: {} works changed, {} gone, {} pairs to read by {}", type.id, changed.size, gone.size, wanted.size, reranker.id)
+        if (wanted.isEmpty()) {
+            likeness.keepTexts(reranker.id, now.filterKeys { it in changed }, gone)
+            return 0
+        }
         val started = System.currentTimeMillis()
         log.info("{}: {} pairs of {} graded works and {} works to read by {}", type.id, wanted.size, graded.size, texts.size, reranker.id)
         // Every text of the pass cut into the reranker's pieces once, on every core: not again for
@@ -106,9 +145,14 @@ class WorkLikenessReading(private val stores: Stores, private val plugins: Plugi
             if ((k + 1) % TELL_EVERY == 0) events.publishEvent(WorkLikenessChanged(type.id))
         }
         writing?.get()
+        // Every pair of the changed works read: not read again until they change
+        likeness.keepTexts(reranker.id, now.filterKeys { it in changed }, gone)
         events.publishEvent(WorkLikenessChanged(type.id))
         return read
     }
+
+    /** The hash of a pair's texts: of the graded work's and the other's, each hashed once for all its pairs. */
+    private fun pairHash(graded: Long, item: Long) = graded * 31 + item
 
     /** The title and the description of every work that has a description, as the user corrected them. */
     private fun texts(type: TypeStore): Map<ItemKey, String> {
