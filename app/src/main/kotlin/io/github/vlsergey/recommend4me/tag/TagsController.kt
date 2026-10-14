@@ -13,6 +13,7 @@ import org.springframework.beans.factory.annotation.Value
 import io.github.vlsergey.recommend4me.api.model.SimilarTag as ApiSimilarTag
 import io.github.vlsergey.recommend4me.api.model.SimilarTagPage
 import io.github.vlsergey.recommend4me.api.model.TagBindingRequest
+import io.github.vlsergey.recommend4me.api.model.TagIgnoredRequest
 import io.github.vlsergey.recommend4me.api.model.TagInfo
 import io.github.vlsergey.recommend4me.api.model.TagNameRequest
 import io.github.vlsergey.recommend4me.api.model.TagNameRule
@@ -43,9 +44,11 @@ class TagsController(
         return type to facet
     }
 
-    override fun listTags(type: String, query: String?, with: List<String>?, without: List<String>?, offset: Int, limit: Int): ResponseEntity<TagPage> {
+    override fun listTags(
+        type: String, query: String?, with: List<String>?, without: List<String>?, ignored: Boolean?, offset: Int, limit: Int,
+    ): ResponseEntity<TagPage> {
         val (t, facet) = of(type)
-        val all = tags.list(t, facet, query, with.orEmpty().toSet(), without.orEmpty().toSet())
+        val all = tags.list(t, facet, query, with.orEmpty().toSet(), without.orEmpty().toSet(), ignored)
         return ResponseEntity.ok(
             TagPage(
                 total = all.size,
@@ -66,12 +69,13 @@ class TagsController(
         query: String?,
         offset: Int,
         limit: Int,
+        ignored: Boolean?,
         hidden: List<ApiTagRelation>?,
     ): ResponseEntity<SimilarTagPage> {
         val (t, facet) = of(type)
         // Rows of no relation are the offers themselves: never hidden
         val hide = hidden.orEmpty().map { TagRelation.valueOf(it.name) }.toSet() - TagRelation.NONE
-        val page = tags.similar(t, facet, tag, query, hide, offset, limit.coerceIn(1, 1000)) ?: return ResponseEntity.notFound().build()
+        val page = tags.similar(t, facet, tag, query, hide, offset, limit.coerceIn(1, 1000), ignored) ?: return ResponseEntity.notFound().build()
         val rows = page.rows.map { ApiSimilarTag(it.tag.toApi(), it.similarity, ApiTagRelation.valueOf(it.relation.name), it.site?.toApi()) }
         return ResponseEntity.ok(SimilarTagPage(page.total, rows))
     }
@@ -86,6 +90,11 @@ class TagsController(
     override fun nameTag(type: String, tagNameRequest: TagNameRequest): ResponseEntity<TagInfo> {
         val (t, facet) = of(type)
         return tags.name(t, facet, tagNameRequest.tag, tagNameRequest.name)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
+    }
+
+    override fun ignoreTag(type: String, tagIgnoredRequest: TagIgnoredRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = of(type)
+        return tags.ignore(t, facet, tagIgnoredRequest.tag, tagIgnoredRequest.ignored)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 
     override fun bindSiteTag(type: String, tagBindingRequest: TagBindingRequest): ResponseEntity<TagInfo> {
@@ -173,6 +182,7 @@ class TagsController(
         // The sites' words first, then the entries'
         descriptions = descriptions.map { d -> TagDescription(d.site.source, d.text, stats.variants[d.site]?.name) } +
             entries.mapNotNull { b -> b.entry.descriptions.first()?.let { TagDescription(b.catalogue, it, b.entry.labels.first()) } },
+        ignored = ignored,
         catalogueOffers = offers.map { o -> CatalogueOffer(o.catalogue, TagRef(o.tag, o.name), ApiTagRelation.valueOf(o.relation.name), o.path) },
     )
 

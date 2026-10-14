@@ -14,6 +14,7 @@ import { OriginalOf } from "@/item/WorkFacts";
 import { cn } from "@/lib/utils";
 import { SuggestedValues } from "@/suggestion/Suggestions";
 import { useCandidates, useSuggestions } from "@/suggestion/useSuggestions";
+import { TagNameLink } from "@/tag/TagNameLink";
 import { CHIP_TOUCH, FacetAnswers } from "./FacetAnswers";
 import { EditButton } from "./FieldEditor";
 import type { Corrections } from "./useCorrections";
@@ -73,7 +74,7 @@ export function FacetCorrections({
         </div>
       ))}
       {editing && addable && <AddFacetValue source={addable} corrections={corrections} />}
-      {suggested && <SuggestedValues suggestions={suggested} corrections={corrections} />}
+      {suggested && <SuggestedValues suggestions={suggested} corrections={corrections} tagFacets={layer.filter((f) => f.tags).map((f) => f.facet)} />}
       {site.length > 0 && (
         <div className="flex flex-col gap-3 border-t pt-3">
           <h4 className="text-sm font-semibold">{t("FacetCorrections.fromSite")}</h4>
@@ -115,9 +116,9 @@ function FacetLine({ facet: f, item, source, corrections }: { facet: ItemFacet; 
       </div>
       <div className="flex flex-wrap gap-1">
         {values.map((v) => (
-          <FacetValue key={v.key} facet={f.facet} value={v} corrections={corrections} />
+          <FacetValue key={v.key} facet={f.facet} value={v} corrections={corrections} tagLink={f.tags === true} />
         ))}
-        {item && corrections && <MoreCandidates item={item} facet={f.facet} shown={f.values} corrections={corrections} />}
+        {item && corrections && <MoreCandidates item={item} facet={f.facet} shown={f.values} corrections={corrections} tagLink={f.tags === true} />}
         {corrections && addable && <SearchButton onClick={() => setSearching(!searching)} title={t("FacetLine.search")} />}
       </div>
       {searching && corrections && addable && <AddFacetValue source={addable} corrections={corrections} onClose={() => setSearching(false)} />}
@@ -147,11 +148,14 @@ export function MoreCandidates({
   facet,
   shown,
   corrections,
+  tagLink,
 }: {
   item: ItemRef;
   facet: string;
   shown: { key: string }[];
   corrections: Corrections;
+  /** The values are normalized tags: their names link to their pages. */
+  tagLink?: boolean;
 }) {
   const { t } = useTranslation("correction");
   const [asked, setAsked] = useState(0);
@@ -170,7 +174,7 @@ export function MoreCandidates({
   return (
     <>
       {rest.slice(0, asked).map((c) => (
-        <FacetValue key={c.key} facet={facet} value={{ key: c.key, name: c.name, nameKey: c.nameKey, chance: c.chance ?? undefined, offered: true }} corrections={corrections} />
+        <FacetValue key={c.key} facet={facet} value={{ key: c.key, name: c.name, nameKey: c.nameKey, chance: c.chance ?? undefined, offered: true }} corrections={corrections} tagLink={tagLink} />
       ))}
       {!done && (
         <AsyncButton
@@ -205,7 +209,18 @@ const CORRECTED_TITLE = {
  *
  * A value of a facet of the site ([corrections] not given) has no answers.
  */
-export function FacetValue({ facet, value, corrections }: { facet: string; value: FacetValueInfo; corrections?: Corrections }) {
+export function FacetValue({
+  facet,
+  value,
+  corrections,
+  tagLink,
+}: {
+  facet: string;
+  value: FacetValueInfo;
+  corrections?: Corrections;
+  /** A normalized tag: its name links to its page on the screen of the tags. */
+  tagLink?: boolean;
+}) {
   const { t } = useTranslation("correction");
   const mine = value.corrected === "CONFIRMED" || value.corrected === "ADDED";
   const removed = value.corrected === "REMOVED";
@@ -229,7 +244,7 @@ export function FacetValue({ facet, value, corrections }: { facet: string; value
       {mine && <CheckIcon className="size-3 text-yes" aria-label={t("FacetValue.yourAnswerYes")} />}
       {/* Given by a tag under it: marked as such, not by a chance of its own */}
       {value.implied && !value.corrected && <span className="text-muted-foreground" aria-label={t("FacetValue.fromSubtag")}>↑</span>}
-      <span className={cn(removed && "line-through")}>{valueName(value)}</span>
+      <span className={cn(removed && "line-through")}>{tagLink ? <TagNameLink tag={value.key}>{valueName(value)}</TagNameLink> : valueName(value)}</span>
       <ChanceMark value={value} />
       {corrections && <FacetAnswers facet={facet} value={value} corrections={corrections} />}
     </Badge>

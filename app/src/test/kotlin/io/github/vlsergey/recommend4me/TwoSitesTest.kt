@@ -363,13 +363,13 @@ class TwoSitesTest {
         tags.relateTags("books", TagRelationRequest(sailing, yachts, TagRelation.CHILD))
         tags.relateTags("books", TagRelationRequest(yachts, regatta, TagRelation.CHILD))
 
-        fun relationOf(tag: String, other: String) = tags.listSimilarTags("books", tag, null, 0, 500, null).body!!.tags.single { it.tag.key == other && it.site == null }.relation
+        fun relationOf(tag: String, other: String) = tags.listSimilarTags("books", tag, null, 0, 500, null, null).body!!.tags.single { it.tag.key == other && it.site == null }.relation
         assertEquals(TagRelation.CHILD, relationOf(sailing, yachts))
         assertEquals(TagRelation.DESCENDANT, relationOf(sailing, regatta))
         assertEquals(TagRelation.ANCESTOR, relationOf(regatta, sailing))
         assertEquals(TagRelation.PARENT, relationOf(regatta, yachts))
         // Hidden by their filter, the others not
-        val shown = tags.listSimilarTags("books", sailing, null, 0, 500, listOf(TagRelation.DESCENDANT, TagRelation.ANCESTOR)).body!!.tags
+        val shown = tags.listSimilarTags("books", sailing, null, 0, 500, null, listOf(TagRelation.DESCENDANT, TagRelation.ANCESTOR)).body!!.tags
         assertTrue(shown.none { it.tag.key == regatta && it.site == null } && shown.any { it.tag.key == yachts })
         // Never said of the two themselves
         val through = assertThrows<Refused> { tags.relateTags("books", TagRelationRequest(sailing, regatta, TagRelation.DESCENDANT)) }

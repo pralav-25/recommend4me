@@ -27,6 +27,7 @@ import { label, sourceShort, sourceTitle, valueName } from "@/i18n/label";
 import { placeName } from "@/part/place";
 import { useLadder } from "@/model/useModel";
 import { cn } from "@/lib/utils";
+import { TagNameLink } from "@/tag/TagNameLink";
 import { useMarkInterest } from "./useMarkInterest";
 
 /** Keys 1..5 give that grade. */
@@ -367,7 +368,7 @@ export function FacetBadges({ facets, limit, className }: { facets: ItemFacet[];
           title={facetValueTitle(t, facet, value)}
         >
           {(value.corrected === "ADDED" || value.corrected === "CONFIRMED") && <CheckIcon className="size-3 text-yes" />}
-          {valueName(value)}
+          {facet.tags ? <TagNameLink tag={value.key}>{valueName(value)}</TagNameLink> : valueName(value)}
         </Badge>
       ))}
       {rest.length > 0 && (

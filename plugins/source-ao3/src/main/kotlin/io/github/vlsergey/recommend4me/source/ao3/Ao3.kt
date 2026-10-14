@@ -49,7 +49,6 @@ class Ao3 : Source {
             Books.AUTHOR.asFacet(AUTHOR),
             Books.FANDOM.asFacet(FANDOM),
             FacetDef(RATING, filter = true, onCard = true, role = FacetRole.CONTENT),
-            FacetDef(WARNING, filter = true, role = FacetRole.CONTENT),
             Books.DIRECTION.asFacet(CATEGORY),
             Books.STATUS.asFacet(STATUS),
             FacetDef(LANGUAGE, filter = true, onCard = true),
@@ -81,10 +80,10 @@ class Ao3 : Source {
         kindFrom = FANDOM,
     )
 
-    /** 2: the category a standard direction, with ficbook's. */
-    override val parserVersion = 2
+    /** 2: the category a standard direction, with ficbook's. 3: the warnings among the site's tags. */
+    override val parserVersion = 3
 
-    /** Its own changes of the values kept: the direction made a standard one. */
+    /** Its own changes of the values kept: the direction made a standard one, the warnings tags. */
     override val migrations = listOf("classpath:db/ao3")
 
     override val capturePatterns = listOf(
@@ -214,7 +213,6 @@ class Ao3 : Source {
         const val AUTHOR = "author"
         const val FANDOM = "fandom"
         const val RATING = "rating"
-        const val WARNING = "warning"
         const val CATEGORY = "category"
         const val STATUS = "status"
         const val LANGUAGE = "language"

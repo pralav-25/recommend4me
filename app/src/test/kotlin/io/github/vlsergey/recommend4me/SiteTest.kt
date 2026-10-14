@@ -13,6 +13,8 @@ import io.github.vlsergey.recommend4me.correction.CorrectionsController
 import io.github.vlsergey.recommend4me.encoder.TextEncoder
 import io.github.vlsergey.recommend4me.encoder.TextKind
 import io.github.vlsergey.recommend4me.item.ItemsController
+import io.github.vlsergey.recommend4me.item.ItemKey
+import io.github.vlsergey.recommend4me.model.CatalogueReader
 import io.github.vlsergey.recommend4me.model.MeasuringState
 import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.model.ScorerComparisons
@@ -39,6 +41,7 @@ import io.github.vlsergey.recommend4me.api.model.LocalName
 import io.github.vlsergey.recommend4me.api.model.FacetRole as ApiFacetRole
 import io.github.vlsergey.recommend4me.api.model.UniverseRef
 import io.github.vlsergey.recommend4me.api.model.TagBindingRequest
+import io.github.vlsergey.recommend4me.api.model.TagIgnoredRequest
 import io.github.vlsergey.recommend4me.api.model.TagNameRequest
 import io.github.vlsergey.recommend4me.api.model.TagNameRule
 import io.github.vlsergey.recommend4me.api.model.TagRelation
@@ -230,6 +233,7 @@ class SiteTest {
     @Autowired lateinit var recommendations: Recommendations
     @Autowired lateinit var comparisons: ScorerComparisons
     @Autowired lateinit var tagsApi: TagsController
+    @Autowired lateinit var catalogueReader: CatalogueReader
 
     private fun capture(body: String) = captures.capturePage(CaptureRequest("https://site.example/work/${body.substringBefore('|')}", body))
 
@@ -703,7 +707,7 @@ class SiteTest {
         textVectors.refresh(stores.source("site")!!)
 
         // Offered alike: the other tags of the sites, with how alike their names are; the site's own tag of it, merged
-        val similar = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null).body!!.tags
+        val similar = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null, null).body!!.tags
         assertTrue(similar.any { it.tag.key == starhulls && it.site == null }, "similar ${similar.map { it.tag.key }}")
         assertEquals(listOf("hulls"), similar.filter { it.site != null }.map { it.site!!.tag })
         // Nothing is merged by itself
@@ -750,13 +754,24 @@ class SiteTest {
         assertEquals(setOf("Hull", "Корпус", "Ship hull"), bound.catalogueEntries.single().names.toSet())
         assertEquals(listOf(hulls to "Корпус"), tagsApi.findTagEntries("books", "E1").body!!.single().tags.map { it.key to it.name })
         // Found by any name of its entry, in any language
-        assertTrue(tagsApi.listTags("books", "ship hull", null, null, 0, 10).body!!.tags.any { it.key == hulls })
+        assertTrue(tagsApi.listTags("books", "ship hull", null, null, null, 0, 10).body!!.tags.any { it.key == hulls })
         // Filtered by what it comes from: the site and the catalogue it is bound to an entry of
-        val ofCatalogue = tagsApi.listTags("books", null, listOf("fake"), null, 0, 1000).body!!
+        val ofCatalogue = tagsApi.listTags("books", null, listOf("fake"), null, null, 0, 1000).body!!
         assertEquals(listOf("site", "fake"), ofCatalogue.sources)
         assertEquals(listOf(hulls), ofCatalogue.tags.map { it.key })
-        assertTrue(tagsApi.listTags("books", null, listOf("site"), listOf("fake"), 0, 1000).body!!.tags.none { it.key == hulls })
-        assertTrue(tagsApi.listTags("books", null, listOf("site"), null, 0, 1000).body!!.tags.any { it.key == hulls })
+        assertTrue(tagsApi.listTags("books", null, listOf("site"), listOf("fake"), null, 0, 1000).body!!.tags.none { it.key == hulls })
+        assertTrue(tagsApi.listTags("books", null, listOf("site"), null, null, 0, 1000).body!!.tags.any { it.key == hulls })
+        // Ignored: kept with the work and found by the filter, never read by the model of the grades
+        val t3Key = ItemKey("site", "t3")
+        val feature = "facet:tags:$hulls"
+        assertTrue(feature in catalogueReader.item(stores.type("books")!!, t3Key)!!.categorical)
+        assertTrue(tagsApi.ignoreTag("books", TagIgnoredRequest(hulls, true)).body!!.ignored)
+        assertEquals(listOf(hulls), tagsApi.listTags("books", null, null, null, true, 0, 1000).body!!.tags.map { it.key })
+        assertTrue(tagsApi.listTags("books", null, null, null, false, 0, 1000).body!!.tags.none { it.key == hulls })
+        assertTrue(feature !in catalogueReader.item(stores.type("books")!!, t3Key)!!.categorical)
+        assertTrue(items.getItem("site", "t3").body!!.allFacets.single { it.facet == "tags" }.propertyValues.any { it.key == hulls })
+        assertTrue(!tagsApi.ignoreTag("books", TagIgnoredRequest(hulls, false)).body!!.ignored)
+        assertTrue(feature in catalogueReader.item(stores.type("books")!!, t3Key)!!.categorical)
         // A second entry besides: the one bound first still names it; the descriptions of the site's tag's page first, then of each entry
         stores.source("site")!!.items.describeFacetValues(Books.TAG.key, mapOf("hulls" to "The hulls of ships"))
         val both = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E2", true)).body!!
@@ -825,7 +840,7 @@ class SiteTest {
         tagsApi.bindTagEntry("books", TagEntryRequest(cargo, "fake", "E4", false))
 
         // Both site's tags merged rows of it; one taken out, to a new tag of its own; the answer stays with the tag
-        fun rows() = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null).body!!.tags
+        fun rows() = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null, null).body!!.tags
         assertEquals(setOf("hulls", "starhulls"), rows().filter { it.site != null }.onEach { assertEquals(TagRelation.MERGED, it.relation) }.map { it.site!!.tag }.toSet())
         val out = tagsApi.bindSiteTag("books", TagBindingRequest("site", "starhulls")).body!!
         assertTrue(out.key != hulls && out.key != starhulls, "a new tag ${out.key}")
@@ -841,15 +856,15 @@ class SiteTest {
         tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.DIFFERENT))
         assertEquals(TagRelation.DIFFERENT, relationOf(other))
         // The rows of a relation hidden on the server, the total without them
-        val all = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null).body!!
-        val noDifferent = tagsApi.listSimilarTags("books", hulls, null, 0, 50, listOf(TagRelation.DIFFERENT)).body!!
+        val all = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null, null).body!!
+        val noDifferent = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null, listOf(TagRelation.DIFFERENT)).body!!
         assertTrue(noDifferent.tags.none { it.relation == TagRelation.DIFFERENT }, "hidden ${noDifferent.tags.map { it.relation }}")
         assertEquals(all.total - 1, noDifferent.total)
         // A page at a time: the pages one after another are the whole table
-        val paged = (0 until all.total).chunked(1).flatMap { tagsApi.listSimilarTags("books", hulls, null, it.first(), 1, null).body!!.tags }
+        val paged = (0 until all.total).chunked(1).flatMap { tagsApi.listSimilarTags("books", hulls, null, it.first(), 1, null, null).body!!.tags }
         assertEquals(all.tags.map { it.tag.key to it.site?.tag }, paged.map { it.tag.key to it.site?.tag })
         // Searched for: alike the text, not the tag — all the rows, in another order
-        val searched = tagsApi.listSimilarTags("books", hulls, "freight cargo", 0, 50, null).body!!
+        val searched = tagsApi.listSimilarTags("books", hulls, "freight cargo", 0, 50, null, null).body!!
         assertEquals(all.total, searched.total)
         assertTrue(searched.tags.zipWithNext().all { (a, b) -> a.similarity >= b.similarity }, "the likest first")
         tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.NONE))

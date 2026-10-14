@@ -123,6 +123,17 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
         db.update(NORMALIZED_TAG).set(NORMALIZED_TAG.NAME, name?.take(1000)).where(NORMALIZED_TAG.ID.eq(id)).execute()
     }
 
+    // --- Ignored ---
+
+    /** Whether the user ignores the tag [id]: kept with its works, not read by the model of the grades. */
+    fun ignore(id: Long, ignored: Boolean) {
+        db.update(NORMALIZED_TAG).set(NORMALIZED_TAG.IGNORED, ignored).where(NORMALIZED_TAG.ID.eq(id)).execute()
+    }
+
+    /** The keys of the tags the user ignores. */
+    fun ignored(): Set<String> =
+        db.select(NORMALIZED_TAG.ID).from(NORMALIZED_TAG).where(NORMALIZED_TAG.IGNORED.isTrue).fetchSet { it.value1()!!.toString() }
+
     /** The names the user gave, by id. */
     fun explicitNames(): Map<Long, String> =
         db.select(NORMALIZED_TAG.ID, NORMALIZED_TAG.NAME).from(NORMALIZED_TAG).where(NORMALIZED_TAG.NAME.isNotNull)

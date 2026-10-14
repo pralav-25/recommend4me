@@ -30,7 +30,6 @@ import io.github.vlsergey.recommend4me.source.ao3.Ao3.Companion.SIGNAL_LATER
 import io.github.vlsergey.recommend4me.source.ao3.Ao3.Companion.SIGNAL_SUBSCRIBED
 import io.github.vlsergey.recommend4me.source.ao3.Ao3.Companion.STATUS
 import io.github.vlsergey.recommend4me.source.ao3.Ao3.Companion.TAG
-import io.github.vlsergey.recommend4me.source.ao3.Ao3.Companion.WARNING
 import io.github.vlsergey.recommend4me.source.ao3.Ao3.Companion.WORDS
 import io.github.vlsergey.recommend4me.universe.UniverseFacets
 import org.jsoup.Jsoup
@@ -244,13 +243,13 @@ class Ao3Pages(private val context: SourceContext) {
     }
 
     /**
-     * The tags of the work: the warnings, the relationships and the characters — one field, as
-     * written, and the line of them the universes are worked out from — the other tags. A kind the
-     * page does not show is left as it was: the user may hide the warnings and the other tags.
+     * The tags of the work: the relationships and the characters — one field, as written, and the
+     * line of them the universes are worked out from — the warnings and the other tags, one field of
+     * the site's tags (the user may ignore the warnings as any tag). A kind the page does not show is
+     * left as it was: the user may hide the warnings and the other tags.
      */
     private fun tagged(id: String, warnings: List<Element>, relationships: List<Element>, characters: List<Element>, freeforms: List<Element>) {
         fun names(links: List<Element>) = links.map { it.text().trim() }.filter { it.isNotEmpty() }.distinct()
-        names(warnings).takeIf { it.isNotEmpty() }?.let { items.setFacet(id, WARNING, it.map { w -> FacetValue(w, w) }) }
         val pairings = names(relationships)
         val people = names(characters)
         if (pairings.isNotEmpty() || people.isNotEmpty()) {
@@ -261,7 +260,15 @@ class Ao3Pages(private val context: SourceContext) {
             ).joinToString("\n")
             items.setTexts(id, mapOf(PAIRINGS_LINE to line))
         }
-        names(freeforms).takeIf { it.isNotEmpty() }?.let { items.setFacet(id, TAG, it.map { t -> FacetValue(t.lowercase(), t) }) }
+        val shownWarnings = names(warnings)
+        val shownOthers = names(freeforms)
+        if (shownWarnings.isEmpty() && shownOthers.isEmpty()) return
+        // The kind not shown kept as it was: the warnings are the site's few, told from the other tags by their keys
+        val before = if (shownWarnings.isEmpty() || shownOthers.isEmpty()) items.facets(id)[TAG].orEmpty() else emptyList()
+        fun kept(warning: Boolean) = before.filter { (it in WARNINGS) == warning }.map { FacetValue(it) }
+        val values = (if (shownWarnings.isEmpty()) kept(true) else shownWarnings.map { FacetValue(it.lowercase(), it) }) +
+            (if (shownOthers.isEmpty()) kept(false) else shownOthers.map { FacetValue(it.lowercase(), it) })
+        items.setFacet(id, TAG, values.distinctBy { it.key })
     }
 
     private fun series(id: String, a: Element) {
@@ -304,6 +311,12 @@ class Ao3Pages(private val context: SourceContext) {
         private const val ORIGINAL_WORK = "Original Work"
 
         /** The ratings by their names, to the keys the cards' symbols have (rating-<key>). */
+        /** The keys of the site's warnings among its tags: the archive's own few, in every name they had. */
+        private val WARNINGS = setOf(
+            "no archive warnings apply", "creator chose not to use archive warnings", "graphic depictions of violence",
+            "major character death", "rape/non-con", "underage", "underage sex",
+        )
+
         private val CATEGORIES = mapOf(
             "Gen" to Books.Direction.GEN, "F/M" to Books.Direction.HET, "M/M" to Books.Direction.SLASH,
             "F/F" to Books.Direction.FEMSLASH, "Multi" to Books.Direction.MIXED, "Other" to Books.Direction.OTHER,

@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftIcon, CombineIcon, ExternalLinkIcon, Link2Icon, Loader2Icon, RefreshCwIcon, SearchIcon, TagsIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, CombineIcon, ExternalLinkIcon, Link2Icon, Loader2Icon, RefreshCwIcon, SearchIcon, TagsIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   api,
@@ -114,6 +114,60 @@ export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected
   );
 }
 
+/**
+ * The trash can of a tag: pressed, the tag is ignored — it stays with its works, shown and found,
+ * but the model of the grades reads it no more; pressed again, read again. Shown as pressed once the
+ * application has kept it.
+ */
+function IgnoreButton({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+  const { t } = useTranslation("tag");
+  const changed = useTagsChanged(type.id);
+  return (
+    <AsyncButton
+      variant={tag.ignored ? "secondary" : "ghost"}
+      size="icon-xs"
+      className={cn("shrink-0", !tag.ignored && "text-muted-foreground")}
+      aria-pressed={tag.ignored}
+      title={t(tag.ignored ? "Ignore.ignoredTitle" : "Ignore.title")}
+      aria-label={t(tag.ignored ? "Ignore.ignoredTitle" : "Ignore.title")}
+      onClick={async () => {
+        unwrap(await api.PUT("/api/types/{type}/tags/ignored", { params: { path: { type: type.id } }, body: { tag: tag.key, ignored: !tag.ignored } }));
+        await changed();
+      }}
+      icon={<Trash2Icon className={cn(tag.ignored && "text-destructive")} />}
+    />
+  );
+}
+
+/** Whether a tag of the list must be one the user ignores, must not, or either. */
+const IGNORED_FILTERS = ["any", "ignored", "read"] as const;
+type IgnoredFilter = (typeof IGNORED_FILTERS)[number];
+const ignoredParam = (f: IgnoredFilter) => (f === "any" ? undefined : f === "ignored");
+
+/** The filter of the tags the user ignores, a select as the filters of the sources. */
+function IgnoredSelect({ value, onChange }: { value: IgnoredFilter; onChange: (f: IgnoredFilter) => void }) {
+  const { t } = useTranslation("tag");
+  return (
+    <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title={t("Ignore.filterTitle")}>
+      <Trash2Icon className="size-3.5" />
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as IgnoredFilter)}
+        className={cn(
+          "h-7 rounded-md border border-input bg-transparent px-1.5 text-xs text-foreground outline-none focus-visible:border-ring dark:bg-input/30",
+          value !== "any" && "border-primary",
+        )}
+      >
+        {IGNORED_FILTERS.map((f) => (
+          <option key={f} value={f}>
+            {t(`Ignore.filter.${f}`)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 /** Whether a tag of the list must come from a site or a catalogue — used on it, bound to an entry of it — must not, or either. */
 const SOURCE_FILTERS = ["any", "with", "without"] as const;
 type SourceFilter = (typeof SOURCE_FILTERS)[number];
@@ -124,6 +178,7 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
   const [bySource, setBySource] = useState<Record<string, SourceFilter>>({});
+  const [ignored, setIgnored] = useState<IgnoredFilter>("any");
   useEffect(() => {
     const timer = setTimeout(() => {
       setQuery(input.trim());
@@ -135,12 +190,12 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
   const withSources = chosen("with");
   const withoutSources = chosen("without");
   const tags = useQuery({
-    queryKey: [TAGS, type.id, "list", query, withSources, withoutSources, limit],
+    queryKey: [TAGS, type.id, "list", query, withSources, withoutSources, ignored, limit],
     placeholderData: keepPreviousData,
     queryFn: async () =>
       unwrap(
         await api.GET("/api/types/{type}/tags", {
-          params: { path: { type: type.id }, query: { query: query || undefined, with: withSources, without: withoutSources, limit } },
+          params: { path: { type: type.id }, query: { query: query || undefined, with: withSources, without: withoutSources, ignored: ignoredParam(ignored), limit } },
         }),
       ),
   });
@@ -155,8 +210,15 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder={t("TagList.searchPlaceholder")} className="pl-8" type="search" />
       </div>
-      {page && page.sources.length > 0 && (
+      {page && (
         <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+          <IgnoredSelect
+            value={ignored}
+            onChange={(f) => {
+              setIgnored(f);
+              setLimit(PAGE);
+            }}
+          />
           {page.sources.map((source) => (
             <label key={source} className="flex items-center gap-1.5 text-xs text-muted-foreground" title={t("TagList.sourceFilter", { source: sourceTitle(source) })}>
               {sourceShort(source)}
@@ -185,12 +247,12 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
       {tags.isError && <p className="text-sm text-destructive">{t("TagList.loadError", { error: tags.error.message })}</p>}
       <ul className="flex flex-col divide-y rounded-lg border">
         {page?.tags.map((row) => (
-          <li key={row.key}>
+          <li key={row.key} className="flex items-center pr-1.5">
             <a
               href={screenHref({ kind: "tags", tag: row.key })}
               onClick={(e) => followLink(e, { kind: "tags", tag: row.key })}
               aria-current={row.key === selected ? "page" : undefined}
-              className={cn("flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted/50", row.key === selected && "bg-muted")}
+              className={cn("flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-sm hover:bg-muted/50", row.key === selected && "bg-muted", row.ignored && "opacity-60")}
             >
               {/* The names come first: at least half the row, the sites cut before them */}
               <TagNames tag={row} className="min-w-[50%] flex-1" />
@@ -204,6 +266,7 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
                 {row.works}
               </span>
             </a>
+            <IgnoreButton type={type} tag={row} />
           </li>
         ))}
       </ul>
@@ -382,7 +445,11 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
       {found && (
         <>
           <header className="flex flex-col gap-1">
-            <h1 className="text-xl font-semibold">{found.name}</h1>
+            <h1 className="flex items-center gap-2 text-xl font-semibold">
+              {found.name}
+              <IgnoreButton type={type} tag={found} />
+              {found.ignored && <span className="text-sm font-normal text-muted-foreground">{t("Ignore.ignored")}</span>}
+            </h1>
             <p className="text-sm text-muted-foreground">
               {t(ruleKey(found.rule))} · {t("TagDetails.works", { count: found.works })} · {t("TagDetails.graded", { graded: found.graded })} ·{" "}
               {t("TagDetails.liked", { liked: found.liked })}
@@ -751,6 +818,8 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   const [stored, setShown] = usePref<Partial<Shown>>("tags.similar.shown", {});
   const shown: Shown = { MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true, THROUGH: true, ...stored };
   const hidden: TagRelation[] = [...RELATIONS.filter((r) => !shown[r]), ...(shown.THROUGH ? [] : THROUGH)];
+  const [ignoredFilter, setIgnoredFilter] = useState<IgnoredFilter>("any");
+  const ignored = ignoredParam(ignoredFilter);
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   useEffect(() => {
@@ -779,20 +848,20 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   );
   const queryClient = useQueryClient();
   /** A page of the table as the filters and the search are now, read from [offset]. */
-  const readPage = async (offset: number, limit: number, asked: { query: string; hidden: TagRelation[] }) =>
+  const readPage = async (offset: number, limit: number, asked: { query: string; hidden: TagRelation[]; ignored?: boolean }) =>
     unwrap(
       await api.GET("/api/types/{type}/tags/similar", {
         params: {
           path: { type: type.id },
-          query: { tag: tag.key, query: asked.query || undefined, hidden: asked.hidden, offset, limit },
+          query: { tag: tag.key, query: asked.query || undefined, hidden: asked.hidden, ignored: asked.ignored, offset, limit },
         },
       }),
     );
-  const key = [TAGS, type.id, "similar", tag.key, query, hidden.join(",")];
+  const key = [TAGS, type.id, "similar", tag.key, query, hidden.join(","), ignoredFilter];
   const similar = useInfiniteQuery({
     queryKey: key,
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => readPage(pageParam, SIMILAR, { query, hidden }),
+    queryFn: ({ pageParam }) => readPage(pageParam, SIMILAR, { query, hidden, ignored }),
     // The next page from the rows read so far: a table sorted anew meanwhile repeats a row or two, left out below
     getNextPageParam: (last, pages) => {
       const read = pages.reduce((n, p) => n + p.tags.length, 0);
@@ -809,8 +878,8 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     return true;
   });
   /** What the table is read with now: a reading planned before is made with what is current when it is made. */
-  const current = useRef({ key, query, hidden, rows: 0 });
-  current.current = { key, query, hidden, rows: loaded?.length ?? 0 };
+  const current = useRef({ key, query, hidden, ignored, rows: 0 });
+  current.current = { key, query, hidden, ignored, rows: loaded?.length ?? 0 };
 
   /**
    * The table read anew once every answer is saved — unless the user pressed again meanwhile — in the
@@ -820,10 +889,10 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   const refresh = async (asked: number) => {
     await sending.current;
     if (asked !== presses.current) return;
-    const { key, query, hidden, rows: count } = current.current;
+    const { key, query, hidden, ignored, rows: count } = current.current;
     let fresh;
     try {
-      fresh = await readPage(0, Math.max(SIMILAR, count), { query, hidden });
+      fresh = await readPage(0, Math.max(SIMILAR, count), { query, hidden, ignored });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       return;
@@ -928,6 +997,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
           <input type="checkbox" checked={shown.THROUGH} onChange={() => setShown({ ...shown, THROUGH: !shown.THROUGH })} className="size-3.5" />
           {t("Similar.through")}
         </label>
+        <IgnoredSelect value={ignoredFilter} onChange={setIgnoredFilter} />
         {(locked || similar.isFetching) && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
       </div>
       {similar.isLoading && (
@@ -981,6 +1051,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                   <SiteNames tag={s} />
                 )}
               </div>
+              {!site && <IgnoreButton type={type} tag={s} />}
               <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                 <span title={t("Similar.works")}>{site ? site.works : s.works}</span>
                 {" · "}

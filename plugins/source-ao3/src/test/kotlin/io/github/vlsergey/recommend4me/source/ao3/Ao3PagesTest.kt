@@ -59,7 +59,9 @@ class Ao3PagesTest {
         assertNull(facets["author"])
         assertEquals(listOf("teen"), facets["rating"])
         assertEquals(listOf("gen"), facets["category"])
-        assertEquals(listOf("Creator Chose Not To Use Archive Warnings"), facets["warning"])
+        // The warnings are tags of the site, before the others
+        assertNull(facets["warning"])
+        assertEquals("creator chose not to use archive warnings", facets["tag"].orEmpty().first())
         assertEquals(listOf("Fullmetal Alchemist - All Media Types", "Fullmetal Alchemist: Brotherhood & Manga"), facets["fandom"])
         // A relationship is one whatever the order of its names; a character is itself
         val pairings = facets["pairing"].orEmpty()

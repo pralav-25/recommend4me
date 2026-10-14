@@ -70,6 +70,8 @@ class NamedTag(
     val entries: List<BoundEntry> = emptyList(),
     val descriptions: List<SiteDescription> = emptyList(),
     val offers: List<CatalogueOffer> = emptyList(),
+    /** The user ignores it: kept with its works, not read by the model of the grades. */
+    val ignored: Boolean = false,
 )
 
 /**
@@ -237,6 +239,7 @@ class Tags(
      */
     private inner class Naming(
         val stats: Map<String, TagStats>, val explicit: Map<Long, String>, val entries: Map<Long, List<BoundEntry>>, val hierarchy: TagHierarchy,
+        val ignored: Set<String>,
     ) {
         fun explicitOf(key: String): String? = TagRepository.idOf(key)?.let(explicit::get)
 
@@ -263,11 +266,12 @@ class Tags(
             entries = entriesOf(t.key),
             descriptions = descriptions,
             offers = offers,
+            ignored = t.key in ignored,
         )
     }
 
     private fun naming(type: TypeStore, facet: String, stats: Map<String, TagStats> = stats(type, facet)) =
-        Naming(stats, type.tags.explicitNames(), boundEntries(type), TagHierarchy(type.tags.parents()))
+        Naming(stats, type.tags.explicitNames(), boundEntries(type), TagHierarchy(type.tags.parents()), type.tags.ignored())
 
     /** The entries of the catalogues every tag is bound to, by the tag's id: the bindings and the entries kept, read at once. */
     private fun boundEntries(type: TypeStore): Map<Long, List<BoundEntry>> {
@@ -289,15 +293,19 @@ class Tags(
     /**
      * The tags of a type with their names, the most used first; [query] — of a name of theirs on a
      * site, the user's or its entry's, any case; [with] — the sites a tag is used on and the
-     * catalogues it is bound to an entry of, every one; [without] — none of them ([sources]).
+     * catalogues it is bound to an entry of, every one; [without] — none of them ([sources]);
+     * [ignored] — the tags the user ignores alone, or those not; either when null.
      */
-    fun list(type: TypeStore, facet: String, query: String?, with: Set<String> = emptySet(), without: Set<String> = emptySet()): List<NamedTag> {
+    fun list(
+        type: TypeStore, facet: String, query: String?, with: Set<String> = emptySet(), without: Set<String> = emptySet(), ignored: Boolean? = null,
+    ): List<NamedTag> {
         val n = naming(type, facet)
         val wanted = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         return n.stats.values
             .filter { t -> wanted == null || n.allNames(t).any { it.lowercase().contains(wanted) } }
             .map(n::named)
             .filter { t ->
+                if (ignored != null && t.ignored != ignored) return@filter false
                 if (with.isEmpty() && without.isEmpty()) return@filter true
                 val from = t.stats.variants.keys.map { it.source }.toSet() + t.entries.map { it.catalogue }
                 from.containsAll(with) && from.none { it in without }
@@ -590,7 +598,9 @@ class Tags(
      * tag's own names; alike the text [query] instead, when one is given. Of rows alike equally, by
      * key: a page read after another continues it while nothing changed.
      */
-    fun similar(type: TypeStore, facet: String, tag: String, query: String?, hidden: Set<TagRelation>, offset: Int, limit: Int): SimilarPage? {
+    fun similar(
+        type: TypeStore, facet: String, tag: String, query: String?, hidden: Set<TagRelation>, offset: Int, limit: Int, ignored: Boolean? = null,
+    ): SimilarPage? {
         val stats = stats(type, facet)
         val own = stats[tag] ?: return null
         val n = naming(type, facet, stats)
@@ -617,7 +627,7 @@ class Tags(
         val others = stats.values.filter { it.key != tag }.map { t -> Row(t, likeness(t.variants.keys, t.key), relation(t.key), null, t.key) }
         // Every site's tag bound to this one: a row of its own, merged — taken out by the user, a tag of its own
         val bound = own.variants.values.map { v -> Row(own, likeness(listOf(v.site)), TagRelation.MERGED, v, "site:${v.site.source}/${v.site.tag}") }
-        val rows = (others + bound).filter { it.relation !in hidden }
+        val rows = (others + bound).filter { it.relation !in hidden && (ignored == null || (it.tag.key in n.ignored) == ignored) }
             .sortedWith(compareByDescending<Row> { it.similarity }.thenBy { it.key })
         val page = rows.drop(offset.coerceAtLeast(0)).take(limit)
         return SimilarPage(rows.size, page.map { SimilarTag(n.named(it.tag), it.similarity, it.relation, it.site) })
@@ -807,6 +817,19 @@ class Tags(
         val named = one(type, facet, tag)
         changed(type, facet, named?.stats?.items.orEmpty())
         return named
+    }
+
+    /**
+     * Whether the user ignores [tag]: it stays with its works, shown and found, but the model of the
+     * grades reads it no more — it learns anew without it.
+     */
+    fun ignore(type: TypeStore, facet: String, tag: String, ignored: Boolean): NamedTag? {
+        val id = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
+        type.tags.ignore(id, ignored)
+        log.info("{}: tag {} {}", type.id, id, if (ignored) "ignored" else "no longer ignored")
+        // The model alone reads it otherwise: the works, their names and the search are as they were
+        events.publishEvent(TagsChanged(type.id))
+        return one(type, facet, tag)
     }
 
     // --- The entries of a catalogue ---

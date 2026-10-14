@@ -1099,6 +1099,11 @@ paths:
             type: array
             items:
               type: string
+        - name: ignored
+          in: query
+          description: The tags the user ignores alone (true), or those not (false); either when not given
+          schema:
+            type: boolean
         - name: offset
           in: query
           schema:
@@ -1171,6 +1176,11 @@ paths:
           schema:
             type: integer
             default: 30
+        - name: ignored
+          in: query
+          description: The tags the user ignores alone (true), or those not (false); either when not given
+          schema:
+            type: boolean
         - name: hidden
           in: query
           description: The relations whose rows are left out; NONE is never left out
@@ -1203,6 +1213,29 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/TagNameRequest'
+      responses:
+        '200':
+          description: The tag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagInfo'
+
+  /api/types/{type}/tags/ignored:
+    put:
+      tags: [tags]
+      operationId: ignoreTag
+      summary: |
+        Whether the user ignores the tag: it stays with its works, shown and found, but the model of the grades does
+        not read it
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagIgnoredRequest'
       responses:
         '200':
           description: The tag
@@ -2011,6 +2044,9 @@ components:
         editable:
           type: boolean
           description: Of the application's layer, corrected by the user (FacetInfo.editable); the site's otherwise
+        tags:
+          type: boolean
+          description: Its values are the type's normalized tags, each with its page on the screen of the tags
         values:
           type: array
           items:
@@ -3611,8 +3647,11 @@ components:
 
     TagInfo:
       type: object
-      required: [key, name, rule, works, graded, liked, variants, names, parents, children, catalogueEntries, descriptions, catalogueOffers]
+      required: [key, name, rule, works, graded, liked, variants, names, parents, children, catalogueEntries, descriptions, catalogueOffers, ignored]
       properties:
+        ignored:
+          type: boolean
+          description: The user ignores the tag - kept with its works, not read by the model of the grades
         key:
           type: string
           description: The normalized tag's id, written out - the value of the works' tags
@@ -3886,6 +3925,15 @@ components:
         site:
           # Of a row of a site's tag bound to the tag asked of (MERGED), that site's tag; then tag is the tag itself
           $ref: '#/components/schemas/TagVariantInfo'
+
+    TagIgnoredRequest:
+      type: object
+      required: [tag, ignored]
+      properties:
+        tag:
+          type: string
+        ignored:
+          type: boolean
 
     TagNameRequest:
       type: object

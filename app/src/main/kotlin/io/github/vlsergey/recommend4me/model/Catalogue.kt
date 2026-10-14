@@ -135,12 +135,15 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
         val fields = s.corrections.allFields()
         // A tag under another gives the work the other too; a tag the user said it has not, none under it
         val hierarchies = s.hierarchies()
+        // The tags the user ignores stay with the works, the model reads none of them
+        val ignored = s.ignoredTags()
         return s.items.keys().map { k ->
             val categorical = LinkedHashSet<String>()
             val base = ModelValues.of(s.schema, facets[k.id].orEmpty(), chances[k.id])
             TagHierarchy.corrected(base, facetCorrections[k.id].orEmpty(), hierarchies).forEach { (facet, keys) ->
                 val facetId = facetIds[facet] ?: return@forEach
-                keys.forEach { categorical += FeatureNames.facet(facetId, it) }
+                val unread = ignored[facet]
+                keys.forEach { if (unread == null || it !in unread) categorical += FeatureNames.facet(facetId, it) }
             }
             if (severalSources) categorical += "source:${s.id}"
             val numeric = Corrected.numbers(numbers[k.id].orEmpty(), fields[k.id].orEmpty()).mapNotNull { (key, value) ->
@@ -158,9 +161,11 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
         val facetIds = s.schema.facets.filter { it.feature }.associate { it.key to FeatureNames.facetId(s.source, it) }
         val categorical = LinkedHashSet<String>()
         val base = ModelValues.of(s.schema, s.items.facets(key.id), s.suggestions.ofItems(listOf(key.id))[key.id])
+        val ignored = s.ignoredTags()
         TagHierarchy.corrected(base, s.corrections.facetsOf(key.id), s.hierarchies()).forEach { (facet, keys) ->
             val facetId = facetIds[facet] ?: return@forEach
-            keys.forEach { categorical += FeatureNames.facet(facetId, it) }
+            val unread = ignored[facet]
+            keys.forEach { if (unread == null || it !in unread) categorical += FeatureNames.facet(facetId, it) }
         }
         if (type.sources.size > 1) categorical += "source:${s.id}"
         val numberDefs = s.schema.numbers.filter { it.feature }.associateBy { it.key }

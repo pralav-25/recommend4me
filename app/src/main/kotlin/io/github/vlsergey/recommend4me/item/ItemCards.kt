@@ -127,6 +127,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                 facet = def.key,
                 labelKey = I18nKeys.facetLabel(store.id, def),
                 editable = def.editable,
+                tags = (def.key in store.tagFacets).takeIf { it },
                 // In the order shown: the likeliest first — a value with no chance after them — and a
                 // tag above another before it ([TagHierarchy.parentsFirst]); the pages keep it
                 propertyValues = (keys.map { k ->

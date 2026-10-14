@@ -148,6 +148,9 @@ class SourceStore(
     /** The tags under other tags of every facet of tags that has any, read now: facet to its hierarchy. */
     fun hierarchies(): Map<String, TagHierarchy> = tagFacets.associateWith { TagHierarchy(tags.parents()) }.filterValues { !it.empty }
 
+    /** The tags the user ignores of every facet of tags that has any, read now: facet to their keys. */
+    fun ignoredTags(): Map<String, Set<String>> = tags.ignored().takeIf { it.isNotEmpty() }?.let { ignored -> tagFacets.associateWith { ignored } }.orEmpty()
+
     /** The source database, for the source's own tables. */
     val sourceDsl = dbs.source.dsl
 }
