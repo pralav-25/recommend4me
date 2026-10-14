@@ -69,6 +69,8 @@ class CorrectionsController(
         val started = System.currentTimeMillis()
         change()
         suggestions.answered(store, item, facet)
+        // The search and the model of the grades read the user's answers: the work is indexed and learnt anew
+        events.publishEvent(FacetAnswered(store.type, store.id, item, facet))
         log.info("{}: an answer on {} of {} written in {} ms", store.id, facet, item, System.currentTimeMillis() - started)
     }
 

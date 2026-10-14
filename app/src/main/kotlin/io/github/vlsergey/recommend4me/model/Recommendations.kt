@@ -25,6 +25,7 @@ import io.github.vlsergey.recommend4me.setvector.SetKind
 import io.github.vlsergey.recommend4me.setvector.SetVectorsChanged
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
+import io.github.vlsergey.recommend4me.correction.FacetAnswered
 import io.github.vlsergey.recommend4me.suggestion.FacetChancesChanged
 import io.github.vlsergey.recommend4me.tag.TagsChanged
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
@@ -147,6 +148,10 @@ class Recommendations(
     /** The reranker read more works against the graded ones: features of the works. */
     @EventListener
     fun workLikenessChanged(event: WorkLikenessChanged) = scheduleRetrain(event.type, byUser = false)
+
+    /** The user said what a work has or has not: its features, the user's word over the model's. */
+    @EventListener
+    fun answered(event: FacetAnswered) = scheduleRetrain(event.type)
 
     /** The model gave works other pairings, characters: features of the works. */
     @EventListener

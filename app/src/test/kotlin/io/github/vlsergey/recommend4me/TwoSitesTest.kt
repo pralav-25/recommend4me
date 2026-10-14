@@ -221,6 +221,7 @@ class TwoSitesTest {
     @Autowired lateinit var model: ModelController
     @Autowired lateinit var tagService: Tags
     @Autowired lateinit var contexts: SourceContexts
+    @Autowired lateinit var searchService: io.github.vlsergey.recommend4me.search.Search
 
     private fun alpha(body: String) = captures.capturePage(CaptureRequest("https://alpha.example/work/${body.substringBefore('|')}", body))
     private fun beta(body: String) = captures.capturePage(CaptureRequest("https://beta.example/work/${body.substringBefore('|')}", body))
@@ -509,6 +510,18 @@ class TwoSitesTest {
         assertTrue(model.getModel("books").body!!.trained)
         assertEquals(404, model.getModel("nothing").statusCode.value())
         (1..8).forEach { items.unrateItem("alpha", "m$it", null) }
+    }
+
+    @Test
+    fun `a tag the user gave a work finds it at once`() {
+        alpha("q3|Deep water|water|Waves over the reef||")
+        // Indexed as the site wrote it first
+        assertTrue(waitFor(60) { items.listItems("books", ItemQuery(search = "water")).body!!.items.any { it.item == "q3" } })
+        corrections.correctFacet("alpha", "q3", FacetCorrection(facet = "tags", added = true, name = "Mermaids"))
+        assertTrue(
+            waitFor(60) { items.listItems("books", ItemQuery(search = "mermaids", sort = ItemSort.SCORE)).body!!.items.firstOrNull()?.item == "q3" },
+            "document ${searchService.documents(stores.source("alpha")!!, listOf("q3"), passages = false).values.single().fields.map { it.key to it.values }}",
+        )
     }
 
     @Test

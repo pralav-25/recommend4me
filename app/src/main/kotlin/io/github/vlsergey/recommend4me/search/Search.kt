@@ -9,6 +9,7 @@ import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.source.TypeStore
+import io.github.vlsergey.recommend4me.correction.FacetAnswered
 import io.github.vlsergey.recommend4me.suggestion.FacetChancesChanged
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
@@ -54,6 +55,10 @@ class Search(
 
     @EventListener
     fun chancesChanged(event: FacetChancesChanged) = queue(event.source, event.ids)
+
+    /** The user's answer on a work's value: the work is found by what the user said it has. */
+    @EventListener
+    fun answered(event: FacetAnswered) = queue(event.source, listOf(event.itemId))
 
     private fun queue(source: String, ids: Collection<String>) {
         val type = stores.typeOf(source).id
@@ -103,8 +108,10 @@ class Search(
         val fields = s.corrections.fieldsOf(ids)
         val texts = s.items.textsOf(ids)
         val searchedFacets = schema.facets.filter { it.searchWeight > 0 }
+        // The values of every item as the user says, the user's own among them: what is indexed — and named
+        val corrected = ids.associateWith { id -> TagHierarchy.corrected(facets[id].orEmpty(), facetCorrections[id].orEmpty(), hierarchies) }
         val names = searchedFacets.associate { def ->
-            def.key to s.names(def.key, ids.flatMap { facets[it]?.get(def.key).orEmpty() }) +
+            def.key to s.names(def.key, ids.flatMap { corrected[it]?.get(def.key).orEmpty() }.distinct()) +
                 facetCorrections.values.flatten().filter { it.facet == def.key && it.name != null }.associate { it.key to it.name!! }
         }
         val encoder = plugins.textEncoder()?.takeIf { passages }
@@ -129,7 +136,7 @@ class Search(
 
         return heads.mapNotNull { (id, head) ->
             val own = fields[id].orEmpty()
-            val itemFacets = TagHierarchy.corrected(facets[id].orEmpty(), facetCorrections[id].orEmpty(), hierarchies)
+            val itemFacets = corrected[id].orEmpty()
             val itemTexts = Corrected.texts(texts[id].orEmpty(), own)
             val docFields = ArrayList<SearchField>()
             // The fields' names are what the reranker reads them as, plain words; where a match is the
