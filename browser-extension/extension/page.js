@@ -145,6 +145,8 @@
   /** How many changes are sent and not yet answered, and the values they are about ("facet|key"). */
   let pending = 0;
   const saving = new Set();
+  /** Why a change about a value failed, by what it was about: told by the value, not far off in the panel. */
+  const failed = new Map();
   /** The changes, sent one after another in the order made. */
   let queue = Promise.resolve();
   /** How many times the page has waited for the chances made after answers: a wait begun before the last change is stale. */
@@ -179,6 +181,16 @@
   }
 
   /** A button running [onClick] as a change ([act]); [shown] and [about] as there. */
+  /** [element] with the failure of the last change [about] it after it, when that failed: the element alone else. */
+  function withFailure(element, about) {
+    const error = failed.get(about);
+    if (!error) return element;
+    const both = el("r4m-failed");
+    both.appendChild(element);
+    both.appendChild(Object.assign(el("r4m-failure", null, `⚠ ${t("common.failed", { error })}`), { role: "alert" }));
+    return both;
+  }
+
   function button(text, title, onClick, className = "r4m-button", shown = null, about = null) {
     const b = el("button", className, text);
     b.type = "button";
@@ -208,7 +220,10 @@
     // A new change puts off reading the work and what moves the prediction
     clearTimeout(explanationTimer);
     clearTimeout(loadTimer);
-    if (about) saving.add(about);
+    if (about) {
+      saving.add(about);
+      failed.delete(about);
+    }
     render();
     queue = queue.then(async () => {
       let kept = false;
@@ -216,7 +231,8 @@
         await change();
         kept = true;
       } catch (e) {
-        message = e.message;
+        if (about) failed.set(about, e.message);
+        else message = e.message;
       }
       if (kept && shown && view && view.item) {
         try {
@@ -531,7 +547,7 @@
     else if (s.previousGrade) {
       line.appendChild(el("span", "r4m-muted", ` ${t("grade.previous", { version: s.previousGradeVersion, grade: s.previousGrade })}`));
     }
-    return line;
+    return withFailure(line, "grade");
   }
 
   /** The lowest grade that says a work was interesting, as the application takes it (Interest.MIN_GRADE). */
@@ -577,7 +593,7 @@
     } else if (s.interest == null && s.interestChance != null) {
       line.appendChild(el("span", "r4m-muted", ` ${t("interest.byModel", { percent: Math.round(s.interestChance * 100) })}`));
     }
-    return line;
+    return withFailure(line, "interest");
   }
 
   // --- Facets ---
@@ -670,7 +686,7 @@
       chip.appendChild(button("↻", t("universe.refresh"), () =>
         api("POST", `/api/types/${enc(view.type)}/universes`, { catalogue: v.key.substring(0, at), universe: v.key.substring(at + 1) }), "r4m-button"));
     }
-    return chip;
+    return withFailure(chip, about(facet, v.key));
   }
 
   /** A suggested value: a dashed chip with its chance, ✓ to add it and ✕ to say the work has it not. */
@@ -684,7 +700,7 @@
     const offered = { key: v.key, name: v.name, nameKey: v.nameKey, offered: true };
     chip.appendChild(button("✓", t("value.yes"), () => correct(item, facet, { key: v.key }, true), "r4m-yes", answeredShown(facet, offered, true), on));
     chip.appendChild(button("✕", t("value.no"), () => correct(item, facet, { key: v.key }, false), "r4m-no", answeredShown(facet, offered, false), on));
-    return chip;
+    return withFailure(chip, on);
   }
 
   async function readCandidates(item, facet) {
@@ -749,7 +765,7 @@
     const s = item.summary;
     const complete = facet.complete === true;
     const about = `complete|${facet.facet}`;
-    return button(
+    return withFailure(button(
       complete ? `✓ ${names.others}` : names.others,
       t(complete ? "allNamed.doneTitle" : "allNamed.title", { what: names.what }),
       () => api(complete ? "DELETE" : "PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/corrections/complete?facet=${enc(facet.facet)}`),
@@ -766,7 +782,7 @@
         }
       },
       about,
-    );
+    ), about);
   }
 
   /** The keys of the values a facet's line shows: the work's, the user's, the suggested. */
@@ -1041,6 +1057,8 @@
       else if (v.corrected !== "CONFIRMED" && v.chance !== undefined && v.chance !== null && v.chance < 0.5) e.classList.add("r4m-doubted");
       const tools = el("r4m-tools", saving.has(about(decor.facet, v.key)) ? "r4m-saving" : null);
       answers(item, decor.facet, v).forEach((a) => tools.appendChild(a));
+      const error = failed.get(about(decor.facet, v.key));
+      if (error) tools.appendChild(Object.assign(el("r4m-failure", null, `⚠ ${t("common.failed", { error })}`), { role: "alert" }));
       e.insertAdjacentElement("afterend", tools);
     });
     const after = el("r4m-chips");

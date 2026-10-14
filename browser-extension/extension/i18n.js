@@ -21,6 +21,7 @@ var R4M_WORDS = {
 
     "common.pressAgain": "{{what}} — press again to take it back",
     "common.pressAgainAlone": "Press again to take it back",
+    "common.failed": "Not saved: {{error}}",
 
     "panel.saving": "saving…",
     "panel.savingCount": "saving… ({{count}})",
@@ -130,6 +131,7 @@ var R4M_WORDS = {
 
     "common.pressAgain": "{{what}} — нажмите ещё раз, чтобы снять",
     "common.pressAgainAlone": "Нажмите ещё раз, чтобы снять",
+    "common.failed": "Не сохранено: {{error}}",
 
     "panel.saving": "сохраняю…",
     "panel.savingCount": "сохраняю… ({{count}})",
@@ -239,6 +241,7 @@ var R4M_WORDS = {
 
     "common.pressAgain": "{{what}} — pritisnite ponovo da poništite",
     "common.pressAgainAlone": "Pritisnite ponovo da poništite",
+    "common.failed": "Nije sačuvano: {{error}}",
 
     "panel.saving": "čuvam…",
     "panel.savingCount": "čuvam… ({{count}})",

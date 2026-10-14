@@ -14,7 +14,7 @@ import { OriginalOf } from "@/item/WorkFacts";
 import { cn } from "@/lib/utils";
 import { SuggestedValues } from "@/suggestion/Suggestions";
 import { useCandidates, useSuggestions } from "@/suggestion/useSuggestions";
-import { FacetAnswers } from "./FacetAnswers";
+import { CHIP_TOUCH, FacetAnswers } from "./FacetAnswers";
 import { EditButton } from "./FieldEditor";
 import type { Corrections } from "./useCorrections";
 
@@ -108,7 +108,7 @@ function FacetLine({ facet: f, item, source, corrections }: { facet: ItemFacet; 
       <div className="mb-1 flex items-center gap-2 text-xs text-muted-foreground">
         {label(f.labelKey)}
         {corrections && open.length > 1 && (
-          <AsyncButton variant="outline" size="xs" className="h-5 px-1.5 text-[11px]" onClick={confirmAll} title={t("FacetLine.confirmAllHint")}>
+          <AsyncButton variant="outline" size="xs" className={cn(SMALL_BUTTON, "text-[11px]")} onClick={confirmAll} title={t("FacetLine.confirmAllHint")}>
             {t("FacetLine.confirmAll", { n: open.length })}
           </AsyncButton>
         )}
@@ -125,10 +125,13 @@ function FacetLine({ facet: f, item, source, corrections }: { facet: ItemFacet; 
   );
 }
 
+/** A button by a line of values — "✓ all", 🔍, "…": as high as a chip, a finger's size on a touch screen. */
+const SMALL_BUTTON = "h-5 px-1.5 pointer-coarse:h-8 pointer-coarse:px-2.5 pointer-coarse:text-sm";
+
 /** A small 🔍 after a line of values, beside "…": a value found by its name and added. */
 export function SearchButton({ onClick, title }: { onClick: () => void; title: string }) {
   return (
-    <Button variant="outline" size="xs" className="h-5 px-1.5" onClick={onClick} title={title} aria-label={title}>
+    <Button variant="outline" size="xs" className={SMALL_BUTTON} onClick={onClick} title={title} aria-label={title}>
       <SearchIcon className="size-3" />
     </Button>
   );
@@ -173,7 +176,7 @@ export function MoreCandidates({
         <AsyncButton
           variant="outline"
           size="xs"
-          className="h-5 px-1.5"
+          className={SMALL_BUTTON}
           onClick={more}
           title={t("MoreCandidates.showMore", { count: MORE_STEP })}
           aria-label={t("MoreCandidates.showMore", { count: MORE_STEP })}
@@ -212,6 +215,7 @@ export function FacetValue({ facet, value, corrections }: { facet: string; value
       variant="outline"
       className={cn(
         "group pr-0.5 font-normal",
+        CHIP_TOUCH,
         mine && "border-yes/50 bg-yes/15 text-foreground",
         removed && "border-dashed text-muted-foreground opacity-70",
         open && "bg-background",

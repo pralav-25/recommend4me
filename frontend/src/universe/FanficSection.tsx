@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { FacetAnswers } from "@/correction/FacetAnswers";
+import { CHIP_TOUCH, FacetAnswers } from "@/correction/FacetAnswers";
 import { FacetValue, MoreCandidates, SearchButton } from "@/correction/FacetCorrections";
 import type { Corrections } from "@/correction/useCorrections";
 import { useStableOrder } from "@/facet/valueOrder";
@@ -845,7 +845,7 @@ function Named({
       <div className="text-xs text-muted-foreground">{t("Named.heading")}</div>
       <div className="flex flex-wrap items-center gap-1">
         {shown.map((c) => (
-          <Badge key={c.key} variant="outline" className="border-dashed pr-0.5 font-normal">
+          <Badge key={c.key} variant="outline" className={cn("border-dashed pr-0.5 font-normal", CHIP_TOUCH)}>
             <MentionsDialog type={type} item={item} facet={facet} value={c.key} name={valueName(c)} url={c.url} summary={mentionsText(c)} universes={universes}>
               {valueName(c)}
               <span className="text-muted-foreground tabular-nums">({candidateMark(c)})</span>

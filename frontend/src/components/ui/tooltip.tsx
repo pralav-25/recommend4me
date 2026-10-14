@@ -1,3 +1,4 @@
+import { createContext, useContext, useState } from "react"
 import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 
 import { cn } from "@/lib/utils"
@@ -15,12 +16,48 @@ function TooltipProvider({
   )
 }
 
-function Tooltip({ ...props }: TooltipPrimitive.Root.Props) {
-  return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
+/** Opens and closes the tooltip it is given by: a tap does, where nothing hovers. */
+const TapContext = createContext<((toggle: (open: boolean) => boolean) => void) | null>(null)
+
+function Tooltip({ open, onOpenChange, ...props }: TooltipPrimitive.Root.Props) {
+  const [own, setOwn] = useState(false)
+  const controlled = open !== undefined
+  return (
+    <TapContext.Provider value={controlled ? null : setOwn}>
+      <TooltipPrimitive.Root
+        data-slot="tooltip"
+        open={controlled ? open : own}
+        onOpenChange={(next, details) => {
+          if (!controlled) setOwn(next)
+          onOpenChange?.(next, details)
+        }}
+        {...props}
+      />
+    </TapContext.Provider>
+  )
 }
 
-function TooltipTrigger({ ...props }: TooltipPrimitive.Trigger.Props) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+/**
+ * Reached by the keyboard as any control, and opened by a tap on a touch screen: a tooltip only
+ * hovered is never read there.
+ */
+function TooltipTrigger({ onClick, tabIndex, ...props }: TooltipPrimitive.Trigger.Props) {
+  const tap = useContext(TapContext)
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      tabIndex={tabIndex ?? 0}
+      onClick={(e) => {
+        onClick?.(e)
+        if (tap && window.matchMedia("(pointer: coarse)").matches) {
+          // The tap is the tooltip's: not a press of the card it is on
+          e.stopPropagation()
+          tap((was) => !was)
+        }
+      }}
+      {...props}
+    />
+  )
 }
 
 function TooltipContent({

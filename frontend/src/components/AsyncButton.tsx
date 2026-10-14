@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ComponentProps, type MouseEvent, type
 import { Loader2Icon, TriangleAlertIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
 
 /**
  * A button that knows by itself that its handler is still at work (from phototag's AsyncButton).
@@ -14,8 +15,8 @@ import { Button } from "@/components/ui/button";
  * - it is disabled while at work, so a second tap does not send a second request;
  * - it shows a spinner IN PLACE OF its icon, not beside it: the button keeps its width and its
  *   neighbours do not jump under the finger;
- * - it catches a failure and shows it — a warning sign, the reason in its title — instead of
- *   failing silently (a request that came back 500 used to look exactly like one not sent);
+ * - it catches a failure and shows it — a warning sign, the reason in its title and in a toast —
+ *   instead of failing silently (a request that came back 500 used to look exactly like one not sent);
  * - it does not touch its state after it is gone: the answer may come when the button is not
  *   there any more.
  *
@@ -59,7 +60,10 @@ export function AsyncButton({
         try {
           await onClick(e);
         } catch (err) {
-          if (alive.current) setFailed(err instanceof Error ? err.message : String(err));
+          const message = err instanceof Error ? err.message : String(err);
+          // Told aloud too: a title is never read on a touch screen, nor by a screen reader unasked
+          toast.add({ title: t("AsyncButton.failed", { error: message }), type: "error" });
+          if (alive.current) setFailed(message);
         } finally {
           if (alive.current) setBusy(false);
         }

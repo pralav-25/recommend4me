@@ -4,6 +4,41 @@
  * so the site's look is touched only where the user corrected something.
  */
 
+/* The colours, light; dark when the system is — the site's page is read in the same light */
+:root {
+  --r4m-bg: #ffffff;
+  --r4m-fg: #1f2328;
+  --r4m-border: #c9ced6;
+  --r4m-muted: #6a737d;
+  --r4m-subtle: #f6f8fa;
+  --r4m-hover: #eaeef2;
+  --r4m-link: #0b62c4;
+  --r4m-yes: #1a7f37;
+  --r4m-no: #b42318;
+  --r4m-amber: #c98a12;
+  --r4m-suggested-bg: #eef5ff;
+  --r4m-mine-bg: #dcf5e3;
+  --r4m-current-bg: #ddf4ff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --r4m-bg: #161b22;
+    --r4m-fg: #e6edf3;
+    --r4m-border: #3d444d;
+    --r4m-muted: #9198a1;
+    --r4m-subtle: #21262d;
+    --r4m-hover: #30363d;
+    --r4m-link: #4493f8;
+    --r4m-yes: #3fb950;
+    --r4m-no: #f85149;
+    --r4m-amber: #d29922;
+    --r4m-suggested-bg: #0c2d6b;
+    --r4m-mine-bg: #12361f;
+    --r4m-current-bg: #0c2d6b;
+  }
+}
+
 r4m-panel, r4m-head, r4m-line, r4m-why, r4m-facet, r4m-error, r4m-label {
   display: block;
 }
@@ -12,10 +47,10 @@ r4m-panel {
   box-sizing: border-box;
   margin: 12px 0;
   padding: 10px 12px;
-  border: 1px solid #c9ced6;
+  border: 1px solid var(--r4m-border);
   border-radius: 8px;
-  background: #ffffff;
-  color: #1f2328;
+  background: var(--r4m-bg);
+  color: var(--r4m-fg);
   font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
   text-align: left;
 }
@@ -32,7 +67,7 @@ r4m-head .r4m-spacer {
 }
 
 r4m-panel a.r4m-link {
-  color: #0b62c4;
+  color: var(--r4m-link);
   font-size: 12px;
   text-decoration: underline;
 }
@@ -52,17 +87,30 @@ r4m-label {
 }
 
 r4m-error {
-  color: #b42318;
+  color: var(--r4m-no);
   font-size: 12px;
 }
 
+/* A change that failed, told by what it was about: a value, a line of grades */
+r4m-failed {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+r4m-failure {
+  color: var(--r4m-no);
+  font: 12px/20px system-ui, sans-serif;
+}
+
 r4m-panel .r4m-muted {
-  color: #6a737d;
+  color: var(--r4m-muted);
 }
 
 /* An answer sent and not yet answered by the application: shown as given, pulsing until it is kept */
 r4m-saving-note {
-  color: #6a737d;
+  color: var(--r4m-muted);
   font-size: 12px;
 }
 
@@ -77,11 +125,11 @@ r4m-saving-note {
 }
 
 r4m-panel .r4m-up {
-  color: #1a7f37;
+  color: var(--r4m-yes);
 }
 
 r4m-panel .r4m-down {
-  color: #b42318;
+  color: var(--r4m-no);
 }
 
 /* --- Buttons --- */
@@ -93,10 +141,10 @@ r4m-panel .r4m-down {
   padding: 0 6px;
   min-width: 22px;
   height: 22px;
-  border: 1px solid #c9ced6;
+  border: 1px solid var(--r4m-border);
   border-radius: 4px;
-  background: #f6f8fa;
-  color: #1f2328;
+  background: var(--r4m-subtle);
+  color: var(--r4m-fg);
   font: 600 12px/20px system-ui, sans-serif;
   text-align: center;
   cursor: pointer;
@@ -114,11 +162,11 @@ r4m-panel .r4m-down {
 }
 
 [data-r4m].r4m-yes {
-  color: #1a7f37;
+  color: var(--r4m-yes);
 }
 
 [data-r4m].r4m-no {
-  color: #b42318;
+  color: var(--r4m-no);
 }
 
 /* Taking the user's word back: small, borderless, by the chip */
@@ -130,13 +178,13 @@ r4m-panel .r4m-down {
   border: 0;
   border-radius: 4px;
   background: transparent;
-  color: #6a737d;
+  color: var(--r4m-muted);
   font: 600 11px/20px system-ui, sans-serif;
   cursor: pointer;
 }
 
 [data-r4m].r4m-undo:hover {
-  background: #eaeef2;
+  background: var(--r4m-hover);
 }
 
 /* "✓ all (N)" by the facet's name */
@@ -158,9 +206,9 @@ r4m-panel .r4m-down {
 }
 
 [data-r4m].r4m-button.r4m-complete.r4m-current {
-  background: #dafbe1;
-  border-color: #1a7f37;
-  color: #1a7f37;
+  background: var(--r4m-mine-bg);
+  border-color: var(--r4m-yes);
+  color: var(--r4m-yes);
 }
 
 /* --- Scores, red to green --- */
@@ -192,7 +240,7 @@ r4m-badge {
 }
 
 r4m-grade-mark {
-  color: #c98a12;
+  color: var(--r4m-amber);
   font: 700 13px/20px system-ui, sans-serif;
 }
 
@@ -220,14 +268,14 @@ r4m-grade-mark {
 
 [data-r4m].r4m-interest-mark.r4m-implied {
   border-style: dashed;
-  border-color: #8b949e;
+  border-color: var(--r4m-muted);
 }
 
 [data-r4m].r4m-interest-mark.r4m-current {
   opacity: 1;
   filter: none;
   border-color: #0b62c4;
-  background: #ddf4ff;
+  background: var(--r4m-current-bg);
 }
 
 /* --- Values of facets --- */
@@ -254,35 +302,35 @@ r4m-chip {
   align-items: center;
   margin: 2px 4px 2px 0;
   padding: 1px 2px 1px 8px;
-  border: 1px solid #c9ced6;
+  border: 1px solid var(--r4m-border);
   border-radius: 12px;
-  background: #ffffff;
-  color: #1f2328;
+  background: var(--r4m-bg);
+  color: var(--r4m-fg);
   font: 12px/20px system-ui, sans-serif;
 }
 
 r4m-chip.r4m-suggested {
   border-style: dashed;
   border-color: #0b62c4;
-  background: #eef5ff;
+  background: var(--r4m-suggested-bg);
 }
 
 /* The user's: confirmed or added — filled, a ✓ before the name */
 r4m-chip.r4m-mine {
-  border-color: #1a7f37;
-  background: #dcf5e3;
+  border-color: var(--r4m-yes);
+  background: var(--r4m-mine-bg);
   padding-left: 6px;
 }
 
 r4m-check {
-  color: #1a7f37;
+  color: var(--r4m-yes);
   font: 700 12px/20px system-ui, sans-serif;
 }
 
 /* Not answered on: outlined on white */
 r4m-chip.r4m-open {
-  border-color: #d0d7de;
-  background: #ffffff;
+  border-color: var(--r4m-border);
+  background: var(--r4m-bg);
 }
 
 /* Only offered, not the work's yet: dashed, as a suggestion */
@@ -311,20 +359,20 @@ r4m-chip:hover .r4m-undo, r4m-chip .r4m-undo:focus-visible {
 
 /* The model's chance in small print, while the user has not answered; in amber when the work more likely has it not */
 r4m-chance {
-  color: #8b949e;
+  color: var(--r4m-muted);
   font: 10px/20px system-ui, sans-serif;
   cursor: help;
 }
 
 r4m-chance.r4m-unlikely {
-  color: #c98a12;
+  color: var(--r4m-amber);
   font-weight: 700;
 }
 
 r4m-original {
   display: block;
   margin: 0 0 2px;
-  color: #6a737d;
+  color: var(--r4m-muted);
   font: 12px/1.4 system-ui, sans-serif;
 }
 
@@ -333,10 +381,10 @@ r4m-facet:not(r4m-panel r4m-facet) {
   display: block;
   margin: 6px 0;
   padding: 6px 8px;
-  border: 1px solid #c9ced6;
+  border: 1px solid var(--r4m-border);
   border-radius: 8px;
-  background: #ffffff;
-  color: #1f2328;
+  background: var(--r4m-bg);
+  color: var(--r4m-fg);
   font: 13px/1.45 system-ui, sans-serif;
 }
 
@@ -380,9 +428,9 @@ r4m-options {
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  border: 1px solid #c9ced6;
+  border: 1px solid var(--r4m-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--r4m-bg);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
   text-align: left;
   font: 13px system-ui, sans-serif;
@@ -395,13 +443,13 @@ r4m-options[hidden] {
 r4m-option {
   display: block;
   padding: 6px 10px;
-  color: #1f2328;
+  color: var(--r4m-fg);
   cursor: pointer;
 }
 
 r4m-option:hover,
 r4m-option.r4m-active {
-  background: #eef3fb;
+  background: var(--r4m-hover);
 }
 
 r4m-option-name {
@@ -411,7 +459,7 @@ r4m-option-name {
 r4m-option-note {
   display: block;
   font-size: 11px;
-  color: #6b7280;
+  color: var(--r4m-muted);
 }
 
 form.r4m-add input {
@@ -419,31 +467,59 @@ form.r4m-add input {
   width: 180px;
   height: 24px;
   padding: 0 6px;
-  border: 1px solid #c9ced6;
+  border: 1px solid var(--r4m-border);
   border-radius: 12px;
-  background: #ffffff;
-  color: #1f2328;
+  background: var(--r4m-bg);
+  color: var(--r4m-fg);
   font: 12px system-ui, sans-serif;
 }
 
 /* A name typed where only the dictionary's entries go: the field and a line under it say so */
 form.r4m-add input[aria-invalid="true"] {
-  border-color: #cf222e;
+  border-color: var(--r4m-no);
 }
 
 r4m-add-note {
   display: block;
   margin-top: 2px;
   font: 11px system-ui, sans-serif;
-  color: #cf222e;
+  color: var(--r4m-no);
 }
 
 r4m-add-note[hidden] {
   display: none;
 }
 
-/* A finger: Safari zooms the page into a field of a smaller font than 16px, and a row is a finger's height */
+/*
+ * A finger: a button of a finger's size, and nothing shown only to a pointer that hovers — the
+ * take-back of an answered value, the ✓ ✕ by a site's value. Safari zooms the page into a field of a
+ * smaller font than 16px, and a row is a finger's height
+ */
 @media (pointer: coarse) {
+  [data-r4m].r4m-button, [data-r4m].r4m-grade, [data-r4m].r4m-yes, [data-r4m].r4m-no, [data-r4m].r4m-mark,
+  [data-r4m].r4m-undo, [data-r4m].r4m-interest-mark {
+    min-width: 32px;
+    height: 32px;
+    font-size: 14px;
+    line-height: 30px;
+  }
+
+  [data-r4m].r4m-button.r4m-all, [data-r4m].r4m-button.r4m-complete {
+    height: 32px;
+    font-size: 13px;
+    line-height: 30px;
+  }
+
+  r4m-chip {
+    font-size: 14px;
+    line-height: 32px;
+  }
+
+  r4m-chip .r4m-undo, r4m-tools [data-r4m].r4m-no, r4m-tools [data-r4m].r4m-yes:not(.r4m-current) {
+    visibility: visible;
+    opacity: 1;
+  }
+
   form.r4m-add input {
     width: 220px;
     height: 32px;
