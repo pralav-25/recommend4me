@@ -9,6 +9,7 @@ import io.github.vlsergey.recommend4me.search.SearchProvider
 import io.github.vlsergey.recommend4me.settings.Settings
 import io.github.vlsergey.recommend4me.source.Source
 import io.github.vlsergey.recommend4me.suggestion.FacetSuggester
+import io.github.vlsergey.recommend4me.tag.TagCatalogue
 import io.github.vlsergey.recommend4me.universe.UniverseCatalogue
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
@@ -30,6 +31,7 @@ class Plugins(
     searches: ObjectProvider<SearchProvider>,
     suggesters: ObjectProvider<FacetSuggester>,
     catalogues: ObjectProvider<UniverseCatalogue>,
+    tagCatalogues: ObjectProvider<TagCatalogue>,
     types: ObjectProvider<ContentType>,
     private val settings: Settings,
 ) {
@@ -41,6 +43,9 @@ class Plugins(
     val search: SearchProvider? = searches.orderedStream().toList().firstOrNull()
     val suggester: FacetSuggester? = suggesters.orderedStream().toList().firstOrNull()
     val catalogues: List<UniverseCatalogue> = catalogues.orderedStream().toList()
+
+    /** The catalogues the tags are bound to entries of ([TagCatalogue]). */
+    val tagCatalogues: List<TagCatalogue> = tagCatalogues.orderedStream().toList()
     private val allTypes = types.orderedStream().toList()
 
     init {
@@ -49,9 +54,9 @@ class Plugins(
         }
         require(this.sources.map { it.id }.distinct().size == this.sources.size) { "Two sources of one id: ${this.sources.map { it.id }}" }
         log.info(
-            "sources {}, text encoders {}, picture encoders {}, rerankers {}, scorers {}, search {}, suggester {}, catalogues {}",
+            "sources {}, text encoders {}, picture encoders {}, rerankers {}, scorers {}, search {}, suggester {}, catalogues {}, tag catalogues {}",
             this.sources.map { it.id }, this.textEncoders.map { it.id }, this.imageEncoders.map { it.id }, this.rerankers.map { it.id },
-            this.scorers.map { it.id }, search?.id, suggester?.id, this.catalogues.map { it.id },
+            this.scorers.map { it.id }, search?.id, suggester?.id, this.catalogues.map { it.id }, this.tagCatalogues.map { it.id },
         )
     }
 

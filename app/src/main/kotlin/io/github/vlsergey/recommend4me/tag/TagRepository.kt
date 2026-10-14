@@ -3,14 +3,20 @@ package io.github.vlsergey.recommend4me.tag
 import io.github.vlsergey.recommend4me.database.model.tables.references.TAG_SHOWN_NAME
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_DISTINCT
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_ENTRY
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_PARENT
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.SITE_TAG
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_ENTRY
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_ENTRY_TEXT
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import java.time.Instant
 
 /** Which rule gave a tag its name ([TagNaming]). */
-enum class NameRule { EXPLICIT, LIKED, GRADED, ALL, ALPHABET }
+enum class NameRule { EXPLICIT, CATALOGUE, LIKED, GRADED, ALL, ALPHABET }
+
+/** An entry of a catalogue a tag is bound to: "wikidata", "Q305561". */
+data class TagEntryRef(val catalogue: String, val entry: String)
 
 /** A tag's name worked out, with the rule that gave it. */
 data class ShownName(val name: String, val rule: NameRule)
@@ -70,6 +76,9 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
         val d = NORMALIZED_TAG_DISTINCT
         val told = tx.selectFrom(d).where(d.FIRST_TAG.eq(from).or(d.OTHER_TAG.eq(from))).fetch()
             .map { pair(if (it.firstTag == from) into else it.firstTag!!, if (it.otherTag == from) into else it.otherTag!!) }
+        // Its entry of a catalogue goes to [into] when [into] has none: the user's word kept
+        val e = NORMALIZED_TAG_ENTRY
+        if (!tx.fetchExists(e, e.TAG.eq(into))) tx.update(e).set(e.TAG, into).where(e.TAG.eq(from)).execute()
         // [from]'s links and pairs go with it, as it goes; the ones moved to [into] come back
         tx.deleteFrom(NORMALIZED_TAG).where(NORMALIZED_TAG.ID.eq(from)).execute()
         links.filter { (child, parent) -> child != parent }.distinct().forEach { (child, parent) ->
@@ -151,8 +160,64 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
         else db.deleteFrom(d).where(d.FIRST_TAG.eq(x), d.OTHER_TAG.eq(y)).execute()
     }
 
+    // --- The entries of a catalogue the tags are bound to ---
+
+    /** Every tag bound to an entry of a catalogue: tag id to the entry. */
+    fun entriesOfTags(): Map<Long, TagEntryRef> {
+        val e = NORMALIZED_TAG_ENTRY
+        return db.select(e.TAG, e.CATALOGUE, e.ENTRY).from(e).fetchMap({ it.value1()!! }, { TagEntryRef(it.value2()!!, it.value3()!!) })
+    }
+
+    /** The tag [id] bound to the entry [ref] — whatever it was bound to — or, [ref] null, to none. */
+    fun bindEntry(id: Long, ref: TagEntryRef?, now: Instant) {
+        val e = NORMALIZED_TAG_ENTRY
+        if (ref == null) {
+            db.deleteFrom(e).where(e.TAG.eq(id)).execute()
+            return
+        }
+        db.insertInto(e).set(e.TAG, id).set(e.CATALOGUE, ref.catalogue).set(e.ENTRY, ref.entry).set(e.BOUND_AT, now)
+            .onDuplicateKeyUpdate().set(e.CATALOGUE, ref.catalogue).set(e.ENTRY, ref.entry).set(e.BOUND_AT, now)
+            .execute()
+    }
+
+    /** The entry of [catalogue] as the catalogue gave it now: its texts in place of those kept. */
+    fun keepEntry(catalogue: String, entry: TagEntry, now: Instant) = db.transaction { c ->
+        val tx = DSL.using(c)
+        tx.insertInto(TAG_ENTRY).set(TAG_ENTRY.CATALOGUE, catalogue).set(TAG_ENTRY.ENTRY, entry.id).set(TAG_ENTRY.URL, entry.url.take(1000)).set(TAG_ENTRY.FETCHED_AT, now)
+            .onDuplicateKeyUpdate().set(TAG_ENTRY.URL, entry.url.take(1000)).set(TAG_ENTRY.FETCHED_AT, now)
+            .execute()
+        val t = TAG_ENTRY_TEXT
+        tx.deleteFrom(t).where(t.CATALOGUE.eq(catalogue), t.ENTRY.eq(entry.id)).execute()
+        fun put(language: String, kind: String, texts: List<String>) = texts.forEachIndexed { i, text ->
+            tx.insertInto(t).set(t.CATALOGUE, catalogue).set(t.ENTRY, entry.id).set(t.LANGUAGE, language).set(t.KIND, kind).set(t.POSITION, i)
+                .set(t.TEXT, text.take(2000)).execute()
+        }
+        entry.labels.forEach { (language, text) -> put(language, LABEL, listOf(text)) }
+        entry.aliases.forEach { (language, texts) -> put(language, ALIAS, texts) }
+        entry.descriptions.forEach { (language, text) -> put(language, DESCRIPTION, listOf(text)) }
+    }
+
+    /** The entries kept — of [refs] alone, when given — with their texts: by reference. */
+    fun keptEntries(refs: Collection<TagEntryRef>? = null): Map<TagEntryRef, TagEntry> {
+        if (refs != null && refs.isEmpty()) return emptyMap()
+        val wanted = refs?.toSet()
+        val urls = db.select(TAG_ENTRY.CATALOGUE, TAG_ENTRY.ENTRY, TAG_ENTRY.URL).from(TAG_ENTRY).fetch()
+            .map { TagEntryRef(it.value1()!!, it.value2()!!) to it.value3()!! }.filter { wanted == null || it.first in wanted }.toMap()
+        val t = TAG_ENTRY_TEXT
+        val texts = db.select(t.CATALOGUE, t.ENTRY, t.LANGUAGE, t.KIND, t.TEXT).from(t).orderBy(t.POSITION).fetch()
+            .groupBy { TagEntryRef(it.value1()!!, it.value2()!!) }
+        return urls.mapValues { (ref, url) ->
+            val own = texts[ref].orEmpty()
+            fun of(kind: String) = own.filter { it.value4() == kind }.groupBy({ it.value3()!! }, { it.value5()!! })
+            TagEntry(ref.entry, of(LABEL).mapValues { it.value.first() }, of(ALIAS), of(DESCRIPTION).mapValues { it.value.first() }, url)
+        }
+    }
+
     companion object {
         private const val BATCH = 1000
+        private const val LABEL = "L"
+        private const val ALIAS = "A"
+        private const val DESCRIPTION = "D"
 
         /** A normalized tag as a value of the works' tags: its id written out. */
         fun key(id: Long): String = id.toString()

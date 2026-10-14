@@ -1,6 +1,10 @@
 package io.github.vlsergey.recommend4me.tag
 
 import io.github.vlsergey.recommend4me.api.TagsApi
+import io.github.vlsergey.recommend4me.api.model.FoundTagEntry
+import io.github.vlsergey.recommend4me.api.model.TagEntryInfo
+import io.github.vlsergey.recommend4me.api.model.TagEntryRequest
+import org.springframework.beans.factory.annotation.Value
 import io.github.vlsergey.recommend4me.api.model.SimilarTag as ApiSimilarTag
 import io.github.vlsergey.recommend4me.api.model.SimilarTagPage
 import io.github.vlsergey.recommend4me.api.model.TagBindingRequest
@@ -20,7 +24,12 @@ import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-class TagsController(private val stores: Stores, private val tags: Tags) : TagsApi {
+class TagsController(
+    private val stores: Stores,
+    private val tags: Tags,
+    /** The user's languages: of an entry's texts, those of the first that has them are shown. */
+    @Value("\${recommend4me.languages:ru,en}") private val languages: List<String>,
+) : TagsApi {
 
     /** The type and its facet of free tags; 404 for a type without one. */
     private fun of(typeId: String): Pair<TypeStore, String> {
@@ -74,6 +83,28 @@ class TagsController(private val stores: Stores, private val tags: Tags) : TagsA
         return tags.bind(t, facet, SiteTagRef(r.source, r.siteTag), r.tag)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 
+    override fun findTagEntries(type: String, query: String): ResponseEntity<List<FoundTagEntry>> {
+        val (t, _) = of(type)
+        return ResponseEntity.ok(
+            tags.findEntries(t, query).map { f ->
+                FoundTagEntry(f.catalogue, f.entry.id, f.entry.url, f.entry.labels.first(), f.entry.descriptions.first(), f.tag)
+            },
+        )
+    }
+
+    override fun bindTagEntry(type: String, tagEntryRequest: TagEntryRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = of(type)
+        val r = tagEntryRequest
+        return try {
+            tags.bindEntry(t, facet, r.tag, r.catalogue, r.entry)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
+        } catch (e: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        }
+    }
+
+    /** The text of the user's first language that has one. */
+    private fun Map<String, String>.first(): String? = languages.firstNotNullOfOrNull { this[it] }
+
     private fun NamedTag.toApi() = TagInfo(
         key = stats.key,
         name = name.name,
@@ -86,6 +117,7 @@ class TagsController(private val stores: Stores, private val tags: Tags) : TagsA
         names = TagNaming.names(stats).map { it.first },
         parents = parents.map { (key, name) -> TagRef(key, name) },
         children = children.map { (key, name) -> TagRef(key, name) },
+        entry = entry?.let { b -> TagEntryInfo(b.catalogue, b.entry.id, b.entry.url, b.names, b.entry.labels.first(), b.entry.descriptions.first()) },
     )
 
     private fun TagVariant.toApi() = TagVariantInfo(site.source, site.tag, name, uses.works, uses.graded, uses.liked)

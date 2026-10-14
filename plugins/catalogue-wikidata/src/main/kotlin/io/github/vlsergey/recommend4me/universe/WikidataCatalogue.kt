@@ -1,5 +1,7 @@
 package io.github.vlsergey.recommend4me.universe
 
+import io.github.vlsergey.recommend4me.tag.TagCatalogue
+import io.github.vlsergey.recommend4me.tag.TagEntry
 import tools.jackson.databind.JsonNode
 import tools.jackson.databind.json.JsonMapper
 import java.net.URI
@@ -26,8 +28,39 @@ import java.time.format.DateTimeFormatter
  * Лонгботтом" of the fans is found as an alias of "Невилл Долгопупс" of the translation — and the
  * labels and descriptions are answered in each of them that has them.
  */
-class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue {
+class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCatalogue {
     override val id = "wikidata"
+
+    /**
+     * An item a tag stands for — "Quidditch", "angst", "slow burn" — by its names and aliases in
+     * every language; a Q-id, or the address of an item's page, is that item.
+     */
+    override fun find(text: String, languages: List<String>): List<TagEntry> {
+        val asked = ITEM_IN.find(text.trim())?.value
+        if (asked != null) return entries(listOf(asked), languages)
+        val found = languages.flatMap { lang ->
+            get("$API?action=wbsearchentities&type=item&limit=$SEARCHED&format=json&language=$lang&uselang=$lang&search=${enc(text.trim())}")
+                .path("search").mapNotNull { it.path("id").asString(null) }
+        }
+        return entries(found.distinct(), languages)
+    }
+
+    /** The items [ids] with their labels, aliases and descriptions in every one of [languages] that has them, in the order given. */
+    override fun entries(ids: Collection<String>, languages: List<String>): List<TagEntry> {
+        val items = ids.filter { ITEM.matches(it) }.distinct()
+        return items.chunked(ENTITIES_ASKED).flatMap { chunk ->
+            val entities = get(
+                "$API?action=wbgetentities&props=labels%7Caliases%7Cdescriptions&format=json&ids=${chunk.joinToString("%7C")}&languages=${languages.joinToString("%7C")}",
+            ).path("entities")
+            chunk.mapNotNull { id ->
+                val e = entities.path(id)
+                if (e.isMissingNode || e.has("missing")) return@mapNotNull null
+                fun byLanguage(field: String) = languages.mapNotNull { lang -> e.path(field).path(lang).path("value").asString(null)?.let { lang to it } }.toMap()
+                val aliases = languages.associateWith { lang -> e.path("aliases").path(lang).mapNotNull { it.path("value").asString(null) } }.filterValues { it.isNotEmpty() }
+                TagEntry(id, byLanguage("labels"), aliases, byLanguage("descriptions"), "$PAGE$id")
+            }
+        }
+    }
 
     private val http = HttpClient.newBuilder().connectTimeout(TIMEOUT).followRedirects(HttpClient.Redirect.NORMAL).build()
 
@@ -43,11 +76,11 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue {
         }
         val byText = get("$API?action=query&list=search&srnamespace=0&srlimit=$SEARCHED&format=json&srsearch=${enc(name)}")
             .path("query").path("search").mapNotNull { it.path("title").asString(null) }
-        return entries((byName + byText).distinct(), languages)
+        return universeEntries((byName + byText).distinct(), languages)
     }
 
     override fun universe(id: String, languages: List<String>, properties: Set<String>): UniverseEntry? {
-        val entry = entries(listOf(id), languages).firstOrNull() ?: return null
+        val entry = universeEntries(listOf(id), languages).firstOrNull() ?: return null
         // The statements of the universe and of every work, series and franchise within it or set in it
         // (P1434 "takes place in fictional universe": the series of a universe of its own) — but its
         // characters', which are said to be in it the same way
@@ -198,7 +231,7 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue {
             ?: runCatching { Duration.between(Instant.now(), ZonedDateTime.parse(value.trim(), DateTimeFormatter.RFC_1123_DATE_TIME)).coerceAtLeast(Duration.ZERO) }.getOrNull()
 
     /** The items [ids] with their names and descriptions in every one of [languages] that has them, in the order given. */
-    private fun entries(ids: List<String>, languages: List<String>): List<UniverseEntry> {
+    private fun universeEntries(ids: List<String>, languages: List<String>): List<UniverseEntry> {
         val items = ids.filter { ITEM.matches(it) }
         if (items.isEmpty()) return emptyList()
         val entities = get(
@@ -243,6 +276,12 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue {
         private val TIMEOUT: Duration = Duration.ofSeconds(60)
         private const val TOO_MANY_REQUESTS = 429
         private val ITEM = Regex("Q\\d+")
+
+        /** An item's id within a text: itself, or the address of its page. */
+        private val ITEM_IN = Regex("(?<![A-Za-z0-9])Q\\d+(?![0-9])")
+
+        /** Items asked for in one request: the API's limit. */
+        private const val ENTITIES_ASKED = 50
 
         /** A property of Wikidata: "P8419". */
         private val PROPERTY = Regex("P\\d+")

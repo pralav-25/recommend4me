@@ -222,9 +222,17 @@ and every tag the user said something of to it, has four words to press and pres
 tag (merged), a tag under it, a tag above it, a different one; every site's tag bound to it is a
 row of its own, merged, unpressed to take it out.
 
-A tag is shown by the name the user gave it; else by its sites' tags' name most used by the works
-the user liked (graded above the middle of the scale), by the works graded, by all its works;
-else by the first by the alphabet. The names are worked out again a few seconds after the works or
+A tag is shown by the name the user gave it; else by the label of the entry of a catalogue the user
+bound it to, in the user's first language that has one; else by its sites' tags' name most used by
+the works the user liked (graded above the middle of the scale), by the works graded, by all its
+works; else by the first by the alphabet.
+
+The user binds a tag to an entry of a catalogue of tags (`TagCatalogue`; `catalogue-wikidata`) —
+"Quidditch" to Q305561 — found by a name, a Q-id or the entry's page: the tag is named in the
+user's language, and the entry's labels and aliases of every language find it. The binding is the
+user's word, kept with the merges in the type's database of corrections (`normalized_tag_entry`,
+one entry a tag); the entry's texts as the catalogue gave them when bound (`tag_entry`). A tag
+merged into another gives it its entry when it has none. The names are worked out again a few seconds after the works or
 their grades change and kept in the type's model database (`tag_shown_name`): made of the rest, not
 the user's word. Every source reads them from there, as the universes' names are read from their
 dictionary, never from a copy of its own.

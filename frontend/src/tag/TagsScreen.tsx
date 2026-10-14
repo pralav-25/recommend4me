@@ -1,11 +1,12 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftIcon, CombineIcon, Loader2Icon, SearchIcon, TagsIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, CombineIcon, ExternalLinkIcon, Link2Icon, Loader2Icon, SearchIcon, TagsIcon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   api,
   unwrap,
   type ContentTypeInfo,
+  type FoundTagEntry,
   type SimilarTag,
   type SimilarTagPage,
   type TagInfo,
@@ -14,6 +15,7 @@ import {
   type TagRelation,
   type TagVariantInfo,
 } from "@/api/client";
+import { AsyncButton } from "@/components/AsyncButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
@@ -212,6 +214,7 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
             </p>
           </header>
           <TagName type={type} tag={found} />
+          <TagEntry type={type} tag={found} />
           <Related tag={found} />
           <Variants tag={found} />
           <Similar type={type} tag={found} />
@@ -284,6 +287,86 @@ function TagName({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
       )}
       {save.isError && <span className="w-full text-sm text-destructive">{t("TagName.saveError", { error: save.error.message })}</span>}
     </form>
+  );
+}
+
+/**
+ * The entry of a catalogue (Wikidata) the tag is bound to — its label names the tag in the user's
+ * language, its other names find it — or the search of one: by a name, a Q-id or the entry's address.
+ */
+function TagEntry({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+  const { t } = useTranslation("tag");
+  const changed = useTagsChanged(type.id);
+  const [text, setText] = useState("");
+  const [found, setFound] = useState<FoundTagEntry[] | null>(null);
+  // The search is the press of its button: busy while it is ([AsyncButton])
+  const find = async () => {
+    if (!text.trim()) return;
+    setFound(unwrap(await api.GET("/api/types/{type}/tags/entries", { params: { path: { type: type.id }, query: { query: text.trim() } } })));
+  };
+  const bind = async (catalogue?: string, entry?: string) => {
+    unwrap(await api.PUT("/api/types/{type}/tags/entry", { params: { path: { type: type.id } }, body: { tag: tag.key, catalogue, entry } }));
+    setFound(null);
+    setText("");
+    await changed();
+  };
+  const bound = tag.entry;
+  return (
+    <section className="flex flex-col gap-1.5 text-sm">
+      <h2 className="font-semibold">{t("Entry.title")}</h2>
+      {bound ? (
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <a href={bound.url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+              {bound.label ?? bound.entry} <span className="text-muted-foreground">({sourceTitle(bound.catalogue)} {bound.entry})</span>
+              <ExternalLinkIcon className="ml-1 inline size-3 opacity-60" />
+            </a>
+            {bound.description && <span className="text-muted-foreground">{bound.description}</span>}
+            {bound.names.length > 1 && (
+              <span className="truncate text-xs text-muted-foreground" title={bound.names.join(", ")}>
+                {t("Entry.names", { names: bound.names.filter((n) => n !== bound.label).join(", ") })}
+              </span>
+            )}
+          </div>
+          <AsyncButton variant="ghost" size="sm" onClick={() => bind()} title={t("Entry.unbindTitle")} icon={<XIcon />}>
+            {t("Entry.unbind")}
+          </AsyncButton>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs text-muted-foreground">{t("Entry.hint")}</p>
+          <div className="flex flex-wrap items-center gap-2" onKeyDown={(e) => e.stopPropagation()}>
+            <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={t("Entry.placeholder")} className="max-w-sm" aria-label={t("Entry.placeholder")} />
+            <AsyncButton size="sm" onClick={find} disabled={!text.trim()} icon={<SearchIcon />}>
+              {t("Entry.find")}
+            </AsyncButton>
+          </div>
+          {found && found.length === 0 && <p className="text-muted-foreground">{t("Entry.nothing")}</p>}
+          {found && found.length > 0 && (
+            <ul className="flex flex-col divide-y rounded-lg border">
+              {found.map((f) => (
+                <li key={`${f.catalogue}/${f.entry}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
+                  <div className="flex min-w-0 flex-1 flex-col">
+                    <a href={f.url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+                      {f.label ?? f.entry} <span className="text-muted-foreground">({f.entry})</span>
+                    </a>
+                    {f.description && <span className="text-xs text-muted-foreground">{f.description}</span>}
+                    {f.tag && f.tag !== tag.key && (
+                      <a href={screenHref({ kind: "tags", tag: f.tag })} onClick={(e) => followLink(e, { kind: "tags", tag: f.tag! })} className="text-xs text-maybe underline-offset-2 hover:underline">
+                        {t("Entry.boundElsewhere")}
+                      </a>
+                    )}
+                  </div>
+                  <AsyncButton variant="outline" size="sm" onClick={() => bind(f.catalogue, f.entry)} title={t("Entry.bindTitle")} icon={<Link2Icon />}>
+                    {t("Entry.bind")}
+                  </AsyncButton>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

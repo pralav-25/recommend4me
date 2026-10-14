@@ -46,6 +46,9 @@ import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
 import io.github.vlsergey.recommend4me.tag.SiteTagRef
 import io.github.vlsergey.recommend4me.tag.TagRepository
 import io.github.vlsergey.recommend4me.tag.TagsController
+import io.github.vlsergey.recommend4me.api.model.TagEntryRequest
+import io.github.vlsergey.recommend4me.tag.TagCatalogue
+import io.github.vlsergey.recommend4me.tag.TagEntry
 import io.github.vlsergey.recommend4me.universe.CatalogueLookup
 import io.github.vlsergey.recommend4me.universe.LayerDraft
 import io.github.vlsergey.recommend4me.universe.UniverseCatalogue
@@ -96,13 +99,21 @@ class SiteTest {
         fun wordsEncoder(): TextEncoder = WordsEncoder()
 
         @Bean
-        fun fakeCatalogue(): UniverseCatalogue = FakeCatalogue()
+        fun fakeCatalogue(): FakeCatalogue = FakeCatalogue()
     }
 
-    /** A catalogue of two universes of space opera, each with the same two characters and a station, a place; its texts in English. */
-    class FakeCatalogue : UniverseCatalogue {
+    /**
+     * A catalogue of two universes of space opera, each with the same two characters and a station, a
+     * place; its texts in English. And of one concept a tag is bound to: a hull, named in Russian too.
+     */
+    class FakeCatalogue : UniverseCatalogue, TagCatalogue {
         override val id = "fake"
         private fun en(text: String) = mapOf("en" to text)
+
+        private val hull = TagEntry("E1", mapOf("en" to "Hull", "ru" to "Корпус"), mapOf("en" to listOf("Ship hull")), mapOf("en" to "the body of a ship"), "https://fake.example/E1")
+
+        override fun find(text: String, languages: List<String>) = if ("hull" in text.lowercase() || text == "E1") listOf(hull) else emptyList()
+        override fun entries(ids: Collection<String>, languages: List<String>) = listOf(hull).filter { it.id in ids }
         private fun entries(languages: List<String>) = listOf(
             UniverseEntry("U1", en("Space opera"), en("Ships and pilots"), "https://fake.example/U1", languages),
             UniverseEntry("U2", en("Fleet"), en("More ships"), "https://fake.example/U2", languages),
@@ -708,6 +719,24 @@ class SiteTest {
         assertEquals(1, found.count { it.key == hulls })
         // The name taken back: the sites' names decide again
         assertEquals(TagNameRule.LIKED, tagsApi.nameTag("books", TagNameRequest(hulls)).body!!.rule)
+
+        // Bound to an entry of a catalogue, found by the user: named by its label in the user's first language
+        val entries = tagsApi.findTagEntries("books", "hull").body!!
+        assertEquals(listOf("fake" to "E1"), entries.map { it.catalogue to it.entry })
+        assertNull(entries.single().tag)
+        val bound = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1")).body!!
+        assertEquals("Корпус" to TagNameRule.CATALOGUE, bound.name to bound.rule)
+        assertEquals(setOf("Hull", "Корпус", "Ship hull"), bound.entry!!.names.toSet())
+        assertEquals(hulls, tagsApi.findTagEntries("books", "E1").body!!.single().tag)
+        // Found by any name of its entry, in any language
+        assertTrue(tagsApi.listTags("books", "ship hull", 0, 10).body!!.tags.any { it.key == hulls })
+        // The user's own name over the entry's
+        assertEquals(TagNameRule.EXPLICIT, tagsApi.nameTag("books", TagNameRequest(hulls, "Корпуса")).body!!.rule)
+        tagsApi.nameTag("books", TagNameRequest(hulls))
+        // Bound to none: the sites' names again
+        val unbound = tagsApi.bindTagEntry("books", TagEntryRequest(hulls)).body!!
+        assertNull(unbound.entry)
+        assertEquals(TagNameRule.LIKED, unbound.rule)
 
         // Both site's tags merged rows of it; one taken out, to a new tag of its own; the answer stays with the tag
         fun rows() = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null).body!!.tags

@@ -8,8 +8,10 @@ import io.github.vlsergey.recommend4me.rating.Grades
 import io.github.vlsergey.recommend4me.rating.GradesChanged
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
+import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import jakarta.annotation.PreDestroy
+import org.springframework.beans.factory.annotation.Value
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.ApplicationEventPublisher
@@ -50,14 +52,24 @@ class TagStats(val key: String) {
     fun variant(site: SiteTagRef, name: String) = variants.getOrPut(site) { TagVariant(site, name, Uses()) }
 }
 
-/** A tag named, with the tags directly above and under it, named. */
+/** A tag named, with the tags directly above and under it, named, and the entry of a catalogue it is bound to. */
 class NamedTag(
     val stats: TagStats,
     val name: ShownName,
     val explicit: String?,
     val parents: List<Pair<String, String>> = emptyList(),
     val children: List<Pair<String, String>> = emptyList(),
+    val entry: BoundEntry? = null,
 )
+
+/** The entry of a catalogue a tag is bound to, as the catalogue gave it when last asked. */
+class BoundEntry(val catalogue: String, val entry: TagEntry) {
+    /** Every name of it in every language kept: the label and the aliases — a tag is found by any of them. */
+    val names: List<String> get() = (entry.labels.values + entry.aliases.values.flatten()).distinct()
+}
+
+/** An entry a catalogue found, and the tag bound to it already, if any. */
+class FoundEntry(val catalogue: String, val entry: TagEntry, val tag: String?)
 
 /** What the user said a tag is to another. */
 enum class TagRelation {
@@ -102,6 +114,9 @@ class Tags(
     private val normalization: TagNormalization,
     private val phrases: PhraseVectors,
     private val events: ApplicationEventPublisher,
+    private val plugins: Plugins,
+    /** The languages a tag's entry is asked in, the user's first: its label in the first that has one names the tag. */
+    @Value("\${recommend4me.languages:ru,en}") private val languages: List<String>,
 ) {
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "tag-names").apply { isDaemon = true } }
     private val pending = ConcurrentHashMap<String, ScheduledFuture<*>>()
@@ -155,28 +170,52 @@ class Tags(
         return out
     }
 
-    /** What every tag of one reading is named: the stats, the user's names, the tags above and under them. */
-    private class Naming(val stats: Map<String, TagStats>, val explicit: Map<Long, String>, val hierarchy: TagHierarchy) {
+    /**
+     * What every tag of one reading is named: the stats, the user's names, the entries of a catalogue
+     * the tags are bound to, the tags above and under them.
+     */
+    private inner class Naming(
+        val stats: Map<String, TagStats>, val explicit: Map<Long, String>, val entries: Map<Long, BoundEntry>, val hierarchy: TagHierarchy,
+    ) {
         fun explicitOf(key: String): String? = TagRepository.idOf(key)?.let(explicit::get)
 
-        fun shown(key: String): String = stats[key]?.let { TagNaming.name(it, explicitOf(key)).name } ?: explicitOf(key) ?: key
+        fun entryOf(key: String): BoundEntry? = TagRepository.idOf(key)?.let(entries::get)
+
+        /** The label of the tag's entry in the user's first language that has one. */
+        fun cataloguedOf(key: String): String? = entryOf(key)?.entry?.labels?.let { labels -> languages.firstNotNullOfOrNull { labels[it] } }
+
+        fun nameOf(t: TagStats): ShownName = TagNaming.name(t, explicitOf(t.key), cataloguedOf(t.key))
+
+        fun shown(key: String): String = stats[key]?.let { nameOf(it).name } ?: explicitOf(key) ?: cataloguedOf(key) ?: key
+
+        /** Every name the tag goes by: of its sites' tags, the user's, its entry's in every language. */
+        fun allNames(t: TagStats): List<String> =
+            t.variants.values.map { it.name } + listOfNotNull(explicitOf(t.key)) + entryOf(t.key)?.names.orEmpty()
 
         fun named(t: TagStats) = NamedTag(
-            t, TagNaming.name(t, explicitOf(t.key)), explicitOf(t.key),
+            t, nameOf(t), explicitOf(t.key),
             parents = hierarchy.parentsOf(t.key).map { it to shown(it) }.sortedBy { it.second.lowercase() },
             children = hierarchy.childrenOf(t.key).map { it to shown(it) }.sortedBy { it.second.lowercase() },
+            entry = entryOf(t.key),
         )
     }
 
     private fun naming(type: TypeStore, facet: String, stats: Map<String, TagStats> = stats(type, facet)) =
-        Naming(stats, type.tags.explicitNames(), TagHierarchy(type.tags.parents()))
+        Naming(stats, type.tags.explicitNames(), boundEntries(type), TagHierarchy(type.tags.parents()))
 
-    /** The tags of a type with their names, the most used first; [query] — of a name of theirs on a site or the user's, any case. */
+    /** The entry of a catalogue every tag is bound to, by the tag's id: the bindings and the entries kept, read at once. */
+    private fun boundEntries(type: TypeStore): Map<Long, BoundEntry> {
+        val refs = type.tags.entriesOfTags()
+        val kept = type.tags.keptEntries(refs.values.toSet())
+        return refs.mapNotNull { (id, ref) -> kept[ref]?.let { id to BoundEntry(ref.catalogue, it) } }.toMap()
+    }
+
+    /** The tags of a type with their names, the most used first; [query] — of a name of theirs on a site, the user's or its entry's, any case. */
     fun list(type: TypeStore, facet: String, query: String?): List<NamedTag> {
         val n = naming(type, facet)
         val wanted = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         return n.stats.values
-            .filter { t -> wanted == null || t.variants.values.any { it.name.lowercase().contains(wanted) } || n.explicitOf(t.key)?.lowercase()?.contains(wanted) == true }
+            .filter { t -> wanted == null || n.allNames(t).any { it.lowercase().contains(wanted) } }
             .map(n::named)
             .sortedWith(compareByDescending<NamedTag> { it.stats.items.size }.thenBy { it.name.name.lowercase() })
     }
@@ -292,7 +331,7 @@ class Tags(
                 .forEach { found.putIfAbsent(it.first.key, it.first) }
         }
         step { t -> t.variants.values.filter { it.site.source == source }.map { it.name } }
-        step { t -> t.variants.values.map { it.name } + listOfNotNull(n.explicitOf(t.key), n.shown(t.key)) }
+        step { t -> n.allNames(t) + n.shown(t.key) }
         if (found.size < limit && wanted.isNotEmpty()) {
             val meaning = Meaning(type, stats)
             val target = meaning.ofText(query.trim())
@@ -375,6 +414,40 @@ class Tags(
         return named
     }
 
+    // --- The entries of a catalogue ---
+
+    /** The entries every catalogue of tags finds by [text] — an id or a page's address is the entry itself — each with the tag bound to it already. */
+    fun findEntries(type: TypeStore, text: String): List<FoundEntry> {
+        if (text.isBlank()) return emptyList()
+        val bound = type.tags.entriesOfTags().entries.associate { (id, ref) -> ref to TagRepository.key(id) }
+        return plugins.tagCatalogues.flatMap { c ->
+            c.find(text, languages).map { FoundEntry(c.id, it, bound[TagEntryRef(c.id, it.id)]) }
+        }
+    }
+
+    /**
+     * The tag [tag] bound to the entry [entry] of [catalogue] — the entry read of the catalogue now
+     * and kept, its label the tag's name unless the user named it — or, [catalogue] null, to none.
+     * The tag's works are read again: its name is what the model reads.
+     */
+    fun bindEntry(type: TypeStore, facet: String, tag: String, catalogue: String?, entry: String?): NamedTag? {
+        val id = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
+        val now = Instant.now()
+        if (catalogue == null || entry == null) {
+            type.tags.bindEntry(id, null, now)
+            log.info("{}: tag {} bound to no entry", type.id, tag)
+        } else {
+            val source = plugins.tagCatalogues.firstOrNull { it.id == catalogue } ?: throw NoSuchElementException("No catalogue of tags $catalogue")
+            val read = source.entries(listOf(entry), languages).firstOrNull() ?: throw NoSuchElementException("$catalogue has no $entry")
+            type.tags.keepEntry(catalogue, read, now)
+            type.tags.bindEntry(id, TagEntryRef(catalogue, read.id), now)
+            log.info("{}: tag {} bound to {}:{} ({})", type.id, tag, catalogue, read.id, languages.firstNotNullOfOrNull { read.labels[it] })
+        }
+        val named = one(type, facet, tag)
+        changed(type, facet, named?.stats?.items.orEmpty())
+        return named
+    }
+
     /** The tags changed: their names worked out again now, their works read again — their chances, their search — and the model of the grades trained again. */
     private fun changed(type: TypeStore, facet: String, items: Collection<ItemKey>) {
         rename(type, facet)
@@ -387,9 +460,9 @@ class Tags(
     /** The names of every tag of the type worked out now and kept. */
     fun rename(type: TypeStore, facet: String) {
         val started = System.currentTimeMillis()
-        val stats = stats(type, facet)
-        val explicit = type.tags.explicitNames()
-        type.tags.replaceShown(stats.values.associate { t -> t.id to TagNaming.name(t, explicit[t.id]) })
+        val n = naming(type, facet)
+        val stats = n.stats
+        type.tags.replaceShown(stats.values.associate { t -> t.id to n.nameOf(t) })
         log.info("{}: names of {} tags worked out in {} ms", type.id, stats.size, System.currentTimeMillis() - started)
     }
 
@@ -438,15 +511,18 @@ class Tags(
 }
 
 /**
- * WHAT A TAG IS SHOWN BY, the user's order: the name the user gave it; else its name on the sites
- * most used by the works the user liked (graded above the middle of the scale), by the works graded,
- * by all its works; else the first by the alphabet. One order of all its names ([names]): by the
- * liked works, of those used equally by the graded, then by all, then by the alphabet — its first
- * the name, the interface lists the others after it in the same order.
+ * WHAT A TAG IS SHOWN BY, the user's order: the name the user gave it; else the label of the entry of
+ * a catalogue the user bound it to, in the user's first language that has one ([catalogued]: the tag
+ * translated); else its name on the sites most used by the works the user liked (graded above the
+ * middle of the scale), by the works graded, by all its works; else the first by the alphabet. One
+ * order of all its names on the sites ([names]): by the liked works, of those used equally by the
+ * graded, then by all, then by the alphabet — its first the name, the interface lists the others
+ * after it in the same order.
  */
 object TagNaming {
-    fun name(t: TagStats, explicit: String?): ShownName {
+    fun name(t: TagStats, explicit: String?, catalogued: String? = null): ShownName {
         if (explicit != null) return ShownName(explicit, NameRule.EXPLICIT)
+        if (catalogued != null) return ShownName(catalogued, NameRule.CATALOGUE)
         val (first, uses) = names(t).firstOrNull() ?: return ShownName(t.key, NameRule.ALPHABET)
         val rule = when {
             uses.liked > 0 -> NameRule.LIKED

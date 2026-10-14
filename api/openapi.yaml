@@ -1193,6 +1193,53 @@ paths:
               schema:
                 $ref: '#/components/schemas/TagInfo'
 
+  /api/types/{type}/tags/entries:
+    get:
+      tags: [tags]
+      operationId: findTagEntries
+      summary: The entries of the catalogues of tags (Wikidata) a text may stand for - an id or a page's address, the entry itself
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The entries found, the likeliest first, each with the tag bound to it already
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FoundTagEntry'
+        '404':
+          description: No such type, or one without free tags
+
+  /api/types/{type}/tags/entry:
+    put:
+      tags: [tags]
+      operationId: bindTagEntry
+      summary: Binds the tag to an entry of a catalogue - its label names the tag unless the user named it - or, with no entry, to none
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagEntryRequest'
+      responses:
+        '200':
+          description: The tag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagInfo'
+        '404':
+          description: No such tag, catalogue or entry
+
   /api/types/{type}/tags/relation:
     put:
       tags: [tags]
@@ -3468,9 +3515,10 @@ components:
     TagNameRule:
       type: string
       description: |
-        What gave a tag its name: EXPLICIT - the user; LIKED - the name most used by the works graded above the
-        middle of the scale; GRADED - by the works graded; ALL - by all its works; ALPHABET - the first by the alphabet
-      enum: [EXPLICIT, LIKED, GRADED, ALL, ALPHABET]
+        What gave a tag its name: EXPLICIT - the user; CATALOGUE - the label of the entry of a catalogue it is bound to,
+        in the user's first language that has one; LIKED - the name most used by the works graded above the middle of
+        the scale; GRADED - by the works graded; ALL - by all its works; ALPHABET - the first by the alphabet
+      enum: [EXPLICIT, CATALOGUE, LIKED, GRADED, ALL, ALPHABET]
 
     TagInfo:
       type: object
@@ -3516,6 +3564,63 @@ components:
           description: The tags right under this one - a work said not to have this tag has none of them
           items:
             $ref: '#/components/schemas/TagRef'
+        entry:
+          $ref: '#/components/schemas/TagEntryInfo'
+
+    TagEntryInfo:
+      type: object
+      description: The entry of a catalogue a tag is bound to, as the catalogue gave it when last asked
+      required: [catalogue, entry, url, names]
+      properties:
+        catalogue:
+          type: string
+          description: The catalogue's id ("wikidata"); its title "<catalogue>:title"
+        entry:
+          type: string
+          description: The entry's id within the catalogue ("Q305561")
+        url:
+          type: string
+        label:
+          type: string
+          description: Its label in the user's first language that has one
+        description:
+          type: string
+          description: What it is, in the user's first language that has it - what tells it from its namesakes
+        names:
+          type: array
+          description: Every name of it kept, of every language - the label and the aliases; the tag is found by any of them
+          items:
+            type: string
+
+    FoundTagEntry:
+      type: object
+      required: [catalogue, entry, url]
+      properties:
+        catalogue:
+          type: string
+        entry:
+          type: string
+        url:
+          type: string
+        label:
+          type: string
+        description:
+          type: string
+        tag:
+          type: string
+          description: The key of the tag bound to it already, when one is
+
+    TagEntryRequest:
+      type: object
+      required: [tag]
+      properties:
+        tag:
+          type: string
+        catalogue:
+          type: string
+          description: With entry, the entry to bind the tag to; none of both - the tag bound to none
+        entry:
+          type: string
 
     TagRef:
       type: object
