@@ -112,7 +112,7 @@ class WikidataCatalogue(
         // The statements of the universe and of every work, series and franchise within it or set in it
         // (P1434 "takes place in fictional universe": the series of a universe of its own) — but its
         // characters', which are said to be in it the same way
-        val stated = statements("?c (wdt:P179|wdt:P361|wdt:P8345|wdt:P1434)* wd:$id . FILTER NOT EXISTS { ?c wdt:P31/wdt:P279* wd:$CHARACTER }", properties)
+        val stated = statements("{ SELECT DISTINCT ?c WHERE { ?c (wdt:P179|wdt:P361|wdt:P8345|wdt:P1434)* wd:$id . FILTER NOT EXISTS { ?c wdt:P31/wdt:P279* wd:$CHARACTER } } }", properties)
         val merged = HashMap<String, MutableList<String>>()
         stated.values.forEach { byProperty -> byProperty.forEach { (p, values) -> merged.getOrPut(p) { ArrayList() } += values } }
         return UniverseEntry(entry.id, entry.labels, entry.descriptions, entry.url, entry.languages, merged.mapValues { it.value.distinct() })
@@ -121,15 +121,27 @@ class WikidataCatalogue(
     override fun characters(id: String, languages: List<String>, properties: Set<String>): List<UniverseCharacter> {
         require(ITEM.matches(id)) { "Not an item of Wikidata: $id" }
         val langs = languages.joinToString(",") { "\"$it\"" }
+        // The parts of the universe, walked once as its own statements are (P1434 "takes place in
+        // fictional universe" too: a character only of a work set in the universe is one of its
+        // characters), then its entries once from them; every later query is given the entries as
+        // a list. A walk repeated in each query makes the service walk it each time, and a
+        // universe with hundreds of works set in it then runs out of time
+        val parts = sparql("SELECT DISTINCT ?part WHERE { ?part (wdt:P179|wdt:P361|wdt:P8345|wdt:P1434)* wd:$id . }")
+            .map { it.path("part").path("value").asString().substringAfterLast('/') }.filter { ITEM.matches(it) }
+        val partList = parts.joinToString(" ") { "wd:$it" }
         // Two subqueries, each evaluated by itself: within one, the union of the two ways makes
-        // the service walk the parts for every character there is. The parts are walked as the
-        // universe's own statements are (P1434 "takes place in fictional universe" too): a
-        // character only of a work set in the universe is one of its characters
-        val entries = """
-            { SELECT DISTINCT ?c WHERE { ?part (wdt:P179|wdt:P361|wdt:P8345|wdt:P1434)* wd:$id . ?c (wdt:P1441|wdt:P1080|wdt:P8345) ?part . } }
-            UNION
-            { SELECT DISTINCT ?c WHERE { ?part (wdt:P179|wdt:P361|wdt:P8345|wdt:P1434)* wd:$id . ?part wdt:P674 ?c . } }
-        """.trimIndent()
+        // the service join them for every character there is
+        val ids = sparql(
+            """
+            SELECT DISTINCT ?c WHERE {
+              { SELECT DISTINCT ?c WHERE { VALUES ?part { $partList } ?c (wdt:P1441|wdt:P1080|wdt:P8345) ?part . } }
+              UNION
+              { SELECT DISTINCT ?c WHERE { VALUES ?part { $partList } ?part wdt:P674 ?c . } }
+            }
+            """.trimIndent(),
+        ).map { it.path("c").path("value").asString().substringAfterLast('/') }.filter { ITEM.matches(it) }.distinct()
+        if (ids.isEmpty()) return emptyList()
+        val entries = "VALUES ?c { ${ids.joinToString(" ") { "wd:$it" }} }"
         val query = """
             SELECT ?c ?kind ?text WHERE {
               $entries
@@ -145,13 +157,13 @@ class WikidataCatalogue(
         // them. OPTIONAL keeps the order — the entries first, then their classes: a plain join lets
         // the service start from every P31 statement there is and run out of time
         val classes = HashMap<String, MutableList<String>>()
-        sparql("SELECT ?c ?class WHERE { { SELECT DISTINCT ?c WHERE { $entries } } OPTIONAL { ?c wdt:P31 ?class . } }").forEach { row ->
+        sparql("SELECT ?c ?class WHERE { $entries OPTIONAL { ?c wdt:P31 ?class . } }").forEach { row ->
             val cls = row.path("class").path("value").asString("").substringAfterLast('/')
             if (ITEM.matches(cls)) classes.getOrPut(row.path("c").path("value").asString().substringAfterLast('/')) { ArrayList() } += cls
         }
         // The sex or gender of each entry (P21), asked by itself the same way
         val sexes = HashMap<String, MutableSet<String>>()
-        sparql("SELECT ?c ?sex WHERE { { SELECT DISTINCT ?c WHERE { $entries } } OPTIONAL { ?c wdt:P21 ?sex . } }").forEach { row ->
+        sparql("SELECT ?c ?sex WHERE { $entries OPTIONAL { ?c wdt:P21 ?sex . } }").forEach { row ->
             val sex = row.path("sex").path("value").asString("").substringAfterLast('/')
             if (ITEM.matches(sex)) sexes.getOrPut(row.path("c").path("value").asString().substringAfterLast('/')) { HashSet() } += sex
         }
@@ -177,15 +189,17 @@ class WikidataCatalogue(
     }
 
     /**
-     * The statements of [properties] of every entry of [entries], asked by themselves as the classes
-     * are: entry to property to its values — an item by its id, any other value as its text.
+     * The statements of [properties] of every entry [entries] binds to `?c` — a list of them, or a
+     * subquery selecting them — asked by themselves as the classes are: entry to property to its
+     * values, an item by its id, any other value as its text. A list is joined as it is: wrapped in
+     * a subquery of its own, thousands of entries take the service most of a minute.
      */
     private fun statements(entries: String, properties: Set<String>): Map<String, Map<String, List<String>>> {
         val asked = properties.filter { PROPERTY.matches(it) }.distinct()
         if (asked.isEmpty()) return emptyMap()
         val values = asked.joinToString(" ") { "wdt:$it" }
         val out = HashMap<String, MutableMap<String, MutableList<String>>>()
-        sparql("SELECT ?c ?p ?v WHERE { { SELECT DISTINCT ?c WHERE { $entries } } VALUES ?p { $values } ?c ?p ?v . }").forEach { row ->
+        sparql("SELECT ?c ?p ?v WHERE { $entries VALUES ?p { $values } ?c ?p ?v . }").forEach { row ->
             val character = row.path("c").path("value").asString().substringAfterLast('/')
             val property = row.path("p").path("value").asString().substringAfterLast('/')
             val v = row.path("v")
