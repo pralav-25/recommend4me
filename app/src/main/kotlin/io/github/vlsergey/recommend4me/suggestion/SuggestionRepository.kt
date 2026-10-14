@@ -9,6 +9,7 @@ import io.github.vlsergey.recommend4me.universe.LayerDraft
 import io.github.vlsergey.recommend4me.vector.Vectors
 import org.jooq.Condition
 import org.jooq.DSLContext
+import org.jooq.impl.DSL
 import java.time.Instant
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -178,11 +179,19 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
 /** The vectors of the names of facet values of one source, as queries, in its source database. */
 class ValueNameRepository(private val db: DSLContext) {
 
-    /** The stored vectors of the facet's values by [encoder], with the hash of the name each was made of. */
-    fun of(facet: String, encoder: String): Map<String, Pair<String, FloatArray>> =
-        db.select(FACET_VALUE_VECTOR.VALUE_KEY, FACET_VALUE_VECTOR.NAME_HASH, FACET_VALUE_VECTOR.VEC).from(FACET_VALUE_VECTOR)
-            .where(FACET_VALUE_VECTOR.FACET.eq(facet), FACET_VALUE_VECTOR.ENCODER.eq(encoder))
-            .fetchMap({ it.value1()!! }, { it.value2()!! to Vectors.fromHalf(it.value3()!!) })
+    /** The stored vectors of the facet's values by [encoder] — of the [keys] alone, when given — with the hash of the name each was made of. */
+    fun of(facet: String, encoder: String, keys: Collection<String>? = null): Map<String, Pair<String, FloatArray>> {
+        fun read(only: Collection<String>?) =
+            db.select(FACET_VALUE_VECTOR.VALUE_KEY, FACET_VALUE_VECTOR.NAME_HASH, FACET_VALUE_VECTOR.VEC).from(FACET_VALUE_VECTOR)
+                .where(FACET_VALUE_VECTOR.FACET.eq(facet), FACET_VALUE_VECTOR.ENCODER.eq(encoder), only?.let { FACET_VALUE_VECTOR.VALUE_KEY.`in`(it) } ?: DSL.noCondition())
+                .fetchMap({ it.value1()!! }, { it.value2()!! to Vectors.fromHalf(it.value3()!!) })
+        return if (keys == null) read(null) else keys.distinct().chunked(KEYS).fold(HashMap()) { out, chunk -> out.apply { putAll(read(chunk)) } }
+    }
+
+    private companion object {
+        /** Keys asked for in one query. */
+        const val KEYS = 1000
+    }
 
     /** Every stored vector of the facet's values by [encoder], streamed: (value key, hash of its name, vector) — none of them kept here. */
     fun forEach(facet: String, encoder: String, action: (key: String, hash: String, vector: FloatArray) -> Unit) =

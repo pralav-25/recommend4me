@@ -3,6 +3,7 @@ package io.github.vlsergey.recommend4me.suggestion
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import java.io.DataInputStream
 import java.io.DataOutputStream
+import java.nio.ByteBuffer
 import kotlin.math.sqrt
 
 /**
@@ -236,12 +237,23 @@ class Design(
             return BlockScale(name, readFloats(input), scale)
         }
 
+        /**
+         * The numbers as one block of bytes, big-endian as [DataOutputStream] writes them: a model of a
+         * facet of thousands of characters is millions of them, and a number at a time through the
+         * compressing stream is most of the time a page waits for a work's chances.
+         */
         fun writeFloats(out: DataOutputStream, a: FloatArray) {
             out.writeInt(a.size)
-            a.forEach { out.writeFloat(it) }
+            val bytes = ByteBuffer.allocate(a.size * Float.SIZE_BYTES)
+            bytes.asFloatBuffer().put(a)
+            out.write(bytes.array())
         }
 
-        fun readFloats(input: DataInputStream): FloatArray = FloatArray(input.readInt()) { input.readFloat() }
+        fun readFloats(input: DataInputStream): FloatArray {
+            val bytes = ByteArray(input.readInt() * Float.SIZE_BYTES)
+            input.readFully(bytes)
+            return FloatArray(bytes.size / Float.SIZE_BYTES).also { ByteBuffer.wrap(bytes).asFloatBuffer().get(it) }
+        }
 
         // Strings longer than writeUTF takes (65535 bytes) are not keys; written as bytes all the same
         private fun writeStrings(out: DataOutputStream, list: List<String>) {

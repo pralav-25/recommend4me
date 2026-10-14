@@ -150,7 +150,8 @@ class BilinearSuggester internal constructor(
         }.toList()
 
     override fun unpack(bytes: ByteArray, task: SuggestionTask): FittedSuggester? = runCatching {
-        DataInputStream(GZIPInputStream(ByteArrayInputStream(bytes))).use { input ->
+        // Buffered: the stream is read in many small pieces — the numbers in blocks, the keys one by one
+        DataInputStream(GZIPInputStream(ByteArrayInputStream(bytes), BUFFER).buffered(BUFFER)).use { input ->
             // Of the format before it, the same without the penalties beside the chosen one
             val format = input.readInt()
             if (format != FORMAT && format != FORMAT - 1) return null
@@ -221,7 +222,7 @@ class BilinearSuggester internal constructor(
 
         override fun pack(): ByteArray {
             val bytes = ByteArrayOutputStream()
-            DataOutputStream(GZIPOutputStream(bytes)).use { out ->
+            DataOutputStream(GZIPOutputStream(bytes, BUFFER).buffered(BUFFER)).use { out ->
                 out.writeInt(FORMAT)
                 design.write(out)
                 out.writeInt(rank)
@@ -245,6 +246,9 @@ class BilinearSuggester internal constructor(
          * 6: the weights at the penalties beside the chosen one too — a state of 5 is read as one without.
          */
         private const val FORMAT = 6
+
+        /** The buffer of the compressed state read and written: the numbers go in blocks of many kilobytes. */
+        private const val BUFFER = 1 shl 16
 
         /** The folds an item is held out in: four fifths of the items teach the model judging the fifth. */
         const val FOLDS = 5

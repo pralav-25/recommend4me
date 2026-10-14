@@ -179,7 +179,12 @@ all of them current, from the facet answered on round the circle.
 The chances are kept in the model database with what each was made of (a fingerprint of the
 work's values, the user's answers, its texts and chapters). The suggester is fitted again
 whenever anything it learns from changes, and every work is then worked out again; a work a page
-asks for that never had chances gets them at once, by the weights fitted last.
+asks for that never had chances gets them at once, by the weights fitted last. The chances of one
+work — after the user's answers, or when it never had them — are made of a task of that work alone:
+the weights read a task by the keys of its values, its context and its blocks, so nothing of the
+other works is read, and of a facet whose values a work may have are limited (its universes'
+characters) only those values are chosen from. Whether the weights still fit is told by the
+background refresh, which reads every work.
 
 ## The normalized tags
 
