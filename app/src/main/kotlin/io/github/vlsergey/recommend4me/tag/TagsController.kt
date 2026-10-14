@@ -43,10 +43,16 @@ class TagsController(
         return type to facet
     }
 
-    override fun listTags(type: String, query: String?, offset: Int, limit: Int): ResponseEntity<TagPage> {
+    override fun listTags(type: String, query: String?, with: List<String>?, without: List<String>?, offset: Int, limit: Int): ResponseEntity<TagPage> {
         val (t, facet) = of(type)
-        val all = tags.list(t, facet, query)
-        return ResponseEntity.ok(TagPage(all.size, all.drop(offset.coerceAtLeast(0)).take(limit.coerceIn(1, 1000)).map { it.toApi() }))
+        val all = tags.list(t, facet, query, with.orEmpty().toSet(), without.orEmpty().toSet())
+        return ResponseEntity.ok(
+            TagPage(
+                total = all.size,
+                tags = all.drop(offset.coerceAtLeast(0)).take(limit.coerceIn(1, 1000)).map { it.toApi() },
+                sources = tags.sources(t, facet),
+            ),
+        )
     }
 
     override fun getTag(type: String, tag: String): ResponseEntity<TagInfo> {

@@ -114,11 +114,16 @@ export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected
   );
 }
 
+/** Whether a tag of the list must come from a site or a catalogue — used on it, bound to an entry of it — must not, or either. */
+const SOURCE_FILTERS = ["any", "with", "without"] as const;
+type SourceFilter = (typeof SOURCE_FILTERS)[number];
+
 function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string }) {
   const { t } = useTranslation("tag");
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   const [limit, setLimit] = useState(PAGE);
+  const [bySource, setBySource] = useState<Record<string, SourceFilter>>({});
   useEffect(() => {
     const timer = setTimeout(() => {
       setQuery(input.trim());
@@ -126,19 +131,53 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
     }, QUERY_SETTLE_MS);
     return () => clearTimeout(timer);
   }, [input]);
+  const chosen = (filter: SourceFilter) => Object.keys(bySource).filter((s) => bySource[s] === filter).sort();
+  const withSources = chosen("with");
+  const withoutSources = chosen("without");
   const tags = useQuery({
-    queryKey: [TAGS, type.id, "list", query, limit],
+    queryKey: [TAGS, type.id, "list", query, withSources, withoutSources, limit],
     placeholderData: keepPreviousData,
     queryFn: async () =>
-      unwrap(await api.GET("/api/types/{type}/tags", { params: { path: { type: type.id }, query: { query: query || undefined, limit } } })),
+      unwrap(
+        await api.GET("/api/types/{type}/tags", {
+          params: { path: { type: type.id }, query: { query: query || undefined, with: withSources, without: withoutSources, limit } },
+        }),
+      ),
   });
   const page = tags.data;
+  const choose = (source: string, filter: SourceFilter) => {
+    setBySource((was) => ({ ...was, [source]: filter }));
+    setLimit(PAGE);
+  };
   return (
     <section className="flex flex-col gap-2">
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder={t("TagList.searchPlaceholder")} className="pl-8" type="search" />
       </div>
+      {page && page.sources.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1.5">
+          {page.sources.map((source) => (
+            <label key={source} className="flex items-center gap-1.5 text-xs text-muted-foreground" title={t("TagList.sourceFilter", { source: sourceTitle(source) })}>
+              {sourceShort(source)}
+              <select
+                value={bySource[source] ?? "any"}
+                onChange={(e) => choose(source, e.target.value as SourceFilter)}
+                className={cn(
+                  "h-7 rounded-md border border-input bg-transparent px-1.5 text-xs text-foreground outline-none focus-visible:border-ring dark:bg-input/30",
+                  (bySource[source] ?? "any") !== "any" && "border-primary",
+                )}
+              >
+                {SOURCE_FILTERS.map((f) => (
+                  <option key={f} value={f}>
+                    {t(`TagList.source.${f}`)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      )}
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         {page && <span>{t("TagList.total", { count: page.total })}</span>}
         {tags.isFetching && <Loader2Icon className="size-3.5 animate-spin" />}

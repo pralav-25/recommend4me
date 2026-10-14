@@ -286,15 +286,28 @@ class Tags(
         return t.variants.keys.mapNotNull { site -> read[site]?.let { SiteDescription(site, it) } }
     }
 
-    /** The tags of a type with their names, the most used first; [query] — of a name of theirs on a site, the user's or its entry's, any case. */
-    fun list(type: TypeStore, facet: String, query: String?): List<NamedTag> {
+    /**
+     * The tags of a type with their names, the most used first; [query] — of a name of theirs on a
+     * site, the user's or its entry's, any case; [with] — the sites a tag is used on and the
+     * catalogues it is bound to an entry of, every one; [without] — none of them ([sources]).
+     */
+    fun list(type: TypeStore, facet: String, query: String?, with: Set<String> = emptySet(), without: Set<String> = emptySet()): List<NamedTag> {
         val n = naming(type, facet)
         val wanted = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         return n.stats.values
             .filter { t -> wanted == null || n.allNames(t).any { it.lowercase().contains(wanted) } }
             .map(n::named)
+            .filter { t ->
+                if (with.isEmpty() && without.isEmpty()) return@filter true
+                val from = t.stats.variants.keys.map { it.source }.toSet() + t.entries.map { it.catalogue }
+                from.containsAll(with) && from.none { it in without }
+            }
             .sortedWith(compareByDescending<NamedTag> { it.stats.items.size }.thenBy { it.name.name.lowercase() })
     }
+
+    /** What a tag of the type may come from: the sites of it that have the free tags, then the catalogues tags are bound to entries of. */
+    fun sources(type: TypeStore, facet: String): List<String> =
+        type.sources.filter { normalization.siteFacetOf(it, facet) != null }.map { it.id } + plugins.tagCatalogues.map { it.id }
 
     fun one(type: TypeStore, facet: String, tag: String): NamedTag? {
         val n = naming(type, facet)

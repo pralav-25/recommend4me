@@ -1081,6 +1081,24 @@ paths:
           description: A piece of a name of the tag on a site, or of the name the user gave it, any case
           schema:
             type: string
+        - name: with
+          in: query
+          description: The sites a tag must be used on and the catalogues it must be bound to an entry of, every one of them (TagPage.sources)
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
+        - name: without
+          in: query
+          description: The sites a tag must not be used on and the catalogues it must not be bound to an entry of, none of them
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              type: string
         - name: offset
           in: query
           schema:
@@ -3567,10 +3585,17 @@ components:
 
     TagPage:
       type: object
-      required: [total, tags]
+      required: [total, tags, sources]
       properties:
         total:
           type: integer
+        sources:
+          type: array
+          description: |
+            What a tag may come from, to filter by (with, without): the sites of the type that have its free tags, then
+            the catalogues tags are bound to entries of - whatever the filter
+          items:
+            type: string
         tags:
           type: array
           items:

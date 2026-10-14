@@ -750,7 +750,13 @@ class SiteTest {
         assertEquals(setOf("Hull", "Корпус", "Ship hull"), bound.catalogueEntries.single().names.toSet())
         assertEquals(listOf(hulls to "Корпус"), tagsApi.findTagEntries("books", "E1").body!!.single().tags.map { it.key to it.name })
         // Found by any name of its entry, in any language
-        assertTrue(tagsApi.listTags("books", "ship hull", 0, 10).body!!.tags.any { it.key == hulls })
+        assertTrue(tagsApi.listTags("books", "ship hull", null, null, 0, 10).body!!.tags.any { it.key == hulls })
+        // Filtered by what it comes from: the site and the catalogue it is bound to an entry of
+        val ofCatalogue = tagsApi.listTags("books", null, listOf("fake"), null, 0, 1000).body!!
+        assertEquals(listOf("site", "fake"), ofCatalogue.sources)
+        assertEquals(listOf(hulls), ofCatalogue.tags.map { it.key })
+        assertTrue(tagsApi.listTags("books", null, listOf("site"), listOf("fake"), 0, 1000).body!!.tags.none { it.key == hulls })
+        assertTrue(tagsApi.listTags("books", null, listOf("site"), null, 0, 1000).body!!.tags.any { it.key == hulls })
         // A second entry besides: the one bound first still names it; the descriptions of the site's tag's page first, then of each entry
         stores.source("site")!!.items.describeFacetValues(Books.TAG.key, mapOf("hulls" to "The hulls of ships"))
         val both = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E2", true)).body!!
