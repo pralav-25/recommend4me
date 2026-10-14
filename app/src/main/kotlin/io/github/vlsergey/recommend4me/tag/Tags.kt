@@ -6,8 +6,6 @@ import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.rating.Grades
 import io.github.vlsergey.recommend4me.rating.GradesChanged
-import io.github.vlsergey.recommend4me.source.Stores
-import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import jakarta.annotation.PreDestroy
@@ -167,7 +165,6 @@ class SimilarPage(val total: Int, val rows: List<SimilarTag>)
  */
 @Service
 class Tags(
-    private val stores: Stores,
     private val normalization: TagNormalization,
     private val phrases: PhraseVectors,
     private val events: ApplicationEventPublisher,
@@ -178,17 +175,17 @@ class Tags(
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "tag-names").apply { isDaemon = true } }
     private val pending = ConcurrentHashMap<String, ScheduledFuture<*>>()
 
-    /** The facet of the layer learnt from the sites' tags of a type; null for a type without one. */
-    fun facetOf(type: TypeStore): String? = normalization.facetOf(type)
+    /** What the tags are read over: every source of every type with a layer of tags; null when none has one. */
+    fun scope(): TagScope? = normalization.scope()
 
     // --- Reading ---
 
-    /** Every normalized tag of the type with its sites' tags and its works: one pass over every source. */
-    fun stats(type: TypeStore, facet: String): Map<String, TagStats> {
-        val bindings = type.tags.bindings()
+    /** Every normalized tag with its sites' tags and its works, of every type: one pass over every source. */
+    fun stats(scope: TagScope, facet: String): Map<String, TagStats> {
+        val bindings = scope.tags.bindings()
         val out = HashMap<String, TagStats>()
         val rejections = HashMap<String, MutableSet<ItemKey>>()
-        type.sources.forEach { s ->
+        scope.sources.forEach { s ->
             val siteFacet = normalization.siteFacetOf(s, facet) ?: return@forEach
             val names = s.names(siteFacet)
             // The latest grade of every item, of any version: the work as the user graded it last
@@ -228,7 +225,7 @@ class Tags(
             }
         }
         // A tag of no work yet — one the user made above others — is a tag all the same
-        type.tags.ids().forEach { id -> out.getOrPut(TagRepository.key(id)) { TagStats(TagRepository.key(id)) } }
+        scope.tags.ids().forEach { id -> out.getOrPut(TagRepository.key(id)) { TagStats(TagRepository.key(id)) } }
         rejections.forEach { (key, items) -> out[key]?.rejected?.addAll(items) }
         return out
     }
@@ -270,20 +267,20 @@ class Tags(
         )
     }
 
-    private fun naming(type: TypeStore, facet: String, stats: Map<String, TagStats> = stats(type, facet)) =
-        Naming(stats, type.tags.explicitNames(), boundEntries(type), TagHierarchy(type.tags.parents()), type.tags.ignored())
+    private fun naming(scope: TagScope, facet: String, stats: Map<String, TagStats> = stats(scope, facet)) =
+        Naming(stats, scope.tags.explicitNames(), boundEntries(scope), TagHierarchy(scope.tags.parents()), scope.tags.ignored())
 
     /** The entries of the catalogues every tag is bound to, by the tag's id: the bindings and the entries kept, read at once. */
-    private fun boundEntries(type: TypeStore): Map<Long, List<BoundEntry>> {
-        val refs = type.tags.entriesOfTags()
-        val kept = type.tags.keptEntries(refs.values.flatten().toSet())
+    private fun boundEntries(scope: TagScope): Map<Long, List<BoundEntry>> {
+        val refs = scope.tags.entriesOfTags()
+        val kept = scope.tags.keptEntries(refs.values.flatten().toSet())
         return refs.mapValues { (_, list) -> list.mapNotNull { ref -> kept[ref]?.let { BoundEntry(ref.catalogue, it) } } }
     }
 
     /** What the sites' own pages say the sites' tags of [t] mean, in the order of its sites' tags. */
-    private fun descriptionsOf(type: TypeStore, facet: String, t: TagStats): List<SiteDescription> {
+    private fun descriptionsOf(scope: TagScope, facet: String, t: TagStats): List<SiteDescription> {
         val bySource = t.variants.keys.groupBy { it.source }
-        val read = type.sources.filter { it.id in bySource }.flatMap { s ->
+        val read = scope.sources.filter { it.id in bySource }.flatMap { s ->
             val siteFacet = normalization.siteFacetOf(s, facet) ?: return@flatMap emptyList()
             s.items.facetDescriptions(siteFacet, bySource.getValue(s.id).map { it.tag }).map { (tag, text) -> SiteTagRef(s.id, tag) to text }
         }.toMap()
@@ -297,9 +294,9 @@ class Tags(
      * [ignored] — the tags the user ignores alone, or those not; either when null.
      */
     fun list(
-        type: TypeStore, facet: String, query: String?, with: Set<String> = emptySet(), without: Set<String> = emptySet(), ignored: Boolean? = null,
+        scope: TagScope, facet: String, query: String?, with: Set<String> = emptySet(), without: Set<String> = emptySet(), ignored: Boolean? = null,
     ): List<NamedTag> {
-        val n = naming(type, facet)
+        val n = naming(scope, facet)
         val wanted = query?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
         return n.stats.values
             .filter { t -> wanted == null || n.allNames(t).any { it.lowercase().contains(wanted) } }
@@ -313,13 +310,13 @@ class Tags(
             .sortedWith(compareByDescending<NamedTag> { it.stats.items.size }.thenBy { it.name.name.lowercase() })
     }
 
-    /** What a tag of the type may come from: the sites of it that have the free tags, then the catalogues tags are bound to entries of. */
-    fun sources(type: TypeStore, facet: String): List<String> =
-        type.sources.filter { normalization.siteFacetOf(it, facet) != null }.map { it.id } + plugins.tagCatalogues.map { it.id }
+    /** What a tag may come from: the sites of every type that have the free tags, then the catalogues tags are bound to entries of. */
+    fun sources(scope: TagScope, facet: String): List<String> =
+        scope.sources.filter { normalization.siteFacetOf(it, facet) != null }.map { it.id } + plugins.tagCatalogues.map { it.id }
 
-    fun one(type: TypeStore, facet: String, tag: String): NamedTag? {
-        val n = naming(type, facet)
-        return n.stats[tag]?.let { n.named(it, descriptionsOf(type, facet, it), offersOf(type, n, tag)) }
+    fun one(scope: TagScope, facet: String, tag: String): NamedTag? {
+        val n = naming(scope, facet)
+        return n.stats[tag]?.let { n.named(it, descriptionsOf(scope, facet, it), offersOf(scope, n, tag)) }
     }
 
     /**
@@ -328,8 +325,8 @@ class Tags(
      * a kind of its own — under it. Not a tag that is above or under it already, by the user's word
      * or through others: the nearest way of each, a tag once.
      */
-    private fun offersOf(type: TypeStore, n: Naming, tag: String): List<CatalogueOffer> {
-        val graph = CatalogueGraph(type, n)
+    private fun offersOf(scope: TagScope, n: Naming, tag: String): List<CatalogueOffer> {
+        val graph = CatalogueGraph(scope, n)
         val found = graph.links().filter { it.child == tag || it.parent == tag }
         if (found.isEmpty()) return emptyList()
         val label = graph.labels(found.flatMap { it.way })
@@ -346,13 +343,13 @@ class Tags(
      * WHAT THE ENTRIES OF THE TAGS ARE A KIND OF, of one reading: the tags' entries and what was read
      * up from them ([readAbove]), walked up [ABOVE_LEVELS] levels. Read for one operation, kept nowhere.
      */
-    private inner class CatalogueGraph(val type: TypeStore, val n: Naming) {
+    private inner class CatalogueGraph(val scope: TagScope, val n: Naming) {
         val refsOf: Map<String, List<TagEntryRef>> =
             n.entries.entries.filter { it.value.isNotEmpty() }.associate { (id, list) -> TagRepository.key(id) to list.map { TagEntryRef(it.catalogue, it.entry.id) } }
         val tagsOf: Map<TagEntryRef, List<String>> = HashMap<TagEntryRef, MutableList<String>>().also { m ->
             refsOf.forEach { (key, refs) -> refs.forEach { m.getOrPut(it) { ArrayList() } += key } }
         }
-        val links: Map<TagEntryRef, List<TagEntryRef>> = if (refsOf.isEmpty()) emptyMap() else type.tags.aboveLinks()
+        val links: Map<TagEntryRef, List<TagEntryRef>> = if (refsOf.isEmpty()) emptyMap() else scope.tags.aboveLinks()
 
         /** Every entry reached up from [starts], with the way to it from one of them, the nearest. */
         fun up(starts: List<TagEntryRef>): Map<TagEntryRef, List<TagEntryRef>> {
@@ -396,7 +393,7 @@ class Tags(
 
         /** The label of every entry of [refs] in the user's first language that has one; else its id. */
         fun labels(refs: Collection<TagEntryRef>): (TagEntryRef) -> String {
-            val kept = type.tags.keptEntries(refs.toSet())
+            val kept = scope.tags.keptEntries(refs.toSet())
             return { ref -> kept[ref]?.labels?.let { labels -> languages.firstNotNullOfOrNull { labels[it] } } ?: ref.entry }
         }
     }
@@ -419,13 +416,13 @@ class Tags(
      *   A tag in one such offer alone, the nearest: one sharing a tag with a nearer one is not offered
      *   till the nearer is said — then it is offered above the new tag.
      */
-    fun hierarchyOffers(type: TypeStore, facet: String): List<HierarchyOffer> {
+    fun hierarchyOffers(scope: TagScope, facet: String): List<HierarchyOffer> {
         val started = System.currentTimeMillis()
-        val n = naming(type, facet)
-        val graph = CatalogueGraph(type, n)
+        val n = naming(scope, facet)
+        val graph = CatalogueGraph(scope, n)
         fun graded(key: String) = n.stats[key]?.graded.orEmpty()
         fun rejected(key: String) = n.stats[key]?.rejected.orEmpty()
-        val distinct = type.tags.distinct()
+        val distinct = scope.tags.distinct()
         val out = ArrayList<HierarchyOffer>()
         // Under another
         graph.links().forEach { l ->
@@ -485,7 +482,7 @@ class Tags(
             }
         }
         // A tag of the entry's label already — of a site, the user's — bound to it not: that tag offered above, not a new one
-        val texts = type.tags.keptEntries(under.keys)
+        val texts = scope.tags.keptEntries(under.keys)
         val byName = HashMap<String, MutableSet<String>>()
         if (under.isNotEmpty()) n.stats.values.forEach { t -> (n.allNames(t) + n.shown(t.key)).forEach { byName.getOrPut(it.trim().lowercase()) { HashSet() } += t.key } }
         under.forEach { (ref, all) ->
@@ -506,7 +503,7 @@ class Tags(
             val children = roots.sortedByDescending { graded(it).size }
             out += HierarchyOffer(HierarchyKind.NEW_PARENT, ref.catalogue, children, ref, listOf(ref), all.flatMap(::graded).toSet().size, levels.getValue(ref))
         }
-        log.info("{}: {} offers of the tags' graph worked out in {} ms", type.id, out.size, System.currentTimeMillis() - started)
+        log.info("{}: {} offers of the tags' graph worked out in {} ms", scope.id, out.size, System.currentTimeMillis() - started)
         // The nearest first — what the entries are right above, not "process" all of them are far up — then the ones changing most
         val sorted = out.sortedWith(compareBy<HierarchyOffer> { it.levels }.thenByDescending { it.graded }.thenBy { it.kind }.thenBy { it.tags.joinToString() })
         // A tag in one new tag alone, the most precise: one sharing a tag with a nearer is left till that is said
@@ -518,31 +515,31 @@ class Tags(
     }
 
     /** The names of the tags of [offers] and their entries as kept: of one reading. */
-    fun namesOf(type: TypeStore, offers: List<HierarchyOffer>): Pair<Map<String, String>, Map<TagEntryRef, TagEntry>> =
-        type.tags.shown(offers.flatMap { it.tags + listOfNotNull(it.existing) }.toSet()) to type.tags.keptEntries(offers.flatMap { it.way }.toSet())
+    fun namesOf(scope: TagScope, offers: List<HierarchyOffer>): Pair<Map<String, String>, Map<TagEntryRef, TagEntry>> =
+        scope.tags.shown(offers.flatMap { it.tags + listOfNotNull(it.existing) }.toSet()) to scope.tags.keptEntries(offers.flatMap { it.way }.toSet())
 
     /**
      * A new tag bound to the entry [entry] of [catalogue] — named by its label — or the tag [existing]
      * bound to it besides its own, put above the tags [children]. Returns it.
      */
-    fun createAbove(type: TypeStore, facet: String, catalogue: String, entry: String, children: List<String>, existing: String? = null): NamedTag? {
-        val ids = children.map { TagRepository.idOf(it)?.takeIf(type.tags::exists) ?: return null }
-        val above = existing?.let { TagRepository.idOf(it)?.takeIf(type.tags::exists) ?: return null }
+    fun createAbove(scope: TagScope, facet: String, catalogue: String, entry: String, children: List<String>, existing: String? = null): NamedTag? {
+        val ids = children.map { TagRepository.idOf(it)?.takeIf(scope.tags::exists) ?: return null }
+        val above = existing?.let { TagRepository.idOf(it)?.takeIf(scope.tags::exists) ?: return null }
         val source = plugins.tagCatalogues.firstOrNull { it.id == catalogue } ?: throw NoSuchElementException("No catalogue of tags $catalogue")
         val read = source.entries(listOf(entry), languages).firstOrNull() ?: throw NoSuchElementException("$catalogue has no $entry")
-        val before = stats(type, facet)
+        val before = stats(scope, facet)
         val now = Instant.now()
         // The tag, its entry and its place above the children, all or nothing; the catalogue asked before
-        val id = type.tags.transaction { t ->
+        val id = scope.tags.transaction { t ->
             val made = above ?: t.create()
             t.keepEntry(catalogue, read, now)
             t.bindEntry(made, TagEntryRef(catalogue, read.id), true, now)
             ids.forEach { t.setParent(it, made, true, now) }
             made
         }
-        log.info("{}: tag {} {} {}:{} above {}", type.id, id, if (above == null) "made of" else "bound to", catalogue, read.id, children)
-        changed(type, facet, children.flatMap { before[it]?.items.orEmpty() } + before[TagRepository.key(id)]?.items.orEmpty())
-        return one(type, facet, TagRepository.key(id))
+        log.info("{}: tag {} {} {}:{} above {}", scope.id, id, if (above == null) "made of" else "bound to", catalogue, read.id, children)
+        changed(scope, facet, children.flatMap { before[it]?.items.orEmpty() } + before[TagRepository.key(id)]?.items.orEmpty())
+        return one(scope, facet, TagRepository.key(id))
     }
 
     /**
@@ -550,41 +547,41 @@ class Tags(
      * and kept: of an entry read before, what was kept of it — unless [anew], every one asked again
      * and the names of those met on the way too; the entries met on the way kept with their names.
      */
-    private fun readAbove(type: TypeStore, catalogue: TagCatalogue, from: Collection<String>, anew: Boolean = false) {
+    private fun readAbove(scope: TagScope, catalogue: TagCatalogue, from: Collection<String>, anew: Boolean = false) {
         val now = Instant.now()
         fun ref(id: String) = TagEntryRef(catalogue.id, id)
-        val links = type.tags.aboveLinks()
+        val links = scope.tags.aboveLinks()
         val seen = HashSet(from)
         var frontier = from.distinct()
         var asked = 0
         repeat(ABOVE_LEVELS) {
             if (frontier.isEmpty()) return@repeat
-            val read = if (anew) emptySet() else type.tags.aboveRead(frontier.map(::ref))
+            val read = if (anew) emptySet() else scope.tags.aboveRead(frontier.map(::ref))
             val said = frontier.filter { ref(it) !in read }.takeIf { it.isNotEmpty() }?.let(catalogue::above).orEmpty()
             asked += frontier.count { ref(it) !in read }
             val next = LinkedHashSet<String>()
             frontier.forEach { id ->
-                val above = if (ref(id) in read) links[ref(id)].orEmpty().map { it.entry } else said[id].orEmpty().also { type.tags.keepAbove(ref(id), it, now) }
+                val above = if (ref(id) in read) links[ref(id)].orEmpty().map { it.entry } else said[id].orEmpty().also { scope.tags.keepAbove(ref(id), it, now) }
                 above.filter(seen::add).forEach { next += it }
             }
-            val kept = if (anew) emptySet() else type.tags.keptEntries(next.map(::ref)).keys
+            val kept = if (anew) emptySet() else scope.tags.keptEntries(next.map(::ref)).keys
             val missing = next.filter { ref(it) !in kept }
-            if (missing.isNotEmpty()) catalogue.entries(missing, languages).forEach { type.tags.keepEntry(catalogue.id, it, now) }
+            if (missing.isNotEmpty()) catalogue.entries(missing, languages).forEach { scope.tags.keepEntry(catalogue.id, it, now) }
             frontier = next.toList()
         }
-        log.info("{}: what {} entries of {} are a kind of read, {} asked of it, {} met", type.id, from.size, catalogue.id, asked, seen.size)
+        log.info("{}: what {} entries of {} are a kind of read, {} asked of it, {} met", scope.id, from.size, catalogue.id, asked, seen.size)
     }
 
     /** What the entries bound to the tags are a kind of, of every entry never read: the bindings made before it was read. */
-    private fun readAboveOfBound(type: TypeStore) {
-        val bound = type.tags.entriesOfTags().values.flatten().toSet()
-        val read = type.tags.aboveRead(bound)
+    private fun readAboveOfBound(scope: TagScope) {
+        val bound = scope.tags.entriesOfTags().values.flatten().toSet()
+        val read = scope.tags.aboveRead(bound)
         (bound - read).groupBy { it.catalogue }.forEach { (id, refs) ->
             val catalogue = plugins.tagCatalogues.firstOrNull { it.id == id } ?: return@forEach
             try {
-                readAbove(type, catalogue, refs.map { it.entry })
+                readAbove(scope, catalogue, refs.map { it.entry })
             } catch (e: Exception) {
-                log.warn("{}: what the entries of {} are a kind of was not read: {}", type.id, id, e.message)
+                log.warn("{}: what the entries of {} are a kind of was not read: {}", scope.id, id, e.message)
             }
         }
     }
@@ -599,13 +596,13 @@ class Tags(
      * key: a page read after another continues it while nothing changed.
      */
     fun similar(
-        type: TypeStore, facet: String, tag: String, query: String?, hidden: Set<TagRelation>, offset: Int, limit: Int, ignored: Boolean? = null,
+        scope: TagScope, facet: String, tag: String, query: String?, hidden: Set<TagRelation>, offset: Int, limit: Int, ignored: Boolean? = null,
     ): SimilarPage? {
-        val stats = stats(type, facet)
+        val stats = stats(scope, facet)
         val own = stats[tag] ?: return null
-        val n = naming(type, facet, stats)
-        val distinct = type.tags.distinct()
-        val meaning = Meaning(type, stats, n)
+        val n = naming(scope, facet, stats)
+        val distinct = scope.tags.distinct()
+        val meaning = Meaning(scope, stats, n)
         val asked = query?.trim()?.takeIf { it.isNotEmpty() }
         val target = if (asked == null) meaning.direction(own.variants.keys, own.key) else meaning.ofText(asked)
         fun likeness(sites: Collection<SiteTagRef>, key: String? = null): Double = meaning.likeness(target, sites, key)
@@ -639,14 +636,14 @@ class Tags(
      * search encodes short texts; a tag's direction the mean of its names', alike by the cosine. Read
      * for one operation, kept nowhere.
      */
-    private inner class Meaning(type: TypeStore, stats: Map<String, TagStats>, n: Naming) {
+    private inner class Meaning(scope: TagScope, stats: Map<String, TagStats>, n: Naming) {
         private val vectors = HashMap<SiteTagRef, FloatArray>()
 
         /** The directions of the names of the entries every tag is bound to, by its key. */
         private val ofEntries = HashMap<String, List<FloatArray>>()
 
         init {
-            type.sources.forEach { s ->
+            scope.sources.forEach { s ->
                 val names = stats.values.flatMap { t -> t.variants.values.filter { it.site.source == s.id } }.associate { it.site to it.name }
                 if (names.isEmpty()) return@forEach
                 val encoded = phrases.of(s, names.values.distinct())
@@ -693,10 +690,10 @@ class Tags(
      * then the likest by the meaning of their names. Of the first two, a name that is the text first,
      * then one beginning with it, then one holding it; the most used first among them.
      */
-    fun find(type: TypeStore, facet: String, source: String, query: String, limit: Int): List<NamedTag> {
+    fun find(scope: TagScope, facet: String, source: String, query: String, limit: Int): List<NamedTag> {
         val wanted = query.trim().lowercase()
-        val stats = stats(type, facet)
-        val n = naming(type, facet, stats)
+        val stats = stats(scope, facet)
+        val n = naming(scope, facet, stats)
         val found = LinkedHashMap<String, TagStats>()
         fun step(namesOf: (TagStats) -> List<String>) {
             if (found.size >= limit) return
@@ -716,7 +713,7 @@ class Tags(
         step { t -> t.variants.values.filter { it.site.source == source }.map { it.name } }
         step { t -> n.allNames(t) + n.shown(t.key) }
         if (found.size < limit && wanted.isNotEmpty()) {
-            val meaning = Meaning(type, stats, n)
+            val meaning = Meaning(scope, stats, n)
             val target = meaning.ofText(query.trim())
             if (target != null) {
                 stats.values.filter { it.key !in found && (it.variants.isNotEmpty() || n.entriesOf(it.key).isNotEmpty()) }
@@ -738,17 +735,17 @@ class Tags(
      * newest stands of a work answered on both — and so are its links. A tag is never put above or
      * under one of its own descendants or ancestors.
      */
-    fun relate(type: TypeStore, facet: String, tag: String, other: String, relation: TagRelation): NamedTag? {
+    fun relate(scope: TagScope, facet: String, tag: String, other: String, relation: TagRelation): NamedTag? {
         if (tag == other) throw Refusal.TAG_SELF.refuse(HttpStatus.BAD_REQUEST, "The tag $tag is not related to itself")
         if (relation == TagRelation.DESCENDANT || relation == TagRelation.ANCESTOR) {
             throw Refusal.TAG_THROUGH.refuse(HttpStatus.BAD_REQUEST, "$relation is read, never said: said of the tags between")
         }
-        val a = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
-        val b = TagRepository.idOf(other)?.takeIf(type.tags::exists) ?: return null
-        val before = stats(type, facet)
+        val a = TagRepository.idOf(tag)?.takeIf(scope.tags::exists) ?: return null
+        val b = TagRepository.idOf(other)?.takeIf(scope.tags::exists) ?: return null
+        val before = stats(scope, facet)
         val now = Instant.now()
         // What was said of the two taken back and the new word said, all or nothing: a refusal leaves them as they were
-        type.tags.transaction { t ->
+        scope.tags.transaction { t ->
             t.setParent(b, a, false, now)
             t.setParent(a, b, false, now)
             t.setDistinct(a, b, false, now)
@@ -771,10 +768,10 @@ class Tags(
                 TagRelation.NONE, TagRelation.DESCENDANT, TagRelation.ANCESTOR -> Unit
             }
         }
-        if (relation == TagRelation.MERGED) moveMergedAnswers(type, facet)
-        log.info("{}: tag {} is {} to {}", type.id, other, relation, tag)
-        changed(type, facet, before[tag]?.items.orEmpty() + before[other]?.items.orEmpty())
-        return one(type, facet, tag)
+        if (relation == TagRelation.MERGED) moveMergedAnswers(scope, facet)
+        log.info("{}: tag {} is {} to {}", scope.id, other, relation, tag)
+        changed(scope, facet, before[tag]?.items.orEmpty() + before[other]?.items.orEmpty())
+        return one(scope, facet, tag)
     }
 
     /**
@@ -783,13 +780,13 @@ class Tags(
      * A source that fails leaves its merge to the next start: moving again what was moved is no
      * change.
      */
-    private fun moveMergedAnswers(type: TypeStore, facet: String) {
-        type.tags.pendingMerges().forEach { (from, into) ->
+    private fun moveMergedAnswers(scope: TagScope, facet: String) {
+        scope.tags.pendingMerges().forEach { (from, into) ->
             try {
-                type.sources.forEach { s -> s.corrections.moveFacetValues(facet, listOf(TagRepository.key(from)), TagRepository.key(into)) }
-                type.tags.answersMoved(from)
+                scope.sources.forEach { s -> s.corrections.moveFacetValues(facet, listOf(TagRepository.key(from)), TagRepository.key(into)) }
+                scope.tags.answersMoved(from)
             } catch (e: Exception) {
-                log.warn("{}: the answers on tag {} merged into {} were not moved, left to the next start: {}", type.id, from, into, e.message, e)
+                log.warn("{}: the answers on tag {} merged into {} were not moved, left to the next start: {}", scope.id, from, into, e.message, e)
             }
         }
     }
@@ -799,23 +796,23 @@ class Tags(
      * taken out of the tag it was. The user's answers stay with the tags they were given on.
      * Returns the tag it is bound to now.
      */
-    fun bind(type: TypeStore, facet: String, site: SiteTagRef, tag: String?): NamedTag? {
-        val before = stats(type, facet)
-        val was = type.tags.bindings()[site] ?: return null
-        val known = tag?.let { TagRepository.idOf(it)?.takeIf(type.tags::exists) ?: return null }
+    fun bind(scope: TagScope, facet: String, site: SiteTagRef, tag: String?): NamedTag? {
+        val before = stats(scope, facet)
+        val was = scope.tags.bindings()[site] ?: return null
+        val known = tag?.let { TagRepository.idOf(it)?.takeIf(scope.tags::exists) ?: return null }
         // A new tag of its own and the site's tag bound to it, both or neither
-        val to = type.tags.transaction { t -> (known ?: t.create()).also { t.bind(site, it, Instant.now()) } }
-        log.info("{}: {} of {} bound to tag {}, was {}", type.id, site.tag, site.source, to, was)
-        changed(type, facet, before[TagRepository.key(was)]?.items.orEmpty() + before[TagRepository.key(to)]?.items.orEmpty())
-        return one(type, facet, TagRepository.key(to))
+        val to = scope.tags.transaction { t -> (known ?: t.create()).also { t.bind(site, it, Instant.now()) } }
+        log.info("{}: {} of {} bound to tag {}, was {}", scope.id, site.tag, site.source, to, was)
+        changed(scope, facet, before[TagRepository.key(was)]?.items.orEmpty() + before[TagRepository.key(to)]?.items.orEmpty())
+        return one(scope, facet, TagRepository.key(to))
     }
 
     /** The name the user gives [tag]; null or blank takes it back — the tag is named by its sites again. */
-    fun name(type: TypeStore, facet: String, tag: String, name: String?): NamedTag? {
-        val id = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
-        type.tags.name(id, name?.trim()?.takeIf { it.isNotEmpty() })
-        val named = one(type, facet, tag)
-        changed(type, facet, named?.stats?.items.orEmpty())
+    fun name(scope: TagScope, facet: String, tag: String, name: String?): NamedTag? {
+        val id = TagRepository.idOf(tag)?.takeIf(scope.tags::exists) ?: return null
+        scope.tags.name(id, name?.trim()?.takeIf { it.isNotEmpty() })
+        val named = one(scope, facet, tag)
+        changed(scope, facet, named?.stats?.items.orEmpty())
         return named
     }
 
@@ -823,24 +820,24 @@ class Tags(
      * Whether the user ignores [tag]: it stays with its works, shown and found, but the model of the
      * grades reads it no more — it learns anew without it.
      */
-    fun ignore(type: TypeStore, facet: String, tag: String, ignored: Boolean): NamedTag? {
-        val id = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
-        type.tags.ignore(id, ignored)
-        log.info("{}: tag {} {}", type.id, id, if (ignored) "ignored" else "no longer ignored")
+    fun ignore(scope: TagScope, facet: String, tag: String, ignored: Boolean): NamedTag? {
+        val id = TagRepository.idOf(tag)?.takeIf(scope.tags::exists) ?: return null
+        scope.tags.ignore(id, ignored)
+        log.info("{}: tag {} {}", scope.id, id, if (ignored) "ignored" else "no longer ignored")
         // The model alone reads it otherwise: the works, their names and the search are as they were
-        events.publishEvent(TagsChanged(type.id))
-        return one(type, facet, tag)
+        scope.types.forEach { events.publishEvent(TagsChanged(it)) }
+        return one(scope, facet, tag)
     }
 
     // --- The entries of a catalogue ---
 
     /** The entries every catalogue of tags finds by [text] — an id or a page's address is the entry itself — each with the tags bound to it already. */
-    fun findEntries(type: TypeStore, text: String): List<FoundEntry> {
+    fun findEntries(scope: TagScope, text: String): List<FoundEntry> {
         if (text.isBlank()) return emptyList()
         val bound = HashMap<TagEntryRef, MutableList<String>>()
-        type.tags.entriesOfTags().forEach { (id, refs) -> refs.forEach { bound.getOrPut(it) { ArrayList() } += TagRepository.key(id) } }
+        scope.tags.entriesOfTags().forEach { (id, refs) -> refs.forEach { bound.getOrPut(it) { ArrayList() } += TagRepository.key(id) } }
         val found = plugins.tagCatalogues.flatMap { c -> c.find(text, languages).map { c.id to it } }
-        val names = type.tags.shown(found.flatMap { (c, e) -> bound[TagEntryRef(c, e.id)].orEmpty() })
+        val names = scope.tags.shown(found.flatMap { (c, e) -> bound[TagEntryRef(c, e.id)].orEmpty() })
         return found.map { (c, e) -> FoundEntry(c, e, bound[TagEntryRef(c, e.id)].orEmpty().map { it to (names[it] ?: it) }) }
     }
 
@@ -850,29 +847,29 @@ class Tags(
      * named it — or, [bound] false, no more to it. The tag's works are read again: its name is what
      * the model reads.
      */
-    fun bindEntry(type: TypeStore, facet: String, tag: String, catalogue: String, entry: String, bound: Boolean): NamedTag? {
-        val id = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
+    fun bindEntry(scope: TagScope, facet: String, tag: String, catalogue: String, entry: String, bound: Boolean): NamedTag? {
+        val id = TagRepository.idOf(tag)?.takeIf(scope.tags::exists) ?: return null
         val now = Instant.now()
         if (!bound) {
-            type.tags.bindEntry(id, TagEntryRef(catalogue, entry), false, now)
-            log.info("{}: tag {} bound no more to {}:{}", type.id, tag, catalogue, entry)
+            scope.tags.bindEntry(id, TagEntryRef(catalogue, entry), false, now)
+            log.info("{}: tag {} bound no more to {}:{}", scope.id, tag, catalogue, entry)
         } else {
             val source = plugins.tagCatalogues.firstOrNull { it.id == catalogue } ?: throw NoSuchElementException("No catalogue of tags $catalogue")
             val read = source.entries(listOf(entry), languages).firstOrNull() ?: throw NoSuchElementException("$catalogue has no $entry")
-            type.tags.transaction { t ->
+            scope.tags.transaction { t ->
                 t.keepEntry(catalogue, read, now)
                 t.bindEntry(id, TagEntryRef(catalogue, read.id), true, now)
             }
-            log.info("{}: tag {} bound to {}:{} ({})", type.id, tag, catalogue, read.id, languages.firstNotNullOfOrNull { read.labels[it] })
+            log.info("{}: tag {} bound to {}:{} ({})", scope.id, tag, catalogue, read.id, languages.firstNotNullOfOrNull { read.labels[it] })
             // What it is a kind of: the binding stands without it, read again from the tag's card
             try {
-                readAbove(type, source, listOf(read.id))
+                readAbove(scope, source, listOf(read.id))
             } catch (e: Exception) {
-                log.warn("{}: what {}:{} is a kind of was not read: {}", type.id, catalogue, read.id, e.message)
+                log.warn("{}: what {}:{} is a kind of was not read: {}", scope.id, catalogue, read.id, e.message)
             }
         }
-        val named = one(type, facet, tag)
-        changed(type, facet, named?.stats?.items.orEmpty())
+        val named = one(scope, facet, tag)
+        changed(scope, facet, named?.stats?.items.orEmpty())
         return named
     }
 
@@ -880,71 +877,71 @@ class Tags(
      * The entries [tag] is bound to read of their catalogues again: their names and descriptions, and
      * what they are a kind of, every level up asked again. What was kept stays shown till then.
      */
-    fun refreshEntries(type: TypeStore, facet: String, tag: String): NamedTag? {
-        val id = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
+    fun refreshEntries(scope: TagScope, facet: String, tag: String): NamedTag? {
+        val id = TagRepository.idOf(tag)?.takeIf(scope.tags::exists) ?: return null
         val now = Instant.now()
-        type.tags.entriesOfTags()[id].orEmpty().groupBy { it.catalogue }.forEach { (catalogueId, refs) ->
+        scope.tags.entriesOfTags()[id].orEmpty().groupBy { it.catalogue }.forEach { (catalogueId, refs) ->
             val catalogue = plugins.tagCatalogues.firstOrNull { it.id == catalogueId } ?: throw NoSuchElementException("No catalogue of tags $catalogueId")
             val ids = refs.map { it.entry }
-            catalogue.entries(ids, languages).forEach { type.tags.keepEntry(catalogueId, it, now) }
-            readAbove(type, catalogue, ids, anew = true)
+            catalogue.entries(ids, languages).forEach { scope.tags.keepEntry(catalogueId, it, now) }
+            readAbove(scope, catalogue, ids, anew = true)
         }
-        log.info("{}: the entries of tag {} read again", type.id, tag)
-        val named = one(type, facet, tag)
-        changed(type, facet, named?.stats?.items.orEmpty())
+        log.info("{}: the entries of tag {} read again", scope.id, tag)
+        val named = one(scope, facet, tag)
+        changed(scope, facet, named?.stats?.items.orEmpty())
         return named
     }
 
     /** The tags changed: their names worked out again now, their works read again — their chances, their search — and the model of the grades trained again. */
-    private fun changed(type: TypeStore, facet: String, items: Collection<ItemKey>) {
-        rename(type, facet)
+    private fun changed(scope: TagScope, facet: String, items: Collection<ItemKey>) {
+        rename(scope, facet)
         items.groupBy({ it.source }, { it.id }).forEach { (source, ids) -> events.publishEvent(ItemsChanged(source, ids)) }
-        events.publishEvent(TagsChanged(type.id))
+        scope.types.forEach { events.publishEvent(TagsChanged(it)) }
     }
 
     // --- The names worked out ---
 
-    /** The names of every tag of the type worked out now and kept. */
-    fun rename(type: TypeStore, facet: String) {
+    /** The names of every tag worked out now and kept. */
+    fun rename(scope: TagScope, facet: String) {
         val started = System.currentTimeMillis()
-        val n = naming(type, facet)
+        val n = naming(scope, facet)
         val stats = n.stats
-        type.tags.replaceShown(stats.values.associate { t -> t.id to n.nameOf(t) })
-        log.info("{}: names of {} tags worked out in {} ms", type.id, stats.size, System.currentTimeMillis() - started)
+        scope.tags.replaceShown(stats.values.associate { t -> t.id to n.nameOf(t) })
+        log.info("{}: names of {} tags worked out in {} ms", scope.id, stats.size, System.currentTimeMillis() - started)
     }
 
     /** The sites' new tags bound, and the names worked out again, shortly after the last of a quick series of changes. */
-    private fun schedule(typeId: String) {
-        pending.compute(typeId) { _, old ->
+    private fun schedule() {
+        pending.compute(RENAMING) { _, old ->
             old?.cancel(false)
             scheduler.schedule({
                 try {
-                    val type = stores.type(typeId) ?: return@schedule
-                    val facet = facetOf(type) ?: return@schedule
-                    normalization.bindNew(type)
-                    rename(type, facet)
+                    val scope = scope() ?: return@schedule
+                    normalization.bindNew()
+                    rename(scope, scope.facet)
                 } catch (e: Exception) {
-                    log.warn("{}: the tags were not bound and named: {}", typeId, e.message, e)
+                    log.warn("The tags were not bound and named: {}", e.message, e)
                 }
             }, RENAME_DELAY_SECONDS, TimeUnit.SECONDS)
         }
     }
 
     @EventListener
-    fun gradesChanged(event: GradesChanged) = schedule(event.type)
+    fun gradesChanged(event: GradesChanged) = schedule()
 
     @EventListener
-    fun itemsChanged(event: ItemsChanged) = schedule(stores.typeOf(event.source).id)
+    fun itemsChanged(event: ItemsChanged) = schedule()
 
     /** After the tags are normalized on start ([TagNormalization.start]). */
     @Order(-5)
     @EventListener(ApplicationReadyEvent::class)
-    fun start() = stores.types.forEach { type ->
+    fun start() {
+        val scope = scope() ?: return
         // The answers of a merge a stop or a failure left unmoved: moved before anything reads them
-        facetOf(type)?.let { facet -> moveMergedAnswers(type, facet) }
-        schedule(type.id)
+        moveMergedAnswers(scope, scope.facet)
+        schedule()
         // The bindings made before what their entries are a kind of was read: read once, in the background
-        scheduler.execute { if (facetOf(type) != null) readAboveOfBound(type) }
+        scheduler.execute { readAboveOfBound(scope) }
     }
 
     @PreDestroy
@@ -953,6 +950,9 @@ class Tags(
     }
 
     companion object {
+        /** The one renaming waited for, of every type's tags. */
+        private const val RENAMING = "tags"
+
         /** The quiet after the last change before the names are worked out again: a page is sent several times as it grows. */
         private const val RENAME_DELAY_SECONDS = 10L
 

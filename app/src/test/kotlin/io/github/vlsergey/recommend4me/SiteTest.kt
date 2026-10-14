@@ -707,21 +707,21 @@ class SiteTest {
         textVectors.refresh(stores.source("site")!!)
 
         // Offered alike: the other tags of the sites, with how alike their names are; the site's own tag of it, merged
-        val similar = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null, null).body!!.tags
+        val similar = tagsApi.listSimilarTags(hulls, null, 0, 50, null, null).body!!.tags
         assertTrue(similar.any { it.tag.key == starhulls && it.site == null }, "similar ${similar.map { it.tag.key }}")
         assertEquals(listOf("hulls"), similar.filter { it.site != null }.map { it.site!!.tag })
         // Nothing is merged by itself
-        assertEquals(listOf("hulls"), tagsApi.getTag("books", hulls).body!!.variants.map { it.tag })
+        assertEquals(listOf("hulls"), tagsApi.getTag(hulls).body!!.variants.map { it.tag })
 
         // Merged: the site's tags of the other bound to this one, the other no more
-        val merged = tagsApi.relateTags("books", TagRelationRequest(hulls, starhulls, TagRelation.MERGED)).body!!
+        val merged = tagsApi.relateTags(TagRelationRequest(hulls, starhulls, TagRelation.MERGED)).body!!
         assertEquals(hulls, merged.key)
         assertEquals(setOf("hulls", "starhulls"), merged.variants.map { it.tag }.toSet())
         assertEquals(4, merged.works)
         // Each site's tag with its own works: the work with both counted in both, once in the tag
         assertEquals(mapOf("hulls" to 3, "starhulls" to 2), merged.variants.associate { it.tag to it.works })
         assertEquals(hulls, tagOf("starhulls"))
-        assertEquals(404, tagsApi.getTag("books", starhulls).statusCode.value())
+        assertEquals(404, tagsApi.getTag(starhulls).statusCode.value())
         // Named by the name of the liked work: t2, graded 5, has "Starhulls"
         assertEquals("Starhulls", merged.name)
         assertEquals(TagNameRule.LIKED, merged.rule)
@@ -731,7 +731,7 @@ class SiteTest {
         val t3 = stores.source("site")!!.corrections.facetsOf("t3").filter { it.facet == "tags" }
         assertEquals(listOf(hulls to true), t3.map { it.key to it.added })
         // The work's tags show the tag by its name, whichever site's name it has
-        val named = tagsApi.nameTag("books", TagNameRequest(hulls, "Корпуса")).body!!
+        val named = tagsApi.nameTag(TagNameRequest(hulls, "Корпуса")).body!!
         assertEquals("Корпуса", named.name)
         assertEquals(TagNameRule.EXPLICIT, named.rule)
         // Named by the user: the sites' names all follow it, in the same order
@@ -743,109 +743,109 @@ class SiteTest {
         assertEquals(hulls to "Корпуса", found.first().let { it.key to it.name })
         assertEquals(1, found.count { it.key == hulls })
         // The name taken back: the sites' names decide again
-        assertEquals(TagNameRule.LIKED, tagsApi.nameTag("books", TagNameRequest(hulls)).body!!.rule)
+        assertEquals(TagNameRule.LIKED, tagsApi.nameTag(TagNameRequest(hulls)).body!!.rule)
 
         // Bound to an entry of a catalogue, found by the user: named by its label in the user's first language
-        val entries = tagsApi.findTagEntries("books", "hull").body!!
+        val entries = tagsApi.findTagEntries("hull").body!!
         assertEquals(listOf("fake" to "E1"), entries.map { it.catalogue to it.entry })
         assertEquals(emptyList(), entries.single().tags)
-        val bound = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1", true)).body!!
+        val bound = tagsApi.bindTagEntry(TagEntryRequest(hulls, "fake", "E1", true)).body!!
         assertEquals("Корпус" to TagNameRule.CATALOGUE, bound.name to bound.rule)
         assertEquals(setOf("Hull", "Корпус", "Ship hull"), bound.catalogueEntries.single().names.toSet())
-        assertEquals(listOf(hulls to "Корпус"), tagsApi.findTagEntries("books", "E1").body!!.single().tags.map { it.key to it.name })
+        assertEquals(listOf(hulls to "Корпус"), tagsApi.findTagEntries("E1").body!!.single().tags.map { it.key to it.name })
         // Found by any name of its entry, in any language
-        assertTrue(tagsApi.listTags("books", "ship hull", null, null, null, 0, 10).body!!.tags.any { it.key == hulls })
+        assertTrue(tagsApi.listTags("ship hull", null, null, null, 0, 10).body!!.tags.any { it.key == hulls })
         // Filtered by what it comes from: the site and the catalogue it is bound to an entry of
-        val ofCatalogue = tagsApi.listTags("books", null, listOf("fake"), null, null, 0, 1000).body!!
+        val ofCatalogue = tagsApi.listTags(null, listOf("fake"), null, null, 0, 1000).body!!
         assertEquals(listOf("site", "fake"), ofCatalogue.sources)
         assertEquals(listOf(hulls), ofCatalogue.tags.map { it.key })
-        assertTrue(tagsApi.listTags("books", null, listOf("site"), listOf("fake"), null, 0, 1000).body!!.tags.none { it.key == hulls })
-        assertTrue(tagsApi.listTags("books", null, listOf("site"), null, null, 0, 1000).body!!.tags.any { it.key == hulls })
+        assertTrue(tagsApi.listTags(null, listOf("site"), listOf("fake"), null, 0, 1000).body!!.tags.none { it.key == hulls })
+        assertTrue(tagsApi.listTags(null, listOf("site"), null, null, 0, 1000).body!!.tags.any { it.key == hulls })
         // Ignored: kept with the work and found by the filter, never read by the model of the grades
         val t3Key = ItemKey("site", "t3")
         val feature = "facet:tags:$hulls"
         assertTrue(feature in catalogueReader.item(stores.type("books")!!, t3Key)!!.categorical)
-        assertTrue(tagsApi.ignoreTag("books", TagIgnoredRequest(hulls, true)).body!!.ignored)
-        assertEquals(listOf(hulls), tagsApi.listTags("books", null, null, null, true, 0, 1000).body!!.tags.map { it.key })
-        assertTrue(tagsApi.listTags("books", null, null, null, false, 0, 1000).body!!.tags.none { it.key == hulls })
+        assertTrue(tagsApi.ignoreTag(TagIgnoredRequest(hulls, true)).body!!.ignored)
+        assertEquals(listOf(hulls), tagsApi.listTags(null, null, null, true, 0, 1000).body!!.tags.map { it.key })
+        assertTrue(tagsApi.listTags(null, null, null, false, 0, 1000).body!!.tags.none { it.key == hulls })
         assertTrue(feature !in catalogueReader.item(stores.type("books")!!, t3Key)!!.categorical)
         assertTrue(items.getItem("site", "t3").body!!.allFacets.single { it.facet == "tags" }.propertyValues.any { it.key == hulls })
-        assertTrue(!tagsApi.ignoreTag("books", TagIgnoredRequest(hulls, false)).body!!.ignored)
+        assertTrue(!tagsApi.ignoreTag(TagIgnoredRequest(hulls, false)).body!!.ignored)
         assertTrue(feature in catalogueReader.item(stores.type("books")!!, t3Key)!!.categorical)
         // A second entry besides: the one bound first still names it; the descriptions of the site's tag's page first, then of each entry
         stores.source("site")!!.items.describeFacetValues(Books.TAG.key, mapOf("hulls" to "The hulls of ships"))
-        val both = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E2", true)).body!!
+        val both = tagsApi.bindTagEntry(TagEntryRequest(hulls, "fake", "E2", true)).body!!
         assertEquals(listOf("E1", "E2"), both.catalogueEntries.map { it.entry })
         assertEquals("Корпус", both.name)
         assertEquals(
             listOf("site" to "The hulls of ships", "fake" to "the body of a ship", "fake" to "a ship"),
-            tagsApi.getTag("books", hulls).body!!.descriptions.map { it.origin to it.text },
+            tagsApi.getTag(hulls).body!!.descriptions.map { it.origin to it.text },
         )
         // The user's own name over the entry's
-        assertEquals(TagNameRule.EXPLICIT, tagsApi.nameTag("books", TagNameRequest(hulls, "Корпуса")).body!!.rule)
-        tagsApi.nameTag("books", TagNameRequest(hulls))
+        assertEquals(TagNameRule.EXPLICIT, tagsApi.nameTag(TagNameRequest(hulls, "Корпуса")).body!!.rule)
+        tagsApi.nameTag(TagNameRequest(hulls))
         // The first no more: the other names it; bound to none, the sites' names again
-        val second = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1", false)).body!!
+        val second = tagsApi.bindTagEntry(TagEntryRequest(hulls, "fake", "E1", false)).body!!
         assertEquals(listOf("E2"), second.catalogueEntries.map { it.entry })
         assertEquals("Судно", second.name)
-        val unbound = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E2", false)).body!!
+        val unbound = tagsApi.bindTagEntry(TagEntryRequest(hulls, "fake", "E2", false)).body!!
         assertEquals(emptyList(), unbound.catalogueEntries)
         assertEquals(TagNameRule.LIKED, unbound.rule)
 
         // A hull is a kind of vessel in the catalogue: the tag of the vessel offered above the hulls, the hulls under it
-        tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1", true))
-        tagsApi.bindTagEntry("books", TagEntryRequest(cargo, "fake", "E2", true))
-        val offered = tagsApi.getTag("books", hulls).body!!.catalogueOffers.single()
+        tagsApi.bindTagEntry(TagEntryRequest(hulls, "fake", "E1", true))
+        tagsApi.bindTagEntry(TagEntryRequest(cargo, "fake", "E2", true))
+        val offered = tagsApi.getTag(hulls).body!!.catalogueOffers.single()
         assertEquals(Triple(cargo, TagRelation.PARENT, listOf("Корпус", "Судно")), Triple(offered.tag.key, offered.relation, offered.path))
-        assertEquals(listOf(hulls to TagRelation.CHILD), tagsApi.getTag("books", cargo).body!!.catalogueOffers.map { it.tag.key to it.relation })
+        assertEquals(listOf(hulls to TagRelation.CHILD), tagsApi.getTag(cargo).body!!.catalogueOffers.map { it.tag.key to it.relation })
         // Read again from the card: the same entries, the same offer
-        assertEquals(listOf("E1"), tagsApi.refreshTagEntries("books", hulls).body!!.catalogueEntries.map { it.entry })
+        assertEquals(listOf("E1"), tagsApi.refreshTagEntries(hulls).body!!.catalogueEntries.map { it.entry })
         // The page's offers: the hulls under the cargo; no new tag above both, where the cargo's own entry is
-        val page = tagsApi.listHierarchyOffers("books").body!!
+        val page = tagsApi.listHierarchyOffers().body!!
         val link = page.single()
         assertEquals(HierarchyOfferKind.LINK to listOf(hulls, cargo), link.kind to link.tags.map { it.key })
         assertEquals(listOf("Корпус", "Судно"), link.path)
         // Said: offered no more
-        tagsApi.relateTags("books", TagRelationRequest(hulls, cargo, TagRelation.PARENT))
-        assertEquals(emptyList(), tagsApi.getTag("books", hulls).body!!.catalogueOffers)
-        tagsApi.relateTags("books", TagRelationRequest(hulls, cargo, TagRelation.NONE))
+        tagsApi.relateTags(TagRelationRequest(hulls, cargo, TagRelation.PARENT))
+        assertEquals(emptyList(), tagsApi.getTag(hulls).body!!.catalogueOffers)
+        tagsApi.relateTags(TagRelationRequest(hulls, cargo, TagRelation.NONE))
         // A hull and a sail are kinds of craft, the nearest they both are: a new tag of it offered above both, made
-        tagsApi.bindTagEntry("books", TagEntryRequest(cargo, "fake", "E2", false))
-        tagsApi.bindTagEntry("books", TagEntryRequest(cargo, "fake", "E4", true))
-        val above = tagsApi.listHierarchyOffers("books").body!!.single()
+        tagsApi.bindTagEntry(TagEntryRequest(cargo, "fake", "E2", false))
+        tagsApi.bindTagEntry(TagEntryRequest(cargo, "fake", "E4", true))
+        val above = tagsApi.listHierarchyOffers().body!!.single()
         assertEquals(Triple(HierarchyOfferKind.NEW_PARENT, "E3", setOf(hulls, cargo)), Triple(above.kind, above.entry, above.tags.map { it.key }.toSet()))
-        val craft = tagsApi.createTagAbove("books", TagAboveRequest("fake", "E3", above.tags.map { it.key })).body!!
+        val craft = tagsApi.createTagAbove(TagAboveRequest("fake", "E3", above.tags.map { it.key })).body!!
         assertEquals("Аппарат", craft.name)
         assertEquals(setOf(hulls, cargo), craft.children.map { it.key }.toSet())
-        assertEquals(emptyList(), tagsApi.listHierarchyOffers("books").body!!)
-        tagsApi.relateTags("books", TagRelationRequest(craft.key, hulls, TagRelation.NONE))
-        tagsApi.relateTags("books", TagRelationRequest(craft.key, cargo, TagRelation.NONE))
-        tagsApi.bindTagEntry("books", TagEntryRequest(craft.key, "fake", "E3", false))
+        assertEquals(emptyList(), tagsApi.listHierarchyOffers().body!!)
+        tagsApi.relateTags(TagRelationRequest(craft.key, hulls, TagRelation.NONE))
+        tagsApi.relateTags(TagRelationRequest(craft.key, cargo, TagRelation.NONE))
+        tagsApi.bindTagEntry(TagEntryRequest(craft.key, "fake", "E3", false))
         // A tag of the entry's name there already, bound to it not: that tag offered above both, not a new one
-        tagsApi.nameTag("books", TagNameRequest(craft.key, "Аппарат"))
-        val bind = tagsApi.listHierarchyOffers("books").body!!.single()
+        tagsApi.nameTag(TagNameRequest(craft.key, "Аппарат"))
+        val bind = tagsApi.listHierarchyOffers().body!!.single()
         assertEquals(Triple(HierarchyOfferKind.BIND_PARENT, craft.key, setOf(hulls, cargo)), Triple(bind.kind, bind.existing?.key, bind.tags.map { it.key }.toSet()))
-        val boundAbove = tagsApi.createTagAbove("books", TagAboveRequest("fake", "E3", bind.tags.map { it.key }, craft.key)).body!!
+        val boundAbove = tagsApi.createTagAbove(TagAboveRequest("fake", "E3", bind.tags.map { it.key }, craft.key)).body!!
         assertEquals(craft.key to listOf("E3"), boundAbove.key to boundAbove.catalogueEntries.map { it.entry })
         assertEquals(setOf(hulls, cargo), boundAbove.children.map { it.key }.toSet())
         // The hulls put under the cargo too: right under the craft over the cargo's head — offered to be taken away
-        tagsApi.relateTags("books", TagRelationRequest(hulls, cargo, TagRelation.PARENT))
-        val over = tagsApi.listHierarchyOffers("books").body!!.single { it.kind == HierarchyOfferKind.UNLINK }
+        tagsApi.relateTags(TagRelationRequest(hulls, cargo, TagRelation.PARENT))
+        val over = tagsApi.listHierarchyOffers().body!!.single { it.kind == HierarchyOfferKind.UNLINK }
         assertEquals(listOf(hulls, craft.key, cargo), over.tags.map { it.key })
-        tagsApi.relateTags("books", TagRelationRequest(hulls, cargo, TagRelation.NONE))
-        tagsApi.relateTags("books", TagRelationRequest(craft.key, hulls, TagRelation.NONE))
-        tagsApi.relateTags("books", TagRelationRequest(craft.key, cargo, TagRelation.NONE))
-        tagsApi.bindTagEntry("books", TagEntryRequest(craft.key, "fake", "E3", false))
-        tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1", false))
-        tagsApi.bindTagEntry("books", TagEntryRequest(cargo, "fake", "E4", false))
+        tagsApi.relateTags(TagRelationRequest(hulls, cargo, TagRelation.NONE))
+        tagsApi.relateTags(TagRelationRequest(craft.key, hulls, TagRelation.NONE))
+        tagsApi.relateTags(TagRelationRequest(craft.key, cargo, TagRelation.NONE))
+        tagsApi.bindTagEntry(TagEntryRequest(craft.key, "fake", "E3", false))
+        tagsApi.bindTagEntry(TagEntryRequest(hulls, "fake", "E1", false))
+        tagsApi.bindTagEntry(TagEntryRequest(cargo, "fake", "E4", false))
 
         // Both site's tags merged rows of it; one taken out, to a new tag of its own; the answer stays with the tag
-        fun rows() = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null, null).body!!.tags
+        fun rows() = tagsApi.listSimilarTags(hulls, null, 0, 50, null, null).body!!.tags
         assertEquals(setOf("hulls", "starhulls"), rows().filter { it.site != null }.onEach { assertEquals(TagRelation.MERGED, it.relation) }.map { it.site!!.tag }.toSet())
-        val out = tagsApi.bindSiteTag("books", TagBindingRequest("site", "starhulls")).body!!
+        val out = tagsApi.bindSiteTag(TagBindingRequest("site", "starhulls")).body!!
         assertTrue(out.key != hulls && out.key != starhulls, "a new tag ${out.key}")
         assertEquals(2, out.works)
-        assertEquals(listOf("hulls"), tagsApi.getTag("books", hulls).body!!.variants.map { it.tag })
+        assertEquals(listOf("hulls"), tagsApi.getTag(hulls).body!!.variants.map { it.tag })
         assertEquals(listOf(hulls to true), stores.source("site")!!.corrections.facetsOf("t3").filter { it.facet == "tags" }.map { it.key to it.added })
         val other = out.key
         // One row of it among the alike, not merged
@@ -853,25 +853,25 @@ class SiteTest {
 
         // Told apart: stays among the alike, marked, whatever its likeness
         fun relationOf(key: String) = rows().singleOrNull { it.tag.key == key && it.site == null }?.relation
-        tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.DIFFERENT))
+        tagsApi.relateTags(TagRelationRequest(hulls, other, TagRelation.DIFFERENT))
         assertEquals(TagRelation.DIFFERENT, relationOf(other))
         // The rows of a relation hidden on the server, the total without them
-        val all = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null, null).body!!
-        val noDifferent = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null, listOf(TagRelation.DIFFERENT)).body!!
+        val all = tagsApi.listSimilarTags(hulls, null, 0, 50, null, null).body!!
+        val noDifferent = tagsApi.listSimilarTags(hulls, null, 0, 50, null, listOf(TagRelation.DIFFERENT)).body!!
         assertTrue(noDifferent.tags.none { it.relation == TagRelation.DIFFERENT }, "hidden ${noDifferent.tags.map { it.relation }}")
         assertEquals(all.total - 1, noDifferent.total)
         // A page at a time: the pages one after another are the whole table
-        val paged = (0 until all.total).chunked(1).flatMap { tagsApi.listSimilarTags("books", hulls, null, it.first(), 1, null, null).body!!.tags }
+        val paged = (0 until all.total).chunked(1).flatMap { tagsApi.listSimilarTags(hulls, null, it.first(), 1, null, null).body!!.tags }
         assertEquals(all.tags.map { it.tag.key to it.site?.tag }, paged.map { it.tag.key to it.site?.tag })
         // Searched for: alike the text, not the tag — all the rows, in another order
-        val searched = tagsApi.listSimilarTags("books", hulls, "freight cargo", 0, 50, null, null).body!!
+        val searched = tagsApi.listSimilarTags(hulls, "freight cargo", 0, 50, null, null).body!!
         assertEquals(all.total, searched.total)
         assertTrue(searched.tags.zipWithNext().all { (a, b) -> a.similarity >= b.similarity }, "the likest first")
-        tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.NONE))
+        tagsApi.relateTags(TagRelationRequest(hulls, other, TagRelation.NONE))
         assertEquals(TagRelation.NONE, rows().single { it.tag.key == other && it.site == null }.relation)
 
         // Under a tag: a work with the child has the parent, shown as given by it
-        val hull = tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.CHILD)).body!!
+        val hull = tagsApi.relateTags(TagRelationRequest(hulls, other, TagRelation.CHILD)).body!!
         assertEquals(listOf(other), hull.children.map { it.key })
         assertEquals(TagRelation.CHILD, relationOf(other))
         fun tagsOf(id: String) = items.getItem("site", id).body!!.allFacets.single { it.facet == "tags" }.propertyValues
@@ -884,13 +884,13 @@ class SiteTest {
         val order = tagsOf("t2").map { it.key }
         assertTrue(order.indexOf(hulls) < order.indexOf(other), "the order of t2 $order")
         // A tag of several parents: under cargo too
-        tagsApi.relateTags("books", TagRelationRequest(cargo, other, TagRelation.CHILD))
-        assertEquals(setOf(hulls, cargo), tagsApi.getTag("books", other).body!!.parents.map { it.key }.toSet())
-        tagsApi.relateTags("books", TagRelationRequest(cargo, other, TagRelation.NONE))
+        tagsApi.relateTags(TagRelationRequest(cargo, other, TagRelation.CHILD))
+        assertEquals(setOf(hulls, cargo), tagsApi.getTag(other).body!!.parents.map { it.key }.toSet())
+        tagsApi.relateTags(TagRelationRequest(cargo, other, TagRelation.NONE))
         // A tag never under its own descendant: other under hulls under cargo, and cargo not under other
-        tagsApi.relateTags("books", TagRelationRequest(cargo, hulls, TagRelation.CHILD))
-        assertEquals(Refusal.TAG_ABOVE, assertThrows<Refused> { tagsApi.relateTags("books", TagRelationRequest(other, cargo, TagRelation.CHILD)) }.refusal)
-        tagsApi.relateTags("books", TagRelationRequest(cargo, hulls, TagRelation.NONE))
+        tagsApi.relateTags(TagRelationRequest(cargo, hulls, TagRelation.CHILD))
+        assertEquals(Refusal.TAG_ABOVE, assertThrows<Refused> { tagsApi.relateTags(TagRelationRequest(other, cargo, TagRelation.CHILD)) }.refusal)
+        tagsApi.relateTags(TagRelationRequest(cargo, hulls, TagRelation.NONE))
         // The parent of a child the user confirmed is not taken away: the work has it by the child
         val implied = assertThrows<Refused> { corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = hulls)) }
         assertEquals(Refusal.TAG_IMPLIED, implied.refusal)
@@ -903,8 +903,8 @@ class SiteTest {
         val candidates = suggestionsApi.getCandidates("site", "t2", "tags").body!!.map { it.key }
         assertTrue(other !in candidates, "candidates of t2 $candidates")
         // The other way round: above it
-        assertEquals(listOf(other), tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.PARENT)).body!!.parents.map { it.key })
-        tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.NONE))
+        assertEquals(listOf(other), tagsApi.relateTags(TagRelationRequest(hulls, other, TagRelation.PARENT)).body!!.parents.map { it.key })
+        tagsApi.relateTags(TagRelationRequest(hulls, other, TagRelation.NONE))
         assertEquals(TagRelation.NONE, relationOf(other) ?: TagRelation.NONE)
 
         // A tag the user makes up on a work by its name: a new normalized tag of that name; the same name again, the same tag

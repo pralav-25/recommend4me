@@ -111,8 +111,8 @@ class ItemsController(
         val wanted = limit.coerceIn(1, 500)
         // A facet of tags: the normalized tags, found by the names on this site, on any, then by meaning ([Tags.find])
         if (facet in store.tagFacets) {
-            val type = stores.typeOf(store.id)
-            val found = if (piece.isEmpty()) tags.list(type, facet, null).take(wanted) else tags.find(type, facet, store.id, piece, wanted)
+            val scope = tags.scope() ?: return ResponseEntity.notFound().build()
+            val found = if (piece.isEmpty()) tags.list(scope, facet, null).take(wanted) else tags.find(scope, facet, store.id, piece, wanted)
             return ResponseEntity.ok(found.map { FacetValueUse(it.stats.key, it.name.name, it.stats.items.size, null) })
         }
         return ResponseEntity.ok(

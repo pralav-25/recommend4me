@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import {
   api,
   unwrap,
-  type ContentTypeInfo,
   type FoundTagEntry,
   type HierarchyOffer,
   type SimilarTag,
@@ -21,13 +20,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
 import { Input } from "@/components/ui/input";
-import { typeTitle } from "@/contenttype/types";
 import { sourceShort, sourceTitle } from "@/i18n/label";
 import { usePref } from "@/lib/usePref";
 import { cn } from "@/lib/utils";
 import { followLink, screenHref } from "@/screen/screens";
 
-/** The cache key of everything of the tags of a type: ["tags", type, …]. */
+/** The cache key of everything of the tags, of every type: ["tags", …]. */
 const TAGS = "tags";
 
 /** How many tags a page of the list shows, and adds by "more". */
@@ -91,20 +89,20 @@ function sitesOf(tag: TagInfo): string[] {
  * others, tells two apart. The application only offers tags alike by the meaning of their names; it
  * merges nothing by itself.
  */
-export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected?: string }) {
+export function TagsScreen({ selected }: { selected?: string }) {
   const { t } = useTranslation("tag");
   return (
     <div className="mx-auto grid max-w-[1800px] grid-cols-[minmax(0,1fr)] gap-4 px-4 py-4 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
       <div className={cn("flex flex-col gap-6", selected && "hidden lg:flex")}>
-        <TagList type={type} selected={selected} />
-        <HierarchyOffers type={type} />
+        <TagList selected={selected} />
+        <HierarchyOffers />
       </div>
       {selected ? (
-        <TagDetails key={selected} type={type} tag={selected} />
+        <TagDetails key={selected} tag={selected} />
       ) : (
         <div className="hidden flex-col gap-2 text-sm text-muted-foreground lg:flex">
           <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
-            <TagsIcon className="size-5" /> {t("TagsScreen.title", { type: typeTitle(type.id).toLowerCase() })}
+            <TagsIcon className="size-5" /> {t("TagsScreen.title")}
           </h1>
           <p>{t("TagsScreen.intro")}</p>
           <p>{t("TagsScreen.nameRule")}</p>
@@ -119,9 +117,9 @@ export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected
  * but the model of the grades reads it no more; pressed again, read again. Shown as pressed once the
  * application has kept it.
  */
-function IgnoreButton({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+function IgnoreButton({ tag }: { tag: TagInfo }) {
   const { t } = useTranslation("tag");
-  const changed = useTagsChanged(type.id);
+  const changed = useTagsChanged();
   return (
     <AsyncButton
       variant={tag.ignored ? "secondary" : "ghost"}
@@ -131,7 +129,7 @@ function IgnoreButton({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
       title={t(tag.ignored ? "Ignore.ignoredTitle" : "Ignore.title")}
       aria-label={t(tag.ignored ? "Ignore.ignoredTitle" : "Ignore.title")}
       onClick={async () => {
-        unwrap(await api.PUT("/api/types/{type}/tags/ignored", { params: { path: { type: type.id } }, body: { tag: tag.key, ignored: !tag.ignored } }));
+        unwrap(await api.PUT("/api/tags/ignored", { body: { tag: tag.key, ignored: !tag.ignored } }));
         await changed();
       }}
       icon={<Trash2Icon className={cn(tag.ignored && "text-destructive")} />}
@@ -172,7 +170,7 @@ function IgnoredSelect({ value, onChange }: { value: IgnoredFilter; onChange: (f
 const SOURCE_FILTERS = ["any", "with", "without"] as const;
 type SourceFilter = (typeof SOURCE_FILTERS)[number];
 
-function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string }) {
+function TagList({ selected }: { selected?: string }) {
   const { t } = useTranslation("tag");
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
@@ -190,12 +188,12 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
   const withSources = chosen("with");
   const withoutSources = chosen("without");
   const tags = useQuery({
-    queryKey: [TAGS, type.id, "list", query, withSources, withoutSources, ignored, limit],
+    queryKey: [TAGS, "list", query, withSources, withoutSources, ignored, limit],
     placeholderData: keepPreviousData,
     queryFn: async () =>
       unwrap(
-        await api.GET("/api/types/{type}/tags", {
-          params: { path: { type: type.id }, query: { query: query || undefined, with: withSources, without: withoutSources, ignored: ignoredParam(ignored), limit } },
+        await api.GET("/api/tags", {
+          params: { query: { query: query || undefined, with: withSources, without: withoutSources, ignored: ignoredParam(ignored), limit } },
         }),
       ),
   });
@@ -266,7 +264,7 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
                 {row.works}
               </span>
             </a>
-            <IgnoreButton type={type} tag={row} />
+            <IgnoreButton tag={row} />
           </li>
         ))}
       </ul>
@@ -296,25 +294,23 @@ function TagLink({ tag }: { tag: TagRef }) {
  * first: a tag under another, two tags of one entry merged, a new tag above two or more. Read apart
  * from the list, the old shown while read anew; each said by its own button, or left as it is.
  */
-function HierarchyOffers({ type }: { type: ContentTypeInfo }) {
+function HierarchyOffers() {
   const { t } = useTranslation("tag");
-  const changed = useTagsChanged(type.id);
+  const changed = useTagsChanged();
   const [limit, setLimit] = useState(OFFERS_PAGE);
   const offers = useQuery({
-    queryKey: [TAGS, type.id, "hierarchy-offers"],
+    queryKey: [TAGS, "hierarchy-offers"],
     placeholderData: keepPreviousData,
-    queryFn: async () => unwrap(await api.GET("/api/types/{type}/tags/hierarchy-offers", { params: { path: { type: type.id } } })),
+    queryFn: async () => unwrap(await api.GET("/api/tags/hierarchy-offers")),
   });
-  const path = { params: { path: { type: type.id } } };
   const act = async (o: HierarchyOffer) => {
     const [first, second] = o.tags;
-    if (o.kind === "LINK") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "PARENT" } }));
-    else if (o.kind === "MERGE") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "MERGED" } }));
-    else if (o.kind === "UNLINK") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "NONE" } }));
+    if (o.kind === "LINK") unwrap(await api.PUT("/api/tags/relation", { body: { tag: first.key, other: second.key, relation: "PARENT" } }));
+    else if (o.kind === "MERGE") unwrap(await api.PUT("/api/tags/relation", { body: { tag: first.key, other: second.key, relation: "MERGED" } }));
+    else if (o.kind === "UNLINK") unwrap(await api.PUT("/api/tags/relation", { body: { tag: first.key, other: second.key, relation: "NONE" } }));
     else
       unwrap(
-        await api.POST("/api/types/{type}/tags/above", {
-          ...path,
+        await api.POST("/api/tags/above", {
           body: { catalogue: o.catalogue!, entry: o.entry!, children: o.tags.map((r) => r.key), tag: o.existing?.key },
         }),
       );
@@ -414,21 +410,21 @@ function HierarchyOffers({ type }: { type: ContentTypeInfo }) {
 }
 
 /** What to ask again after the tags changed: their list, the tag, the alike ones, the works shown with them. */
-function useTagsChanged(typeId: string) {
+function useTagsChanged() {
   const queryClient = useQueryClient();
   return () =>
     Promise.all([
-      queryClient.invalidateQueries({ queryKey: [TAGS, typeId] }),
+      queryClient.invalidateQueries({ queryKey: [TAGS] }),
       queryClient.invalidateQueries({ queryKey: ["item"] }),
-      queryClient.invalidateQueries({ queryKey: ["facets", typeId] }),
+      queryClient.invalidateQueries({ queryKey: ["facets"] }),
     ]);
 }
 
-function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
+function TagDetails({ tag }: { tag: string }) {
   const { t } = useTranslation("tag");
   const info = useQuery({
-    queryKey: [TAGS, type.id, "one", tag],
-    queryFn: async () => unwrap(await api.GET("/api/types/{type}/tags/one", { params: { path: { type: type.id }, query: { tag } } })),
+    queryKey: [TAGS, "one", tag],
+    queryFn: async () => unwrap(await api.GET("/api/tags/one", { params: { query: { tag } } })),
   });
   const found = info.data;
   return (
@@ -447,7 +443,7 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
           <header className="flex flex-col gap-1">
             <h1 className="flex items-center gap-2 text-xl font-semibold">
               {found.name}
-              <IgnoreButton type={type} tag={found} />
+              <IgnoreButton tag={found} />
               {found.ignored && <span className="text-sm font-normal text-muted-foreground">{t("Ignore.ignored")}</span>}
             </h1>
             <p className="text-sm text-muted-foreground">
@@ -456,12 +452,12 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
             </p>
           </header>
           <TagDescriptions tag={found} />
-          <TagName type={type} tag={found} />
-          <TagEntry type={type} tag={found} />
+          <TagName tag={found} />
+          <TagEntry tag={found} />
           <Related tag={found} />
-          <CatalogueOffers type={type} tag={found} />
+          <CatalogueOffers tag={found} />
           <Variants tag={found} />
-          <Similar type={type} tag={found} />
+          <Similar tag={found} />
         </>
       )}
     </section>
@@ -503,12 +499,12 @@ function Related({ tag }: { tag: TagInfo }) {
  * Other tags the catalogues offer above or under this one — by what the entries they are bound to
  * are a kind of, the way up shown — each said so by its own button, or left as it is.
  */
-function CatalogueOffers({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+function CatalogueOffers({ tag }: { tag: TagInfo }) {
   const { t } = useTranslation("tag");
-  const changed = useTagsChanged(type.id);
+  const changed = useTagsChanged();
   if (tag.catalogueOffers.length === 0) return null;
   const relate = async (other: string, relation: TagRelation) => {
-    unwrap(await api.PUT("/api/types/{type}/tags/relation", { params: { path: { type: type.id } }, body: { tag: tag.key, other, relation } }));
+    unwrap(await api.PUT("/api/tags/relation", { body: { tag: tag.key, other, relation } }));
     await changed();
   };
   return (
@@ -539,13 +535,13 @@ function CatalogueOffers({ type, tag }: { type: ContentTypeInfo; tag: TagInfo })
 }
 
 /** The name the user gives the tag, or none: then the sites' names decide. */
-function TagName({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+function TagName({ tag }: { tag: TagInfo }) {
   const { t } = useTranslation("tag");
-  const changed = useTagsChanged(type.id);
+  const changed = useTagsChanged();
   const [name, setName] = useState(tag.explicitName ?? "");
   const save = useMutation({
     mutationFn: async (value: string | null) =>
-      unwrap(await api.PUT("/api/types/{type}/tags/name", { params: { path: { type: type.id } }, body: { tag: tag.key, name: value ?? undefined } })),
+      unwrap(await api.PUT("/api/tags/name", { body: { tag: tag.key, name: value ?? undefined } })),
     onSuccess: (saved) => {
       setName(saved.explicitName ?? "");
       return changed();
@@ -605,13 +601,13 @@ function searchNames(tag: TagInfo): string[] {
  * any of the tag's names offered at once, or by a name, a Q-id or an entry's address typed. A tag
  * bound to none is searched for by its name as it opens: what is found is only offered.
  */
-function TagEntry({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+function TagEntry({ tag }: { tag: TagInfo }) {
   const { t } = useTranslation("tag");
-  const changed = useTagsChanged(type.id);
+  const changed = useTagsChanged();
   const [text, setText] = useState("");
   const [found, setFound] = useState<FoundTagEntry[] | null>(null);
   const search = async (query: string) =>
-    unwrap(await api.GET("/api/types/{type}/tags/entries", { params: { path: { type: type.id }, query: { query } } }));
+    unwrap(await api.GET("/api/tags/entries", { params: { query: { query } } }));
   // The search is the press of its button: busy while it is ([AsyncButton])
   const find = async (query: string) => {
     if (!query.trim()) return;
@@ -634,13 +630,13 @@ function TagEntry({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once a tag, as it opens
   }, [tag.key]);
   const bind = async (catalogue: string, entry: string, bound: boolean) => {
-    unwrap(await api.PUT("/api/types/{type}/tags/entry", { params: { path: { type: type.id } }, body: { tag: tag.key, catalogue, entry, bound } }));
+    unwrap(await api.PUT("/api/tags/entry", { body: { tag: tag.key, catalogue, entry, bound } }));
     await changed();
   };
   const isBound = (f: FoundTagEntry) => tag.catalogueEntries.some((b) => b.catalogue === f.catalogue && b.entry === f.entry);
   // Read of the catalogues again: what was kept is shown till the new comes
   const refresh = async () => {
-    unwrap(await api.POST("/api/types/{type}/tags/entries/refresh", { params: { path: { type: type.id }, query: { tag: tag.key } } }));
+    unwrap(await api.POST("/api/tags/entries/refresh", { params: { query: { tag: tag.key } } }));
     await changed();
   };
   return (
@@ -813,7 +809,7 @@ function rowKey(tag: string, site?: TagVariantInfo): string {
  * second, and the buttons are free a second after — so a row that moved is never pressed by the
  * click meant for the one that was there.
  */
-function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+function Similar({ tag }: { tag: TagInfo }) {
   const { t } = useTranslation("tag");
   const [stored, setShown] = usePref<Partial<Shown>>("tags.similar.shown", {});
   const shown: Shown = { MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true, THROUGH: true, ...stored };
@@ -850,14 +846,13 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   /** A page of the table as the filters and the search are now, read from [offset]. */
   const readPage = async (offset: number, limit: number, asked: { query: string; hidden: TagRelation[]; ignored?: boolean }) =>
     unwrap(
-      await api.GET("/api/types/{type}/tags/similar", {
+      await api.GET("/api/tags/similar", {
         params: {
-          path: { type: type.id },
           query: { tag: tag.key, query: asked.query || undefined, hidden: asked.hidden, ignored: asked.ignored, offset, limit },
         },
       }),
     );
-  const key = [TAGS, type.id, "similar", tag.key, query, hidden.join(","), ignoredFilter];
+  const key = [TAGS, "similar", tag.key, query, hidden.join(","), ignoredFilter];
   const similar = useInfiniteQuery({
     queryKey: key,
     initialPageParam: 0,
@@ -912,9 +907,9 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     }
     // The tag itself, the list and the works read anew too; the table is current already — read again, it would move without the rows
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: [TAGS, type.id], predicate: (q) => q.queryKey[2] !== "similar" }),
+      queryClient.invalidateQueries({ queryKey: [TAGS], predicate: (q) => q.queryKey[1] !== "similar" }),
       queryClient.invalidateQueries({ queryKey: ["item"] }),
-      queryClient.invalidateQueries({ queryKey: ["facets", type.id] }),
+      queryClient.invalidateQueries({ queryKey: ["facets"] }),
     ]);
   };
 
@@ -924,17 +919,15 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     setSaid((s) => ({ ...s, [row]: relation }));
     setError(null);
     const asked = ++presses.current;
-    const path = { params: { path: { type: type.id } } };
-    sending.current = sending.current.then(async () => {
+      sending.current = sending.current.then(async () => {
       try {
         if (site)
           unwrap(
-            await api.PUT("/api/types/{type}/tags/binding", {
-              ...path,
+            await api.PUT("/api/tags/binding", {
               body: { source: site.source, siteTag: site.tag, tag: relation === "MERGED" ? tag.key : undefined },
             }),
           );
-        else unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: tag.key, other, relation } }));
+        else unwrap(await api.PUT("/api/tags/relation", { body: { tag: tag.key, other, relation } }));
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
         // Not saved: the row shows what the table says again
@@ -1051,7 +1044,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                   <SiteNames tag={s} />
                 )}
               </div>
-              {!site && <IgnoreButton type={type} tag={s} />}
+              {!site && <IgnoreButton tag={s} />}
               <span className="shrink-0 text-right text-xs tabular-nums text-muted-foreground">
                 <span title={t("Similar.works")}>{site ? site.works : s.works}</span>
                 {" · "}

@@ -123,7 +123,7 @@
   "TagName.saveError": "Not saved: {{error}}",
   "TagsScreen.intro": "Normalized tags: every tag of every site is bound to one of them — initially to the tag with the same name, ignoring case: “Magic” on one site and “magic” on another are one tag. Tags that mean the same (“Angst” and “Ангст”, “Enemies to Lovers” and “От врагов к возлюбленным”) are merged by you: pick a tag on the left — on the right you will see tags similar in meaning, from any site, and the site tags bound to it.",
   "TagsScreen.nameRule": "A merged tag's name is the one you set; otherwise the most common one among the works you liked, then among graded ones, then among all; otherwise the first alphabetically.",
-  "TagsScreen.title": "Tags: {{type}}",
+  "TagsScreen.title": "Tags of every site",
   "Variants.graded": "Graded",
   "Variants.gradedTitle": "Graded",
   "Variants.liked": "Liked",

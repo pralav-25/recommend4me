@@ -29,7 +29,7 @@ import { SourceFilter } from "@/source/SourceFilter";
 import { WorkProgress } from "@/status/WorkProgress";
 import { ThemeToggle } from "@/theme/ThemeToggle";
 import { ScreenBar, ScreenMenuButton } from "@/screen/ScreenNav";
-import { useScreen } from "@/screen/screens";
+import { replaceScreen, useScreen, type Screen } from "@/screen/screens";
 import { TagsScreen } from "@/tag/TagsScreen";
 import { UniversesScreen } from "@/universe/Universes";
 
@@ -44,13 +44,24 @@ const HOTKEYS = ["search", "choose", "open", "grade", "neighbours", "site", "clo
  */
 const SEARCH_SETTLE_MS = 1000;
 
-/** The content types as tabs; the chosen one is remembered, and the whole screen below is its own. */
+/**
+ * The content types, the one of the works shown named by the address ("/books"); "/" is the type
+ * shown last, put in the address. The tags and the universes are every type's: shown over the type
+ * shown last. The whole screen below is the type's own.
+ */
 export function App() {
   const { t } = useTranslation();
   const types = useTypes();
-  const [chosen, setChosen] = usePref<string>("type", "");
+  const screen = useScreen();
+  const [remembered, setRemembered] = usePref<string>("type", "");
   const list = types.data ?? [];
-  const type = list.find((t) => t.id === chosen) ?? list[0];
+  const named = screen.kind === "works" ? list.find((t) => t.id === screen.type) : undefined;
+  const type = named ?? list.find((t) => t.id === remembered) ?? list[0];
+  useEffect(() => {
+    if (!type || screen.kind !== "works") return;
+    if (screen.type !== type.id) replaceScreen({ kind: "works", type: type.id });
+    else if (remembered !== type.id) setRemembered(type.id);
+  }, [type, screen, remembered, setRemembered]);
   // The sources' and the catalogue's titles and labels are their plugins' words: read before the screen is drawn
   const worded = usePluginNamespaces(pluginNamespacesOf(list));
 
@@ -74,10 +85,10 @@ export function App() {
     );
   }
   // A new type is a new screen: its filters, its order, its search
-  return <TypeScreen key={type.id} type={type} types={list} onType={setChosen} />;
+  return <TypeScreen key={type.id} type={type} types={list} screen={screen} />;
 }
 
-function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: ContentTypeInfo[]; onType: (id: string) => void }) {
+function TypeScreen({ type, types, screen }: { type: ContentTypeInfo; types: ContentTypeInfo[]; screen: Screen }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [view, setView] = usePref<ItemView>("view", "UNRATED");
@@ -94,10 +105,11 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
   const [total, setTotal] = useState<number | undefined>();
   const [settingsOpen, setSettingsOpen] = useState(false);
   const jobs = useJobs();
-  const screen = useScreen();
+  // The dictionary of universes, of the type that has one
+  const universes = types.find((tp) => tp.universes);
   const [modelOpen, setModelOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
-  const menu = { types, type, screen, onType, onModel: () => setModelOpen(true), onCapture: () => setCaptureOpen(true) };
+  const menu = { types, type, screen, onModel: () => setModelOpen(true), onCapture: () => setCaptureOpen(true) };
 
   // The list asks for the shown sources by name, and for none when all are shown
   const sources = useMemo(() => {
@@ -181,17 +193,17 @@ function TypeScreen({ type, types, onType }: { type: ContentTypeInfo; types: Con
         </div>
       </header>
 
-      {screen.kind === "universes" && type.universes && (
-        <ErrorBoundary resetKey={type.id} title={t("App.failed.universes")}>
-          <UniversesScreen type={type} selected={screen.catalogue && screen.universe ? { catalogue: screen.catalogue, universe: screen.universe } : undefined} />
+      {screen.kind === "universes" && universes && (
+        <ErrorBoundary title={t("App.failed.universes")}>
+          <UniversesScreen type={universes} selected={screen.catalogue && screen.universe ? { catalogue: screen.catalogue, universe: screen.universe } : undefined} />
         </ErrorBoundary>
       )}
       {screen.kind === "tags" && (
-        <ErrorBoundary resetKey={type.id} title={t("App.failed.tags")}>
-          <TagsScreen type={type} selected={screen.tag} />
+        <ErrorBoundary title={t("App.failed.tags")}>
+          <TagsScreen selected={screen.tag} />
         </ErrorBoundary>
       )}
-      {(screen.kind === "works" || (screen.kind === "universes" && !type.universes)) && (
+      {screen.kind === "works" && (
       <div className="mx-auto max-w-[1800px] px-4">
         <div className="flex flex-wrap items-center gap-2 py-4">
           <Tabs value={view} onValueChange={(v) => setView(v as ItemView)}>

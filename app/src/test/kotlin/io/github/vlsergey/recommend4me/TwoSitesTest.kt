@@ -266,9 +266,9 @@ class TwoSitesTest {
         corrections.correctFacet("alpha", "a3", FacetCorrection(facet = "tags", added = true, key = breakers))
         corrections.correctFacet("beta", "b3", FacetCorrection(facet = "tags", added = false, key = waves))
 
-        val merged = tags.relateTags("books", TagRelationRequest(waves, breakers, TagRelation.MERGED)).body!!
+        val merged = tags.relateTags(TagRelationRequest(waves, breakers, TagRelation.MERGED)).body!!
         assertEquals(setOf(SiteTagRef("alpha", "waves"), SiteTagRef("beta", "breakers")), merged.variants.map { SiteTagRef(it.source, it.tag) }.toSet())
-        assertEquals(404, tags.getTag("books", breakers).statusCode.value())
+        assertEquals(404, tags.getTag(breakers).statusCode.value())
         fun answers(source: String, item: String) = stores.source(source)!!.corrections.facetsOf(item).filter { it.facet == "tags" }.map { it.key to it.added }
         assertEquals(listOf(waves to true), answers("alpha", "a3"))
         assertEquals(listOf(waves to false), answers("beta", "b3"))
@@ -322,17 +322,17 @@ class TwoSitesTest {
         val fleet = tagOf("alpha", "fleet")
         val frigates = tagOf("alpha", "frigates")
         val gunboats = tagOf("alpha", "gunboats")
-        tags.relateTags("books", TagRelationRequest(fleet, frigates, TagRelation.CHILD))
-        tags.relateTags("books", TagRelationRequest(frigates, gunboats, TagRelation.CHILD))
+        tags.relateTags(TagRelationRequest(fleet, frigates, TagRelation.CHILD))
+        tags.relateTags(TagRelationRequest(frigates, gunboats, TagRelation.CHILD))
         // And right under the fleet as well
-        tags.relateTags("books", TagRelationRequest(fleet, gunboats, TagRelation.CHILD))
+        tags.relateTags(TagRelationRequest(fleet, gunboats, TagRelation.CHILD))
         // The fleet put under the gunboats: it is above them through the frigates — refused, and the
         // link said of the two before is not taken away by the refused word
-        assertEquals(Refusal.TAG_ABOVE, assertThrows<Refused> { tags.relateTags("books", TagRelationRequest(gunboats, fleet, TagRelation.CHILD)) }.refusal)
-        assertTrue(fleet in tags.getTag("books", gunboats).body!!.parents.map { it.key })
-        tags.relateTags("books", TagRelationRequest(fleet, gunboats, TagRelation.NONE))
-        tags.relateTags("books", TagRelationRequest(frigates, gunboats, TagRelation.NONE))
-        tags.relateTags("books", TagRelationRequest(fleet, frigates, TagRelation.NONE))
+        assertEquals(Refusal.TAG_ABOVE, assertThrows<Refused> { tags.relateTags(TagRelationRequest(gunboats, fleet, TagRelation.CHILD)) }.refusal)
+        assertTrue(fleet in tags.getTag(gunboats).body!!.parents.map { it.key })
+        tags.relateTags(TagRelationRequest(fleet, gunboats, TagRelation.NONE))
+        tags.relateTags(TagRelationRequest(frigates, gunboats, TagRelation.NONE))
+        tags.relateTags(TagRelationRequest(fleet, frigates, TagRelation.NONE))
     }
 
     @Test
@@ -360,22 +360,22 @@ class TwoSitesTest {
         val sailing = tagOf("alpha", "sailing")
         val yachts = tagOf("alpha", "yachts")
         val regatta = tagOf("alpha", "regatta")
-        tags.relateTags("books", TagRelationRequest(sailing, yachts, TagRelation.CHILD))
-        tags.relateTags("books", TagRelationRequest(yachts, regatta, TagRelation.CHILD))
+        tags.relateTags(TagRelationRequest(sailing, yachts, TagRelation.CHILD))
+        tags.relateTags(TagRelationRequest(yachts, regatta, TagRelation.CHILD))
 
-        fun relationOf(tag: String, other: String) = tags.listSimilarTags("books", tag, null, 0, 500, null, null).body!!.tags.single { it.tag.key == other && it.site == null }.relation
+        fun relationOf(tag: String, other: String) = tags.listSimilarTags(tag, null, 0, 500, null, null).body!!.tags.single { it.tag.key == other && it.site == null }.relation
         assertEquals(TagRelation.CHILD, relationOf(sailing, yachts))
         assertEquals(TagRelation.DESCENDANT, relationOf(sailing, regatta))
         assertEquals(TagRelation.ANCESTOR, relationOf(regatta, sailing))
         assertEquals(TagRelation.PARENT, relationOf(regatta, yachts))
         // Hidden by their filter, the others not
-        val shown = tags.listSimilarTags("books", sailing, null, 0, 500, null, listOf(TagRelation.DESCENDANT, TagRelation.ANCESTOR)).body!!.tags
+        val shown = tags.listSimilarTags(sailing, null, 0, 500, null, listOf(TagRelation.DESCENDANT, TagRelation.ANCESTOR)).body!!.tags
         assertTrue(shown.none { it.tag.key == regatta && it.site == null } && shown.any { it.tag.key == yachts })
         // Never said of the two themselves
-        val through = assertThrows<Refused> { tags.relateTags("books", TagRelationRequest(sailing, regatta, TagRelation.DESCENDANT)) }
+        val through = assertThrows<Refused> { tags.relateTags(TagRelationRequest(sailing, regatta, TagRelation.DESCENDANT)) }
         assertEquals(Refusal.TAG_THROUGH, through.refusal)
-        tags.relateTags("books", TagRelationRequest(yachts, regatta, TagRelation.NONE))
-        tags.relateTags("books", TagRelationRequest(sailing, yachts, TagRelation.NONE))
+        tags.relateTags(TagRelationRequest(yachts, regatta, TagRelation.NONE))
+        tags.relateTags(TagRelationRequest(sailing, yachts, TagRelation.NONE))
     }
 
     @Test

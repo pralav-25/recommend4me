@@ -128,7 +128,7 @@
   "TagName.saveError": "Nije sačuvano: {{error}}",
   "TagsScreen.intro": "Normalizovani tagovi: svaki tag svakog sajta vezan je za jedan od njih — isprva za tag sa istim nazivom, bez obzira na velika i mala slova: „Magija“ jednog sajta i „magija“ drugog su jedan tag. Tagove istog značenja („Angst“ i „Ангст“, „Enemies to Lovers“ i „От врагов к возлюбленным“) spajate vi: izaberite tag levo — desno će biti oni sličnog značenja, sa bilo kog sajta, i tagovi sajtova vezani za njega.",
   "TagsScreen.nameRule": "Naziv spojenog taga je onaj koji ste zadali; inače najčešći među delima koja su vam se dopala, među ocenjenim, među svim; inače prvi po abecedi.",
-  "TagsScreen.title": "Tagovi: {{type}}",
+  "TagsScreen.title": "Oznake svih sajtova",
   "Variants.graded": "Ocenj.",
   "Variants.gradedTitle": "Ocenjeno",
   "Variants.liked": "Dop.",

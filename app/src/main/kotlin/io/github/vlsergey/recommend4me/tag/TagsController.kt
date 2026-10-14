@@ -23,31 +23,26 @@ import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
 import io.github.vlsergey.recommend4me.api.model.TagRelation as ApiTagRelation
 import io.github.vlsergey.recommend4me.api.model.TagVariantInfo
 import io.github.vlsergey.recommend4me.refusal.Refusal
-import io.github.vlsergey.recommend4me.source.Stores
-import io.github.vlsergey.recommend4me.source.TypeStore
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
 class TagsController(
-    private val stores: Stores,
     private val tags: Tags,
     /** The user's languages: of an entry's texts, those of the first that has them are shown. */
     @Value("\${recommend4me.languages:ru,en}") private val languages: List<String>,
 ) : TagsApi {
 
-    /** The type and its facet of free tags; 404 for a type without one. */
-    private fun of(typeId: String): Pair<TypeStore, String> {
-        val type = stores.type(typeId) ?: throw Refusal.NO_SUCH_TYPE.refuse(HttpStatus.NOT_FOUND, "There is no type '$typeId'")
-        val facet = tags.facetOf(type) ?: throw Refusal.NO_SITE_TAGS.refuse(HttpStatus.NOT_FOUND, "The type $typeId has no site tags")
-        return type to facet
+    /** What the tags are read over and their facet; 404 when no type has free tags. */
+    private fun scope(): Pair<TagScope, String> {
+        val scope = tags.scope() ?: throw Refusal.NO_SITE_TAGS.refuse(HttpStatus.NOT_FOUND, "No type has site tags")
+        return scope to scope.facet
     }
 
-    override fun listTags(
-        type: String, query: String?, with: List<String>?, without: List<String>?, ignored: Boolean?, offset: Int, limit: Int,
+    override fun listTags(query: String?, with: List<String>?, without: List<String>?, ignored: Boolean?, offset: Int, limit: Int,
     ): ResponseEntity<TagPage> {
-        val (t, facet) = of(type)
+        val (t, facet) = scope()
         val all = tags.list(t, facet, query, with.orEmpty().toSet(), without.orEmpty().toSet(), ignored)
         return ResponseEntity.ok(
             TagPage(
@@ -58,21 +53,19 @@ class TagsController(
         )
     }
 
-    override fun getTag(type: String, tag: String): ResponseEntity<TagInfo> {
-        val (t, facet) = of(type)
+    override fun getTag(tag: String): ResponseEntity<TagInfo> {
+        val (t, facet) = scope()
         return tags.one(t, facet, tag)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 
-    override fun listSimilarTags(
-        type: String,
-        tag: String,
+    override fun listSimilarTags(tag: String,
         query: String?,
         offset: Int,
         limit: Int,
         ignored: Boolean?,
         hidden: List<ApiTagRelation>?,
     ): ResponseEntity<SimilarTagPage> {
-        val (t, facet) = of(type)
+        val (t, facet) = scope()
         // Rows of no relation are the offers themselves: never hidden
         val hide = hidden.orEmpty().map { TagRelation.valueOf(it.name) }.toSet() - TagRelation.NONE
         val page = tags.similar(t, facet, tag, query, hide, offset, limit.coerceIn(1, 1000), ignored) ?: return ResponseEntity.notFound().build()
@@ -80,31 +73,31 @@ class TagsController(
         return ResponseEntity.ok(SimilarTagPage(page.total, rows))
     }
 
-    override fun relateTags(type: String, tagRelationRequest: TagRelationRequest): ResponseEntity<TagInfo> {
-        val (t, facet) = of(type)
+    override fun relateTags(tagRelationRequest: TagRelationRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = scope()
         val r = tagRelationRequest
         val related = tags.relate(t, facet, r.tag, r.other, TagRelation.valueOf(r.relation.name))
         return related?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 
-    override fun nameTag(type: String, tagNameRequest: TagNameRequest): ResponseEntity<TagInfo> {
-        val (t, facet) = of(type)
+    override fun nameTag(tagNameRequest: TagNameRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = scope()
         return tags.name(t, facet, tagNameRequest.tag, tagNameRequest.name)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 
-    override fun ignoreTag(type: String, tagIgnoredRequest: TagIgnoredRequest): ResponseEntity<TagInfo> {
-        val (t, facet) = of(type)
+    override fun ignoreTag(tagIgnoredRequest: TagIgnoredRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = scope()
         return tags.ignore(t, facet, tagIgnoredRequest.tag, tagIgnoredRequest.ignored)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 
-    override fun bindSiteTag(type: String, tagBindingRequest: TagBindingRequest): ResponseEntity<TagInfo> {
-        val (t, facet) = of(type)
+    override fun bindSiteTag(tagBindingRequest: TagBindingRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = scope()
         val r = tagBindingRequest
         return tags.bind(t, facet, SiteTagRef(r.source, r.siteTag), r.tag)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
     }
 
-    override fun findTagEntries(type: String, query: String): ResponseEntity<List<FoundTagEntry>> {
-        val (t, _) = of(type)
+    override fun findTagEntries(query: String): ResponseEntity<List<FoundTagEntry>> {
+        val (t, _) = scope()
         return ResponseEntity.ok(
             tags.findEntries(t, query).map { f ->
                 FoundTagEntry(f.catalogue, f.entry.id, f.entry.url, f.tags.map { (key, name) -> TagRef(key, name) }, f.entry.labels.first(), f.entry.descriptions.first())
@@ -112,8 +105,8 @@ class TagsController(
         )
     }
 
-    override fun bindTagEntry(type: String, tagEntryRequest: TagEntryRequest): ResponseEntity<TagInfo> {
-        val (t, facet) = of(type)
+    override fun bindTagEntry(tagEntryRequest: TagEntryRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = scope()
         val r = tagEntryRequest
         return try {
             tags.bindEntry(t, facet, r.tag, r.catalogue, r.entry, r.bound)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
@@ -122,8 +115,8 @@ class TagsController(
         }
     }
 
-    override fun listHierarchyOffers(type: String): ResponseEntity<List<ApiHierarchyOffer>> {
-        val (t, facet) = of(type)
+    override fun listHierarchyOffers(): ResponseEntity<List<ApiHierarchyOffer>> {
+        val (t, facet) = scope()
         val offers = tags.hierarchyOffers(t, facet)
         val (names, kept) = tags.namesOf(t, offers)
         fun label(ref: TagEntryRef) = kept[ref]?.labels?.first() ?: ref.entry
@@ -144,8 +137,8 @@ class TagsController(
         )
     }
 
-    override fun createTagAbove(type: String, tagAboveRequest: TagAboveRequest): ResponseEntity<TagInfo> {
-        val (t, facet) = of(type)
+    override fun createTagAbove(tagAboveRequest: TagAboveRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = scope()
         val r = tagAboveRequest
         return try {
             tags.createAbove(t, facet, r.catalogue, r.entry, r.children, r.tag)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
@@ -154,8 +147,8 @@ class TagsController(
         }
     }
 
-    override fun refreshTagEntries(type: String, tag: String): ResponseEntity<TagInfo> {
-        val (t, facet) = of(type)
+    override fun refreshTagEntries(tag: String): ResponseEntity<TagInfo> {
+        val (t, facet) = scope()
         return try {
             tags.refreshEntries(t, facet, tag)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
         } catch (e: NoSuchElementException) {

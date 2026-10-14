@@ -47,8 +47,8 @@ object Books {
         role = FacetRole.CONTENT, filter = true, onCard = true,
     )
 
-    /** The tags as the site writes them: the site's word, read by the model, the examples of [TAGS]. */
-    val TAG = StandardFacet("tag", role = FacetRole.ORIGINAL, searchWeight = 0.9f)
+    /** The tags as the site writes them ([StandardTags.TAG]). */
+    val TAG = StandardTags.TAG
 
     /** The fandoms as the site writes them: the site's word of what the universes of the work are. */
     val FANDOM = UniverseFacets.FANDOM_FACET
@@ -56,11 +56,8 @@ object Books {
     /** The pairings and characters as the site writes them, one field ([UniverseFacets.PAIRINGS_FACET]). */
     val PAIRINGS = UniverseFacets.PAIRINGS_FACET
 
-    /**
-     * The work's tags: of every tag of every site, one by its name — worked out from everything the
-     * site says of the work, its own tags first of all, and corrected by the user.
-     */
-    val TAGS = StandardFacet("tags", role = FacetRole.CONTENT, searchWeight = 0.9f, infer = true, examples = TAG)
+    /** The work's tags, the normalized ones ([StandardTags.TAGS]). */
+    val TAGS = StandardTags.TAGS
 
     /** How many chapters — parts — the work's text is in, whatever the site calls them: one filter of every site. */
     val PARTS = StandardNumber("parts", NumberScale.LOG, sortable = true, filterable = true)

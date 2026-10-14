@@ -16,7 +16,7 @@ import { followLink, screenHref, type Screen } from "./screens";
  * [open]: the model's details, the browser extension's.
  */
 type Entry = { key: string; label: ReactNode; title: string; active: boolean } & (
-  | { screen: Screen; typeId: string }
+  | { screen: Screen }
   | { open: () => void }
 );
 
@@ -24,26 +24,24 @@ export type MenuProps = {
   types: ContentTypeInfo[];
   type: ContentTypeInfo;
   screen: Screen;
-  onType: (id: string) => void;
   onModel: () => void;
   onCapture: () => void;
 };
 
 /**
  * THE ENTRIES, ONE LIST FOR BOTH MENUS: the works of every content type by its name — "Games",
- * "Books" — the dictionary of universes, of the type that has one, the tags of the type chosen; then
+ * "Books" — the dictionary of universes and the tags, both every type's; then
  * the model of the type and the browser extension, each opening its window. The language of the
  * interface follows them, in each menu as fits it.
  */
 function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFunction<"screen">): Entry[] {
-  const universes = type.universes ? type : types.find((tp) => tp.universes);
+  const universes = types.some((tp) => tp.universes);
   return [
     ...types.map((tp): Entry => {
       const Icon = typeIcon(tp.id);
       return {
         key: `works:${tp.id}`,
-        screen: { kind: "works" },
-        typeId: tp.id,
+        screen: { kind: "works", type: tp.id },
         label: (
           <>
             <Icon /> {typeTitle(tp.id)}
@@ -58,7 +56,6 @@ function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFun
           {
             key: "universes",
             screen: { kind: "universes" },
-            typeId: universes.id,
             label: (
               <>
                 <OrbitIcon /> {t("Menu.universes")}
@@ -72,13 +69,12 @@ function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFun
     {
       key: "tags",
       screen: { kind: "tags" },
-      typeId: type.id,
       label: (
         <>
           <TagsIcon /> {t("Menu.tags")}
         </>
       ),
-      title: t("Menu.tags.title", { type: typeTitle(type.id).toLowerCase() }),
+      title: t("Menu.tags.title"),
       active: screen.kind === "tags",
     },
     { key: "model", open: onModel, label: <ModelLabel type={type} />, title: t("Menu.model.title"), active: false },
@@ -96,9 +92,8 @@ function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFun
   ];
 }
 
-/** A click on an entry of a screen: the type switched when it is another's, the screen followed as a link is. */
-function follow(ev: React.MouseEvent<HTMLAnchorElement>, e: Entry & { screen: Screen; typeId: string }, props: MenuProps) {
-  if (e.typeId !== props.type.id && ev.button === 0 && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey && !ev.altKey) props.onType(e.typeId);
+/** A click on an entry of a screen: followed as a link is — the type is in its address. */
+function follow(ev: React.MouseEvent<HTMLAnchorElement>, e: Entry & { screen: Screen }) {
   followLink(ev, e.screen);
 }
 
@@ -123,7 +118,7 @@ export function ScreenBar(props: MenuProps) {
           <a
             key={e.key}
             href={screenHref(e.screen)}
-            onClick={(ev) => follow(ev, e, props)}
+            onClick={(ev) => follow(ev, e)}
             aria-current={e.active ? "page" : undefined}
             title={e.title}
             className={cn(ITEM, e.active && ACTIVE)}
@@ -158,7 +153,7 @@ export function ScreenMenuButton(props: MenuProps) {
           "screen" in e ? (
             <DropdownMenuItem
               key={e.key}
-              render={<a href={screenHref(e.screen)} onClick={(ev) => follow(ev, e, props)} />}
+              render={<a href={screenHref(e.screen)} onClick={(ev) => follow(ev, e)} />}
               aria-current={e.active ? "page" : undefined}
               className={cn(e.active && "bg-accent text-accent-foreground")}
             >

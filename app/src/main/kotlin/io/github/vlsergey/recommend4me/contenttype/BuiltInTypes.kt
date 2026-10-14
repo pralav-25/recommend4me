@@ -14,9 +14,14 @@ class BuiltInTypes {
     fun books() = Books.TYPE
 
     companion object {
-        /** Games: their title, grades and verb are the interface's words of "games". */
+        /**
+         * Games: their title, grades and verb are the interface's words of "games"; their sites' free
+         * tags normalized into the same dictionary as the books' ([StandardTags]).
+         */
         val GAMES = ContentType(
             id = "games",
+            facets = listOf(StandardTags.TAG),
+            layer = listOf(StandardTags.TAGS),
             numbers = listOf(StandardNumbers.LIKES),
         )
     }

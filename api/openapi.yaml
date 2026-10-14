@@ -1067,15 +1067,14 @@ paths:
                 items:
                   $ref: '#/components/schemas/CharacterInfo'
 
-  /api/types/{type}/tags:
+  /api/tags:
     get:
       tags: [tags]
       operationId: listTags
       summary: |
-        The normalized tags of a content type's free tags - every site's tag is bound to one - as the user
-        merged, named and linked them: the most used first
+        The normalized tags of the free tags of every site of every content type - every site's tag is bound to
+        one, games' and books' alike - as the user merged, named and linked them: the most used first
       parameters:
-        - $ref: '#/components/parameters/Type'
         - name: query
           in: query
           description: A piece of a name of the tag on a site, or of the name the user gave it, any case
@@ -1122,14 +1121,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/TagPage'
         '404':
-          description: No such type, or a type without free tags
+          description: No type has free tags
 
-  /api/types/{type}/tags/one:
+  /api/tags/one:
     get:
       tags: [tags]
       operationId: getTag
       parameters:
-        - $ref: '#/components/parameters/Type'
         - name: tag
           in: query
           required: true
@@ -1145,7 +1143,7 @@ paths:
         '404':
           description: No such tag
 
-  /api/types/{type}/tags/similar:
+  /api/tags/similar:
     get:
       tags: [tags]
       operationId: listSimilarTags
@@ -1155,7 +1153,6 @@ paths:
         another - alike the tag's names, or alike the query when one is given. Of rows alike equally, by key.
         Only offered: the user merges
       parameters:
-        - $ref: '#/components/parameters/Type'
         - name: tag
           in: query
           required: true
@@ -1200,13 +1197,11 @@ paths:
         '404':
           description: No such tag
 
-  /api/types/{type}/tags/name:
+  /api/tags/name:
     put:
       tags: [tags]
       operationId: nameTag
       summary: The name the user gives the tag; none takes it back, and the tag is named by its sites again
-      parameters:
-        - $ref: '#/components/parameters/Type'
       requestBody:
         required: true
         content:
@@ -1221,15 +1216,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/TagInfo'
 
-  /api/types/{type}/tags/ignored:
+  /api/tags/ignored:
     put:
       tags: [tags]
       operationId: ignoreTag
       summary: |
         Whether the user ignores the tag: it stays with its works, shown and found, but the model of the grades does
         not read it
-      parameters:
-        - $ref: '#/components/parameters/Type'
       requestBody:
         required: true
         content:
@@ -1244,13 +1237,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/TagInfo'
 
-  /api/types/{type}/tags/entries:
+  /api/tags/entries:
     get:
       tags: [tags]
       operationId: findTagEntries
       summary: The entries of the catalogues of tags (Wikidata) a text may stand for - an id or a page's address, the entry itself
       parameters:
-        - $ref: '#/components/parameters/Type'
         - name: query
           in: query
           required: true
@@ -1268,13 +1260,11 @@ paths:
         '404':
           description: No such type, or one without free tags
 
-  /api/types/{type}/tags/entry:
+  /api/tags/entry:
     put:
       tags: [tags]
       operationId: bindTagEntry
       summary: Binds the tag to an entry of a catalogue besides the ones it is, or no more to it; the label of the one bound first names the tag unless the user named it
-      parameters:
-        - $ref: '#/components/parameters/Type'
       requestBody:
         required: true
         content:
@@ -1291,15 +1281,13 @@ paths:
         '404':
           description: No such tag, catalogue or entry
 
-  /api/types/{type}/tags/hierarchy-offers:
+  /api/tags/hierarchy-offers:
     get:
       tags: [tags]
       operationId: listHierarchyOffers
       summary: >
         The offers of the tags' graph by the catalogues - a tag under another, two tags of one entry merged, a new tag
         above two or more - the ones that change most of the graded works first
-      parameters:
-        - $ref: '#/components/parameters/Type'
       responses:
         '200':
           description: The offers
@@ -1310,13 +1298,11 @@ paths:
                 items:
                   $ref: '#/components/schemas/HierarchyOffer'
 
-  /api/types/{type}/tags/above:
+  /api/tags/above:
     post:
       tags: [tags]
       operationId: createTagAbove
       summary: A new tag bound to an entry of a catalogue - named by its label - or a tag there already, put above the tags given
-      parameters:
-        - $ref: '#/components/parameters/Type'
       requestBody:
         required: true
         content:
@@ -1333,13 +1319,12 @@ paths:
         '404':
           description: No such tag, catalogue or entry
 
-  /api/types/{type}/tags/entries/refresh:
+  /api/tags/entries/refresh:
     post:
       tags: [tags]
       operationId: refreshTagEntries
       summary: Reads the entries the tag is bound to of their catalogues again - names, descriptions, what they are a kind of
       parameters:
-        - $ref: '#/components/parameters/Type'
         - name: tag
           in: query
           required: true
@@ -1355,15 +1340,13 @@ paths:
         '404':
           description: No such tag or catalogue
 
-  /api/types/{type}/tags/relation:
+  /api/tags/relation:
     put:
       tags: [tags]
       operationId: relateTags
       summary: |
         What the user says the other tag is to the tag - merged into it, under it, above it, different, or nothing -
         in place of what was said of the two before
-      parameters:
-        - $ref: '#/components/parameters/Type'
       requestBody:
         required: true
         content:
@@ -1380,15 +1363,13 @@ paths:
         '400':
           description: A tag put above or under one of its own ancestors or descendants
 
-  /api/types/{type}/tags/binding:
+  /api/tags/binding:
     put:
       tags: [tags]
       operationId: bindSiteTag
       summary: |
         A site's tag bound to a normalized tag - to a new one of its own when none is given: taken out of the
         tag it was. The user's answers stay with the tags they were given on
-      parameters:
-        - $ref: '#/components/parameters/Type'
       requestBody:
         required: true
         content:
