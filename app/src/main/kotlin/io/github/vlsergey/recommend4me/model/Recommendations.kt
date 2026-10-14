@@ -85,7 +85,10 @@ class Recommendations(
 ) {
     private val locks = ConcurrentHashMap<String, ReentrantLock>()
     private val trainingNow = ConcurrentHashMap.newKeySet<String>()
-    private val pending = ConcurrentHashMap<String, ScheduledFuture<*>>()
+    private val pending = ConcurrentHashMap<String, PendingTraining>()
+
+    /** How long the last training of every type took, ms: how long a stream of background changes is let to settle. */
+    private val lastTraining = ConcurrentHashMap<String, Long>()
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "model-training").apply { isDaemon = true } }
 
     private fun lock(type: String) = locks.computeIfAbsent(type) { ReentrantLock() }
@@ -93,21 +96,37 @@ class Recommendations(
     private fun type(id: String): TypeStore = stores.type(id) ?: error("No such content type: $id")
 
     /** Training is running or scheduled after a recent change. */
-    fun training(type: String): Boolean = type in trainingNow || pending[type]?.isDone == false
+    fun training(type: String): Boolean = type in trainingNow || pending[type]?.future?.isDone == false
 
-    /** Retrains shortly after the last of a quick series of changes. */
-    fun scheduleRetrain(type: String) {
+    /**
+     * Retrains after a change. A change of the user's ([byUser]: a grade, a mark, a tag, an answer)
+     * is learnt shortly after the last of a quick series of them. A change the background work makes
+     * — the suggester's chances of every facet of every source, the reranker's likeness chunk after
+     * chunk, the pictures — comes in long streams: learnt after a minute of quiet, or twice the last
+     * training, never later than [MAX_WAIT_MS] after the first of the stream; a training the user
+     * waits for is never put off by it.
+     */
+    fun scheduleRetrain(type: String, byUser: Boolean = true) {
+        val now = System.currentTimeMillis()
         pending.compute(type) { _, old ->
-            old?.cancel(false)
-            scheduler.schedule({
+            val waiting = old?.takeIf { !it.future.isDone }
+            if (!byUser && waiting?.byUser == true) return@compute waiting
+            waiting?.future?.cancel(false)
+            val first = waiting?.firstAt ?: now
+            val due = if (byUser) now + USER_QUIET_MS else minOf(now + maxOf(MACHINE_QUIET_MS, 2 * (lastTraining[type] ?: 0L)), first + MAX_WAIT_MS)
+            val future = scheduler.schedule({
                 try {
                     retrainAndScore(type)
                 } catch (e: Exception) {
                     log.error("{}: background training failed", type, e)
                 }
-            }, RETRAIN_DELAY_SECONDS, TimeUnit.SECONDS)
+            }, (due - now).coerceAtLeast(0), TimeUnit.MILLISECONDS)
+            PendingTraining(future, first, byUser)
         }
     }
+
+    /** A training scheduled: since the first change it waits on, and whether the user waits for it. */
+    private class PendingTraining(val future: ScheduledFuture<*>, val firstAt: Long, val byUser: Boolean)
 
     @EventListener
     fun gradesChanged(event: GradesChanged) {
@@ -127,16 +146,16 @@ class Recommendations(
 
     /** The reranker read more works against the graded ones: features of the works. */
     @EventListener
-    fun workLikenessChanged(event: WorkLikenessChanged) = scheduleRetrain(event.type)
+    fun workLikenessChanged(event: WorkLikenessChanged) = scheduleRetrain(event.type, byUser = false)
 
     /** The model gave works other pairings, characters: features of the works. */
     @EventListener
-    fun chancesChanged(event: FacetChancesChanged) = scheduleRetrain(stores.typeOf(event.source).id)
+    fun chancesChanged(event: FacetChancesChanged) = scheduleRetrain(stores.typeOf(event.source).id, byUser = false)
 
     @EventListener
     fun setVectorsChanged(event: SetVectorsChanged) {
         log.info("{}: {} items have new set vectors: retraining", event.type, event.items)
-        scheduleRetrain(event.type)
+        scheduleRetrain(event.type, byUser = false)
     }
 
     /** A model that could not be read, or none, is trained on start where there are grades. */
@@ -159,6 +178,7 @@ class Recommendations(
             val interest = if (model != null) retrainInterest(catalogue) else null
             val trained = System.currentTimeMillis()
             if (model != null) scoreAll(catalogue, model, interest)
+            lastTraining[typeId] = System.currentTimeMillis() - started
             log.info(
                 "{}: retrained and every item scored in {} ms: read {}, trained {}, scored {}",
                 typeId, System.currentTimeMillis() - started, loaded - started, trained - loaded, System.currentTimeMillis() - trained,
@@ -847,7 +867,14 @@ class Recommendations(
     }
 
     companion object {
-        private const val RETRAIN_DELAY_SECONDS = 3L
+        /** The quiet after the user's last change before the model learns it. */
+        private const val USER_QUIET_MS = 3_000L
+
+        /** The least quiet after the background work's last change. */
+        private const val MACHINE_QUIET_MS = 60_000L
+
+        /** The longest a stream of background changes puts a training off. */
+        private const val MAX_WAIT_MS = 10 * 60_000L
         private const val MIN_RATINGS = 3
 
         /** A work of interest and one not, as grades of the model of interest: only their order matters. */

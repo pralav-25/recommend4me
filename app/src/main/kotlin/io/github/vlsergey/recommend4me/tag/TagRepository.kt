@@ -152,11 +152,15 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
     /** The names worked out of every tag replaced by [named]: kept in the model database, made again from the rest. */
     fun replaceShown(named: Map<Long, ShownName>) = model.transaction { c ->
         val tx = DSL.using(c)
-        tx.deleteFrom(TAG_SHOWN_NAME).execute()
-        named.entries.chunked(BATCH).forEach { chunk ->
-            val batch = tx.batch(tx.insertInto(TAG_SHOWN_NAME, TAG_SHOWN_NAME.TAG, TAG_SHOWN_NAME.NAME, TAG_SHOWN_NAME.RULE).values(null as Long?, null as String?, null as String?))
-            chunk.forEach { (id, s) -> batch.bind(id, s.name.take(1000), s.rule.name) }
-            batch.execute()
+        // Only what changed: a tag gone, a name or its rule changed, a tag new — not the whole table every few seconds
+        val stored = tx.select(TAG_SHOWN_NAME.TAG, TAG_SHOWN_NAME.NAME, TAG_SHOWN_NAME.RULE).from(TAG_SHOWN_NAME).fetch()
+            .associate { it.value1()!! to (it.value2()!! to it.value3()!!) }
+        (stored.keys - named.keys).chunked(BATCH).forEach { chunk -> tx.deleteFrom(TAG_SHOWN_NAME).where(TAG_SHOWN_NAME.TAG.`in`(chunk)).execute() }
+        named.entries.filter { (id, s) -> stored[id] != (s.name.take(1000) to s.rule.name) }.chunked(BATCH).forEach { chunk ->
+            tx.batch(chunk.map { (id, s) ->
+                tx.insertInto(TAG_SHOWN_NAME).set(TAG_SHOWN_NAME.TAG, id).set(TAG_SHOWN_NAME.NAME, s.name.take(1000)).set(TAG_SHOWN_NAME.RULE, s.rule.name)
+                    .onDuplicateKeyUpdate().set(TAG_SHOWN_NAME.NAME, s.name.take(1000)).set(TAG_SHOWN_NAME.RULE, s.rule.name)
+            }).execute()
         }
     }
 

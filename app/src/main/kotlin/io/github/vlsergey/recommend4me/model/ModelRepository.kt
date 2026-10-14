@@ -73,19 +73,29 @@ class ModelRepository(private val db: DSLContext) {
 
     /**
      * Replaces every item's prediction in one transaction: readers see the old ones until the new
-     * ones are committed; nothing else writes this table.
+     * ones are committed; nothing else writes this table. Only what changed is written — a score
+     * or a chance of interest beyond [STEP], an item new or gone: most of a retraining's scores come
+     * out as they were, and a file rewritten whole on every training only grows.
      */
     fun replacePredictions(predicted: List<Pair<ItemKey, Predicted>>) {
+        fun same(a: Double?, b: Double?) = if (a == null || b == null) a == b else kotlin.math.abs(a - b) < STEP
         db.transaction { configuration ->
             val tx = DSL.using(configuration)
-            tx.deleteFrom(PREDICTION).execute()
-            predicted.chunked(BATCH).forEach { chunk ->
-                val batch = tx.batch(
-                    tx.insertInto(PREDICTION, PREDICTION.SOURCE, PREDICTION.ITEM_ID, PREDICTION.SCORE, PREDICTION.INTEREST)
-                        .values(null as String?, null as String?, null as Double?, null as Double?),
-                )
-                chunk.forEach { (key, p) -> batch.bind(key.source, key.id, p.score, p.interest) }
-                batch.execute()
+            val stored = HashMap<ItemKey, Pair<Double?, Double?>>()
+            tx.select(PREDICTION.SOURCE, PREDICTION.ITEM_ID, PREDICTION.SCORE, PREDICTION.INTEREST).from(PREDICTION)
+                .fetchSize(5000).fetchLazy().use { cursor -> cursor.forEach { stored[ItemKey(it.value1()!!, it.value2()!!)] = it.value3() to it.value4() } }
+            val wanted = predicted.toMap()
+            val gone = stored.keys - wanted.keys
+            gone.groupBy({ it.source }, { it.id }).forEach { (source, ids) ->
+                ids.chunked(BATCH).forEach { chunk -> tx.deleteFrom(PREDICTION).where(PREDICTION.SOURCE.eq(source), PREDICTION.ITEM_ID.`in`(chunk)).execute() }
+            }
+            val changed = predicted.filter { (key, p) -> stored[key]?.let { (score, interest) -> same(score, p.score) && same(interest, p.interest) } != true }
+            changed.chunked(BATCH).forEach { chunk ->
+                tx.batch(chunk.map { (key, p) ->
+                    tx.insertInto(PREDICTION)
+                        .set(PREDICTION.SOURCE, key.source).set(PREDICTION.ITEM_ID, key.id).set(PREDICTION.SCORE, p.score).set(PREDICTION.INTEREST, p.interest)
+                        .onDuplicateKeyUpdate().set(PREDICTION.SCORE, p.score).set(PREDICTION.INTEREST, p.interest)
+                }).execute()
             }
         }
     }
@@ -121,5 +131,8 @@ class ModelRepository(private val db: DSLContext) {
         private const val CURRENT = 1
         private const val INTEREST = 2
         private const val BATCH = 1000
+
+        /** A score or a chance changed by less is not written again: a retraining's noise, unseen on the 0..10 scale. */
+        private const val STEP = 1e-4
     }
 }

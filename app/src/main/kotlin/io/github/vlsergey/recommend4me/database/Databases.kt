@@ -47,6 +47,10 @@ class Databases(folder: DataFolder, plugins: Plugins) : DisposableBean {
     fun model(typeId: String): DSLContext = type(typeId).model.dsl
     fun typeCorrections(typeId: String): DSLContext = type(typeId).corrections.dsl
 
+    /** Every database file. */
+    fun all(): List<Database> =
+        sources.values.flatMap { listOf(it.source, it.corrections, it.ratings) } + types.values.flatMap { listOf(it.corrections, it.model) }
+
     override fun destroy() {
         sources.values.forEach { listOf(it.source, it.corrections, it.ratings).forEach(Database::close) }
         types.values.forEach { listOf(it.corrections, it.model).forEach(Database::close) }

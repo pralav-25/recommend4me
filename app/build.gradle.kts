@@ -16,7 +16,8 @@ dependencies {
     implementation(libs.jooq)
     implementation(libs.flyway.core)
     implementation(libs.hikari)
-    runtimeOnly(libs.h2)
+    // Its own classes too: a file is compacted while open through them (Database.compact)
+    implementation(libs.h2)
     // Shared with the source plugins: the pages they read
     implementation(libs.jsoup)
     // Pictures: WebP is not among the formats ImageIO reads by itself, and some sites keep every

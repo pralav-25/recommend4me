@@ -77,24 +77,46 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
         writing.withLock { write(facet, made, chances, now) }
     }
 
+    /**
+     * WRITES ONLY WHAT CHANGED: a refit makes every item's chances anew, and most come out as they
+     * were. An item whose rows — keys, kinds, chances to [CHANCE_STEP], mentions — are the stored
+     * ones is not written again, nor a fingerprint that is the stored one: a file rewritten whole on
+     * every pass only grows.
+     */
     private fun write(facet: String, made: Map<String, Long>, chances: List<Chance>, now: Instant) {
+        fun row(c: Chance) = StoredRow(c.key.take(500), c.had, rounded(c.chance), c.mentions)
+        val wanted = chances.groupBy({ it.itemId }, ::row).mapValues { it.value.toSet() }
         db.transaction { tx ->
             val t = tx.dsl()
+            val stored = HashMap<String, MutableSet<StoredRow>>()
+            val storedPrints = HashMap<String, Long>()
             made.keys.chunked(BATCH).forEach { chunk ->
+                t.select(FACET_SUGGESTION.ITEM_ID, FACET_SUGGESTION.VALUE_KEY, FACET_SUGGESTION.KIND, FACET_SUGGESTION.CHANCE, FACET_SUGGESTION.MENTIONS)
+                    .from(FACET_SUGGESTION)
+                    .where(FACET_SUGGESTION.SOURCE.eq(source), FACET_SUGGESTION.FACET.eq(facet), FACET_SUGGESTION.ITEM_ID.`in`(chunk))
+                    .fetch().forEach { r ->
+                        stored.getOrPut(r.value1()!!) { HashSet() } += StoredRow(r.value2()!!, r.value3() == HAD, rounded(r.value4()!!), r.value5())
+                    }
+                t.select(FACET_SUGGESTION_BASIS.ITEM_ID, FACET_SUGGESTION_BASIS.FINGERPRINT).from(FACET_SUGGESTION_BASIS)
+                    .where(FACET_SUGGESTION_BASIS.SOURCE.eq(source), FACET_SUGGESTION_BASIS.FACET.eq(facet), FACET_SUGGESTION_BASIS.ITEM_ID.`in`(chunk))
+                    .fetch().forEach { storedPrints[it.value1()!!] = it.value2()!! }
+            }
+            val changed = made.keys.filter { (wanted[it] ?: emptySet()) != (stored[it] ?: emptySet<StoredRow>()) }.toSet()
+            changed.chunked(BATCH).forEach { chunk ->
                 t.deleteFrom(FACET_SUGGESTION)
                     .where(FACET_SUGGESTION.SOURCE.eq(source), FACET_SUGGESTION.FACET.eq(facet), FACET_SUGGESTION.ITEM_ID.`in`(chunk))
                     .execute()
             }
-            chances.chunked(BATCH).forEach { chunk ->
+            chances.filter { it.itemId in changed }.chunked(BATCH).forEach { chunk ->
                 t.batch(chunk.map { c ->
                     t.insertInto(FACET_SUGGESTION)
                         .set(FACET_SUGGESTION.SOURCE, source).set(FACET_SUGGESTION.ITEM_ID, c.itemId).set(FACET_SUGGESTION.FACET, facet)
                         .set(FACET_SUGGESTION.VALUE_KEY, c.key.take(500)).set(FACET_SUGGESTION.KIND, if (c.had) HAD else LACKED)
-                        .set(FACET_SUGGESTION.CHANCE, c.chance)
+                        .set(FACET_SUGGESTION.CHANCE, rounded(c.chance))
                         .set(FACET_SUGGESTION.MENTIONS, c.mentions)
                 }).execute()
             }
-            made.entries.chunked(BATCH).forEach { chunk ->
+            made.entries.filter { (id, fingerprint) -> storedPrints[id] != fingerprint }.chunked(BATCH).forEach { chunk ->
                 t.batch(chunk.map { (id, fingerprint) ->
                     t.insertInto(FACET_SUGGESTION_BASIS)
                         .set(FACET_SUGGESTION_BASIS.SOURCE, source).set(FACET_SUGGESTION_BASIS.ITEM_ID, id).set(FACET_SUGGESTION_BASIS.FACET, facet)
@@ -185,10 +207,18 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
         out.getOrPut(c.itemId) { HashMap() }.getOrPut(c.facet) { HashMap() }[c.key] = c
     }
 
+    /** A row of an item's chances as compared with the stored one. */
+    private data class StoredRow(val key: String, val had: Boolean, val chance: Double, val mentions: Int?)
+
     companion object {
         private const val BATCH = 1000
         private const val HAD = "A"
         private const val LACKED = "S"
+
+        /** A chance kept to a ten-thousandth: what a refit changes beyond it is noise, and no row is written again for it. */
+        private const val CHANCE_STEP = 1e-4
+
+        private fun rounded(chance: Double): Double = Math.round(chance / CHANCE_STEP) * CHANCE_STEP
     }
 }
 
