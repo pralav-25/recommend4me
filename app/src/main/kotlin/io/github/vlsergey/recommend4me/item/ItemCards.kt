@@ -65,7 +65,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
         // not hides every tag under it ([TagHierarchy]) — read only of the facets of tags asked for
         val ofTags = schema.facets.any { only(it.key) && it.key in store.tagFacets }
         val hierarchies = if (!ofTags) emptyMap() else store.hierarchies()
-        // The tags the user ignores: kept where the site gives them or the user answered, never offered
+        // The tags the user ignores: never given or offered to mark — shown only where the user answered on them
         val ignoredTags = if (!ofTags) emptyMap() else store.ignoredTags()
         val plain = Corrected.facets(base, corrections)
         val corrected = TagHierarchy.corrected(base, corrections, hierarchies)
@@ -84,8 +84,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             }.orEmpty()
             val answered = corrections.filter { it.facet == def.key }.map { it.key }.toSet()
             val ignored = ignoredTags[def.key].orEmpty()
-            /** A value the model alone would give or offer: none the user ignores. */
-            fun offerable(key: String) = key !in ignored || key in fromSite || key in answered
+            /** A value shown to mark: none the user ignores, the site's or not, but those answered on. */
+            fun offerable(key: String) = key !in ignored || key in answered
             val keys = (corrected[def.key].orEmpty() - out).filter(::offerable)
             val had = base[def.key].orEmpty().toSet()
             // Every value the user rejected is shown crossed out — offered or given, it stays in its place
@@ -100,7 +100,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             // the user has not answered on and the site does not give — to make at least so many
             val offered = if (!(def.infer && def.editable) || def.key in complete) emptyList() else {
                 val shown = keys.toSet()
-                val bySite = fromSite.filter { it !in shown && it !in answered && it !in out && it !in negated }
+                val bySite = fromSite.filter { it !in shown && it !in answered && it !in out && it !in negated && it !in ignored }
                     .sortedByDescending { own[it]?.chance ?: -1.0 }
                 bySite + ModelValues.offered(
                     own.filterValues { !it.had && it.key !in out && it.key !in negated && it.key !in ignored }.mapValues { it.value.chance },
