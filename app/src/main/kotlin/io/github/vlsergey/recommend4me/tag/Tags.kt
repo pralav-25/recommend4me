@@ -688,12 +688,13 @@ class Tags(
      * three steps, each only while the ones before found fewer: the tags a site's tag of [source]
      * of that name holds it; then by any of their names — of every site, the user's, the one shown;
      * then the likest by the meaning of their names. Of the first two, a name that is the text first,
-     * then one beginning with it, then one holding it; the most used first among them.
+     * then one beginning with it, then one holding it; the most used first among them. A tag the user
+     * ignores is never found: it is not offered to add.
      */
     fun find(scope: TagScope, facet: String, source: String, query: String, limit: Int): List<NamedTag> {
         val wanted = query.trim().lowercase()
-        val stats = stats(scope, facet)
-        val n = naming(scope, facet, stats)
+        val n = naming(scope, facet)
+        val stats = n.stats.filterKeys { it !in n.ignored }
         val found = LinkedHashMap<String, TagStats>()
         fun step(namesOf: (TagStats) -> List<String>) {
             if (found.size >= limit) return

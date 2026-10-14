@@ -770,7 +770,12 @@ class SiteTest {
         assertTrue(tagsApi.listTags(null, null, null, false, 0, 1000).body!!.tags.none { it.key == hulls })
         assertTrue(feature !in catalogueReader.item(stores.type("books")!!, t3Key)!!.categorical)
         assertTrue(items.getItem("site", "t3").body!!.allFacets.single { it.facet == "tags" }.propertyValues.any { it.key == hulls })
+        // Never offered to mark: not among the candidates, not found to add
+        assertTrue(suggestionsApi.getCandidates("site", "t2", "tags").body!!.none { it.key == hulls })
+        assertTrue(items.listFacetValues("site", "tags", "hull", 10).body!!.none { it.key == hulls })
+        assertTrue(items.listFacetValues("site", "tags", null, 500).body!!.none { it.key == hulls })
         assertTrue(!tagsApi.ignoreTag(TagIgnoredRequest(hulls, false)).body!!.ignored)
+        assertTrue(items.listFacetValues("site", "tags", "hull", 10).body!!.any { it.key == hulls })
         assertTrue(feature in catalogueReader.item(stores.type("books")!!, t3Key)!!.categorical)
         // A second entry besides: the one bound first still names it; the descriptions of the site's tag's page first, then of each entry
         stores.source("site")!!.items.describeFacetValues(Books.TAG.key, mapOf("hulls" to "The hulls of ships"))

@@ -112,7 +112,8 @@ class ItemsController(
         // A facet of tags: the normalized tags, found by the names on this site, on any, then by meaning ([Tags.find])
         if (facet in store.tagFacets) {
             val scope = tags.scope() ?: return ResponseEntity.notFound().build()
-            val found = if (piece.isEmpty()) tags.list(scope, facet, null).take(wanted) else tags.find(scope, facet, store.id, piece, wanted)
+            // A tag the user ignores is not offered to add
+            val found = if (piece.isEmpty()) tags.list(scope, facet, null, ignored = false).take(wanted) else tags.find(scope, facet, store.id, piece, wanted)
             return ResponseEntity.ok(found.map { FacetValueUse(it.stats.key, it.name.name, it.stats.items.size, null) })
         }
         return ResponseEntity.ok(

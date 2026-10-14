@@ -712,8 +712,10 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         // A character of the work's other facet of characters is no candidate here; nor a tag under
         // one the user said the work has not — it has none of them ([TagHierarchy])
         val hierarchy = store.hierarchies()[facet]
+        // Nor a tag the user ignores: never offered
         val out = leftOut(store, facet, itemId)(itemId) +
-            corrections.filter { it.facet == facet && !it.added }.flatMap { hierarchy?.descendants(it.key).orEmpty() }
+            corrections.filter { it.facet == facet && !it.added }.flatMap { hierarchy?.descendants(it.key).orEmpty() } +
+            store.ignoredTags()[facet].orEmpty()
         // A value the model gives the work is the work's already
         val scored = chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
             .map { FacetCandidate(it.key, it.chance, it.mentions) }

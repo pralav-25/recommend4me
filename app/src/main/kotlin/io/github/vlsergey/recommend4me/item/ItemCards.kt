@@ -63,7 +63,10 @@ class ItemCards(private val stores: Stores, private val works: Works) {
         val base = ModelValues.of(schema, site, chances)
         // A tag under another gives the work the other too, shown as such; a tag the user said it has
         // not hides every tag under it ([TagHierarchy]) — read only of the facets of tags asked for
-        val hierarchies = if (schema.facets.none { only(it.key) && it.key in store.tagFacets }) emptyMap() else store.hierarchies()
+        val ofTags = schema.facets.any { only(it.key) && it.key in store.tagFacets }
+        val hierarchies = if (!ofTags) emptyMap() else store.hierarchies()
+        // The tags the user ignores: kept where the site gives them or the user answered, never offered
+        val ignoredTags = if (!ofTags) emptyMap() else store.ignoredTags()
         val plain = Corrected.facets(base, corrections)
         val corrected = TagHierarchy.corrected(base, corrections, hierarchies)
         val said = corrections.filter { it.added }.groupBy({ it.facet }, { it.key })
@@ -73,7 +76,17 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val implied = corrected[def.key].orEmpty().toSet() - plain[def.key].orEmpty().toSet()
             // A character of the work's other facet of characters is not shown here at all
             val out = UniverseFacet.leftOut(def.key, { corrected[it].orEmpty() }, { said[it].orEmpty() })
-            val keys = corrected[def.key].orEmpty() - out
+            val siteKeys = site[def.key].orEmpty().toSet()
+            val fromSite = siteKeys + def.examplesFrom?.let { from ->
+                val keys = site[from].orEmpty()
+                val bound = store.tags.bindingsOf(store.id)
+                keys.mapNotNull { bound[it]?.let(TagRepository::key) }
+            }.orEmpty()
+            val answered = corrections.filter { it.facet == def.key }.map { it.key }.toSet()
+            val ignored = ignoredTags[def.key].orEmpty()
+            /** A value the model alone would give or offer: none the user ignores. */
+            fun offerable(key: String) = key !in ignored || key in fromSite || key in answered
+            val keys = (corrected[def.key].orEmpty() - out).filter(::offerable)
             val had = base[def.key].orEmpty().toSet()
             // Every value the user rejected is shown crossed out — offered or given, it stays in its place
             val removed = corrections.filter { it.facet == def.key && !it.added && it.key !in out }.map { it.key }
@@ -81,23 +94,16 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val original = def.original?.let { texts[it] }
             // The chances of a facet the model works on now: none of one it no longer does
             val own = if (def.suggest || def.infer) chances?.get(def.key).orEmpty() else emptyMap()
-            val siteKeys = site[def.key].orEmpty().toSet()
             // Of a facet of the layer the model works out: every value the site gives the work — a tag of
             // the site bound to it — it is not shown with and the user has not answered on, whatever its
             // chance: the site's word, none hidden; then the likeliest values the work is not shown with,
             // the user has not answered on and the site does not give — to make at least so many
             val offered = if (!(def.infer && def.editable) || def.key in complete) emptyList() else {
-                val fromSite = siteKeys + def.examplesFrom?.let { from ->
-                    val keys = site[from].orEmpty()
-                    val bound = store.tags.bindingsOf(store.id)
-                    keys.mapNotNull { bound[it]?.let(TagRepository::key) }
-                }.orEmpty()
-                val answered = corrections.filter { it.facet == def.key }.map { it.key }.toSet()
                 val shown = keys.toSet()
                 val bySite = fromSite.filter { it !in shown && it !in answered && it !in out && it !in negated }
                     .sortedByDescending { own[it]?.chance ?: -1.0 }
                 bySite + ModelValues.offered(
-                    own.filterValues { !it.had && it.key !in out && it.key !in negated }.mapValues { it.value.chance },
+                    own.filterValues { !it.had && it.key !in out && it.key !in negated && it.key !in ignored }.mapValues { it.value.chance },
                     shown = shown, answered = answered, fromSite = fromSite,
                 )
             }
