@@ -80,6 +80,7 @@ export type TagRelation = Schemas["TagRelation"];
 export type TagRef = Schemas["TagRef"];
 export type TagVariantInfo = Schemas["TagVariantInfo"];
 export type FoundTagEntry = Schemas["FoundTagEntry"];
+export type HierarchyOffer = Schemas["HierarchyOffer"];
 
 /**
  * The failure of a call as the user should read it. The backend answers an error as

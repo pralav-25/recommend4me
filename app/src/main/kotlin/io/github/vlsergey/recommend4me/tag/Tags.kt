@@ -40,12 +40,16 @@ data class TagsChanged(val type: String)
 /** A site's tag bound to a normalized tag: its source, the site's key of it, its name there, its works. */
 class TagVariant(val site: SiteTagRef, val name: String, val uses: Uses)
 
-/** A normalized tag: its key (its id written out), the sites' tags bound to it, its works. */
+/**
+ * A normalized tag: its key (its id written out), the sites' tags bound to it, its works, and the
+ * graded works the user said have it not ([rejected]).
+ */
 class TagStats(val key: String) {
     val variants = LinkedHashMap<SiteTagRef, TagVariant>()
     val items = HashSet<ItemKey>()
     val graded = HashSet<ItemKey>()
     val liked = HashSet<ItemKey>()
+    val rejected = HashSet<ItemKey>()
 
     val id: Long get() = TagRepository.idOf(key)!!
 
@@ -74,6 +78,27 @@ class NamedTag(
  * upper's, by their labels — "satire", "humor". Only offered: the user says.
  */
 class CatalogueOffer(val catalogue: String, val tag: String, val name: String, val relation: TagRelation, val path: List<String>)
+
+/** What an offer of the tags' graph is ([Tags.hierarchyOffers]). */
+enum class HierarchyKind {
+    /** The first tag under the second. */
+    LINK,
+
+    /** The two tags one: bound to one entry. */
+    MERGE,
+
+    /** A new tag of [HierarchyOffer.entry] above the tags. */
+    NEW_PARENT,
+}
+
+/**
+ * An offer of the tags' graph: its [kind], the tags it is of, the entry of [catalogue] it is by, the
+ * way up from the first tag's entry, how many graded works it changes, and how many levels up the
+ * catalogue the tags meet — of a new tag, the farther of the two of its nearest pair.
+ */
+class HierarchyOffer(
+    val kind: HierarchyKind, val catalogue: String, val tags: List<String>, val entry: TagEntryRef?, val way: List<TagEntryRef>, val graded: Int, val levels: Int,
+)
 
 /** The entry of a catalogue a tag is bound to, as the catalogue gave it when last asked. */
 class BoundEntry(val catalogue: String, val entry: TagEntry) {
@@ -146,6 +171,7 @@ class Tags(
     fun stats(type: TypeStore, facet: String): Map<String, TagStats> {
         val bindings = type.tags.bindings()
         val out = HashMap<String, TagStats>()
+        val rejections = HashMap<String, MutableSet<ItemKey>>()
         type.sources.forEach { s ->
             val siteFacet = normalization.siteFacetOf(s, facet) ?: return@forEach
             val names = s.names(siteFacet)
@@ -178,11 +204,16 @@ class Tags(
                     count(id, tag, site, (names[k] ?: k).trim())
                 }
             }
-            // A tag the user gave a work the site does not
-            s.corrections.allFacets().filter { it.facet == facet && it.added && TagRepository.idOf(it.key) != null }.forEach { c ->
-                if (fromSite[c.itemId]?.contains(c.key) != true) count(c.itemId, c.key, null, null)
+            // A tag the user gave a work the site does not; a graded work the user said has it not
+            s.corrections.allFacets().filter { it.facet == facet && TagRepository.idOf(it.key) != null }.forEach { c ->
+                if (!c.added) {
+                    if (c.itemId in grades) rejections.getOrPut(c.key) { HashSet() } += ItemKey(s.id, c.itemId)
+                } else if (fromSite[c.itemId]?.contains(c.key) != true) count(c.itemId, c.key, null, null)
             }
         }
+        // A tag of no work yet — one the user made above others — is a tag all the same
+        type.tags.ids().forEach { id -> out.getOrPut(TagRepository.key(id)) { TagStats(TagRepository.key(id)) } }
+        rejections.forEach { (key, items) -> out[key]?.rejected?.addAll(items) }
         return out
     }
 
@@ -263,12 +294,31 @@ class Tags(
      * or through others: the nearest way of each, a tag once.
      */
     private fun offersOf(type: TypeStore, n: Naming, tag: String): List<CatalogueOffer> {
-        val refsOf = n.entries.entries.associate { (id, list) -> TagRepository.key(id) to list.map { TagEntryRef(it.catalogue, it.entry.id) } }
-        val own = refsOf[tag].orEmpty()
-        if (refsOf.isEmpty()) return emptyList()
-        val tagsOf = HashMap<TagEntryRef, MutableList<String>>()
-        refsOf.forEach { (key, refs) -> refs.forEach { tagsOf.getOrPut(it) { ArrayList() } += key } }
-        val links = type.tags.aboveLinks()
+        val graph = CatalogueGraph(type, n)
+        val found = graph.links().filter { it.child == tag || it.parent == tag }
+        if (found.isEmpty()) return emptyList()
+        val label = graph.labels(found.flatMap { it.way })
+        return found.map { l ->
+            if (l.child == tag) CatalogueOffer(l.way.first().catalogue, l.parent, n.shown(l.parent), TagRelation.PARENT, l.way.map(label))
+            else CatalogueOffer(l.way.first().catalogue, l.child, n.shown(l.child), TagRelation.CHILD, l.way.map(label))
+        }.sortedWith(compareBy<CatalogueOffer> { it.relation }.thenBy { it.path.size }.thenBy { it.name.lowercase() })
+    }
+
+    /** One tag under another by their entries: [way] up from the child's entry to the parent's. */
+    private class EntryLink(val child: String, val parent: String, val way: List<TagEntryRef>)
+
+    /**
+     * WHAT THE ENTRIES OF THE TAGS ARE A KIND OF, of one reading: the tags' entries and what was read
+     * up from them ([readAbove]), walked up [ABOVE_LEVELS] levels. Read for one operation, kept nowhere.
+     */
+    private inner class CatalogueGraph(val type: TypeStore, val n: Naming) {
+        val refsOf: Map<String, List<TagEntryRef>> =
+            n.entries.entries.filter { it.value.isNotEmpty() }.associate { (id, list) -> TagRepository.key(id) to list.map { TagEntryRef(it.catalogue, it.entry.id) } }
+        val tagsOf: Map<TagEntryRef, List<String>> = HashMap<TagEntryRef, MutableList<String>>().also { m ->
+            refsOf.forEach { (key, refs) -> refs.forEach { m.getOrPut(it) { ArrayList() } += key } }
+        }
+        val links: Map<TagEntryRef, List<TagEntryRef>> = if (refsOf.isEmpty()) emptyMap() else type.tags.aboveLinks()
+
         /** Every entry reached up from [starts], with the way to it from one of them, the nearest. */
         fun up(starts: List<TagEntryRef>): Map<TagEntryRef, List<TagEntryRef>> {
             val ways = LinkedHashMap<TagEntryRef, List<TagEntryRef>>()
@@ -279,23 +329,116 @@ class Tags(
             }
             return ways
         }
-        val related = n.hierarchy.ancestors(tag) + n.hierarchy.descendants(tag) + tag
-        val found = LinkedHashMap<String, Pair<TagRelation, List<TagEntryRef>>>()
-        // Above it: the tags of the entries its own are a kind of
-        up(own).entries.sortedBy { it.value.size }.forEach { (ref, way) ->
-            if (way.size > 1) tagsOf[ref].orEmpty().filter { it !in related }.forEach { found.putIfAbsent(it, TagRelation.PARENT to way) }
+
+        /** Of every tag, the entries reached up from its own. */
+        val reached: Map<String, Map<TagEntryRef, List<TagEntryRef>>> by lazy { refsOf.mapValues { (_, refs) -> up(refs) } }
+
+        /**
+         * Every tag under another by their entries — one of its entries a kind of one of the other's,
+         * the nearest way — but of two related already, by the user's word or through others.
+         */
+        fun links(): List<EntryLink> = reached.flatMap { (child, ways) ->
+            val related = n.hierarchy.ancestors(child) + n.hierarchy.descendants(child) + child
+            val nearest = LinkedHashMap<String, List<TagEntryRef>>()
+            ways.entries.filter { it.value.size > 1 }.sortedBy { it.value.size }.forEach { (ref, way) ->
+                tagsOf[ref].orEmpty().filter { it !in related }.forEach { nearest.putIfAbsent(it, way) }
+            }
+            nearest.map { (parent, way) -> EntryLink(child, parent, way) }
         }
-        // Under it: the tags whose entries are a kind of its own
-        refsOf.filterKeys { it !in related && it !in found }.forEach { (other, refs) ->
-            up(refs).filterKeys { it in own }.values.filter { it.size > 1 }.minByOrNull { it.size }?.let { found[other] = TagRelation.CHILD to it }
+
+        /** The label of every entry of [refs] in the user's first language that has one; else its id. */
+        fun labels(refs: Collection<TagEntryRef>): (TagEntryRef) -> String {
+            val kept = type.tags.keptEntries(refs.toSet())
+            return { ref -> kept[ref]?.labels?.let { labels -> languages.firstNotNullOfOrNull { labels[it] } } ?: ref.entry }
         }
-        if (found.isEmpty()) return emptyList()
-        val kept = type.tags.keptEntries(found.values.flatMap { it.second }.toSet())
-        fun label(ref: TagEntryRef) = kept[ref]?.labels?.let { labels -> languages.firstNotNullOfOrNull { labels[it] } } ?: ref.entry
-        return found.map { (other, offer) ->
-            val (relation, way) = offer
-            CatalogueOffer(way.first().catalogue, other, n.shown(other), relation, way.map(::label))
-        }.sortedWith(compareBy<CatalogueOffer> { it.relation }.thenBy { it.path.size }.thenBy { it.name.lowercase() })
+    }
+
+    /**
+     * THE TOP OFFERS OF THE TAGS' GRAPH, the nearest in the catalogue first, of those alike near the
+     * ones that change most of the graded works — each only offered, the user says:
+     * - a tag under another by what their entries are a kind of ([CatalogueGraph.links]): the graded
+     *   works of the child without the parent get it, and those the user said have not the parent
+     *   have not the child either;
+     * - two tags bound to one entry merged: the graded works of the smaller of the two;
+     * - a new tag above two tags or more, of an entry no tag is bound to where two of them meet
+     *   first — of the entries both are a kind of, the nearest to the farther of the two: the graded
+     *   works of any of them get it. Not where a tag is there already: that tag is offered instead.
+     */
+    fun hierarchyOffers(type: TypeStore, facet: String): List<HierarchyOffer> {
+        val started = System.currentTimeMillis()
+        val n = naming(type, facet)
+        val graph = CatalogueGraph(type, n)
+        fun graded(key: String) = n.stats[key]?.graded.orEmpty()
+        fun rejected(key: String) = n.stats[key]?.rejected.orEmpty()
+        val distinct = type.tags.distinct()
+        val out = ArrayList<HierarchyOffer>()
+        // Under another
+        graph.links().forEach { l ->
+            val gets = graded(l.child) - graded(l.parent) - rejected(l.parent)
+            val loses = rejected(l.parent) - rejected(l.child)
+            out += HierarchyOffer(HierarchyKind.LINK, l.way.first().catalogue, listOf(l.child, l.parent), null, l.way, (gets + loses).size, l.way.size - 1)
+        }
+        // One entry, two tags
+        graph.tagsOf.forEach { (ref, keys) ->
+            keys.sorted().let { sorted ->
+                sorted.forEachIndexed { i, a ->
+                    sorted.drop(i + 1).forEach { b ->
+                        val ids = TagRepository.pair(TagRepository.idOf(a)!!, TagRepository.idOf(b)!!)
+                        // The tag of more works first: the one the other is merged into
+                        val two = listOf(a, b).sortedByDescending { n.stats[it]?.items?.size ?: 0 }
+                        if (ids !in distinct) out += HierarchyOffer(HierarchyKind.MERGE, ref.catalogue, two, ref, listOf(ref), minOf(graded(a).size, graded(b).size), 0)
+                    }
+                }
+            }
+        }
+        // A new tag above: where two tags meet first — the entries both reach the nearest, by the farther
+        // of the two ways — when no tag is bound to one of them; every pair meeting there under it
+        val under = HashMap<TagEntryRef, MutableSet<String>>()
+        val levels = HashMap<TagEntryRef, Int>()
+        val keys = graph.reached.keys.sorted()
+        keys.forEachIndexed { i, a ->
+            val upA = graph.reached.getValue(a)
+            keys.drop(i + 1).forEach { b ->
+                val upB = graph.reached.getValue(b)
+                val common = upA.keys.filter { it in upB }
+                val nearest = common.minOfOrNull { maxOf(upA.getValue(it).size, upB.getValue(it).size) } ?: return@forEach
+                val meet = common.filter { maxOf(upA.getValue(it).size, upB.getValue(it).size) == nearest }
+                if (meet.none { it in graph.tagsOf }) meet.forEach {
+                    under.getOrPut(it) { HashSet() } += listOf(a, b)
+                    levels.merge(it, nearest - 1, ::minOf)
+                }
+            }
+        }
+        under.forEach { (ref, tags) ->
+            val children = tags.sortedByDescending { graded(it).size }
+            out += HierarchyOffer(HierarchyKind.NEW_PARENT, ref.catalogue, children, ref, listOf(ref), children.flatMap(::graded).toSet().size, levels.getValue(ref))
+        }
+        log.info("{}: {} offers of the tags' graph worked out in {} ms", type.id, out.size, System.currentTimeMillis() - started)
+        // The nearest first — what the entries are right above, not "process" all of them are far up — then the ones changing most
+        return out.sortedWith(compareBy<HierarchyOffer> { it.levels }.thenByDescending { it.graded }.thenBy { it.kind }.thenBy { it.tags.joinToString() })
+    }
+
+    /** The names of the tags of [offers] and their entries as kept: of one reading. */
+    fun namesOf(type: TypeStore, offers: List<HierarchyOffer>): Pair<Map<String, String>, Map<TagEntryRef, TagEntry>> =
+        type.tags.shown(offers.flatMap { it.tags }.toSet()) to type.tags.keptEntries(offers.flatMap { it.way }.toSet())
+
+    /**
+     * A new tag bound to the entry [entry] of [catalogue] — named by its label — put above the tags
+     * [children]. Returns it.
+     */
+    fun createAbove(type: TypeStore, facet: String, catalogue: String, entry: String, children: List<String>): NamedTag? {
+        val ids = children.map { TagRepository.idOf(it)?.takeIf(type.tags::exists) ?: return null }
+        val source = plugins.tagCatalogues.firstOrNull { it.id == catalogue } ?: throw NoSuchElementException("No catalogue of tags $catalogue")
+        val read = source.entries(listOf(entry), languages).firstOrNull() ?: throw NoSuchElementException("$catalogue has no $entry")
+        val before = stats(type, facet)
+        val now = Instant.now()
+        val id = type.tags.create()
+        type.tags.keepEntry(catalogue, read, now)
+        type.tags.bindEntry(id, TagEntryRef(catalogue, read.id), true, now)
+        ids.forEach { type.tags.setParent(it, id, true, now) }
+        log.info("{}: tag {} made of {}:{} above {}", type.id, id, catalogue, read.id, children)
+        changed(type, facet, children.flatMap { before[it]?.items.orEmpty() })
+        return one(type, facet, TagRepository.key(id))
     }
 
     /**

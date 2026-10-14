@@ -7,6 +7,7 @@ import {
   unwrap,
   type ContentTypeInfo,
   type FoundTagEntry,
+  type HierarchyOffer,
   type SimilarTag,
   type SimilarTagPage,
   type TagInfo,
@@ -94,8 +95,9 @@ export function TagsScreen({ type, selected }: { type: ContentTypeInfo; selected
   const { t } = useTranslation("tag");
   return (
     <div className="mx-auto grid max-w-[1800px] grid-cols-[minmax(0,1fr)] gap-4 px-4 py-4 lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
-      <div className={cn(selected && "hidden lg:block")}>
+      <div className={cn("flex flex-col gap-6", selected && "hidden lg:flex")}>
         <TagList type={type} selected={selected} />
+        <HierarchyOffers type={type} />
       </div>
       {selected ? (
         <TagDetails key={selected} type={type} tag={selected} />
@@ -169,6 +171,107 @@ function TagList({ type, selected }: { type: ContentTypeInfo; selected?: string 
       {page && page.tags.length < page.total && (
         <Button variant="outline" size="sm" onClick={() => setLimit(limit + PAGE)} disabled={tags.isFetching}>
           {t("TagList.more")}
+        </Button>
+      )}
+    </section>
+  );
+}
+
+/** How many offers of the tags' graph are shown, and added by "more". */
+const OFFERS_PAGE = 20;
+
+/** A tag's name, a link to its page. */
+function TagLink({ tag }: { tag: TagRef }) {
+  return (
+    <a href={screenHref({ kind: "tags", tag: tag.key })} onClick={(e) => followLink(e, { kind: "tags", tag: tag.key })} className="font-medium underline-offset-2 hover:underline">
+      {tag.name}
+    </a>
+  );
+}
+
+/**
+ * THE TOP OFFERS OF THE TAGS' GRAPH by the catalogues, the ones that change most of the graded works
+ * first: a tag under another, two tags of one entry merged, a new tag above two or more. Read apart
+ * from the list, the old shown while read anew; each said by its own button, or left as it is.
+ */
+function HierarchyOffers({ type }: { type: ContentTypeInfo }) {
+  const { t } = useTranslation("tag");
+  const changed = useTagsChanged(type.id);
+  const [limit, setLimit] = useState(OFFERS_PAGE);
+  const offers = useQuery({
+    queryKey: [TAGS, type.id, "hierarchy-offers"],
+    placeholderData: keepPreviousData,
+    queryFn: async () => unwrap(await api.GET("/api/types/{type}/tags/hierarchy-offers", { params: { path: { type: type.id } } })),
+  });
+  const path = { params: { path: { type: type.id } } };
+  const act = async (o: HierarchyOffer) => {
+    const [first, second] = o.tags;
+    if (o.kind === "LINK") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "PARENT" } }));
+    else if (o.kind === "MERGE") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "MERGED" } }));
+    else unwrap(await api.POST("/api/types/{type}/tags/above", { ...path, body: { catalogue: o.catalogue, entry: o.entry!, children: o.tags.map((r) => r.key) } }));
+    await changed();
+  };
+  const list = offers.data ?? [];
+  return (
+    <section className="flex flex-col gap-2 text-sm">
+      <div className="flex items-center gap-2">
+        <h2 className="font-semibold">{t("Hierarchy.title")}</h2>
+        {offers.isFetching && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
+        <AsyncButton variant="ghost" size="xs" className="ml-auto" onClick={() => offers.refetch()} title={t("Hierarchy.refreshTitle")} icon={<RefreshCwIcon />}>
+          {t("Hierarchy.refresh")}
+        </AsyncButton>
+      </div>
+      <p className="text-xs text-muted-foreground">{t("Hierarchy.hint")}</p>
+      {offers.isError && <p className="text-destructive">{t("Hierarchy.loadError", { error: offers.error.message })}</p>}
+      {offers.data && list.length === 0 && <p className="text-muted-foreground">{t("Hierarchy.none")}</p>}
+      {list.length > 0 && (
+        <ul className="flex flex-col divide-y rounded-lg border">
+          {list.slice(0, limit).map((o) => (
+            <li key={`${o.kind}/${o.tags.map((r) => r.key).join("/")}/${o.entry ?? ""}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span>
+                  {o.kind === "LINK" && (
+                    <>
+                      <TagLink tag={o.tags[0]} /> {t("Hierarchy.under")} <TagLink tag={o.tags[1]} />
+                    </>
+                  )}
+                  {o.kind === "MERGE" && (
+                    <>
+                      <TagLink tag={o.tags[1]} /> {t("Hierarchy.into")} <TagLink tag={o.tags[0]} />
+                    </>
+                  )}
+                  {o.kind === "NEW_PARENT" && (
+                    <>
+                      {t("Hierarchy.newTag")}{" "}
+                      <a href={o.url} target="_blank" rel="noreferrer" className="font-medium underline-offset-2 hover:underline">
+                        «{o.path[0]}»
+                      </a>{" "}
+                      {t("Hierarchy.above")}{" "}
+                      {o.tags.map((r, i) => (
+                        <span key={r.key}>
+                          {i > 0 && ", "}
+                          <TagLink tag={r} />
+                        </span>
+                      ))}
+                    </>
+                  )}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {sourceTitle(o.catalogue)}: {o.kind === "MERGE" ? t("Hierarchy.sameEntry", { entry: `${o.path[0]} (${o.entry})` }) : o.path.join(" → ")} ·{" "}
+                  {o.kind !== "MERGE" && <>{t("Hierarchy.levels", { count: o.levels })} · </>}
+                  {t("Hierarchy.graded", { count: o.graded })}
+                </span>
+              </div>
+              <AsyncButton variant="outline" size="sm" onClick={() => act(o)} title={t(`Hierarchy.${o.kind}.title`)}>
+                {t(`Hierarchy.${o.kind}.label`)}
+              </AsyncButton>
+            </li>
+          ))}
+        </ul>
+      )}
+      {list.length > limit && (
+        <Button variant="outline" size="sm" onClick={() => setLimit(limit + OFFERS_PAGE)}>
+          {t("Hierarchy.more", { count: list.length - limit })}
         </Button>
       )}
     </section>

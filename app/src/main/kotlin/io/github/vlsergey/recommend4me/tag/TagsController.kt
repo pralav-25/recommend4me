@@ -3,6 +3,9 @@ package io.github.vlsergey.recommend4me.tag
 import io.github.vlsergey.recommend4me.api.TagsApi
 import io.github.vlsergey.recommend4me.api.model.CatalogueOffer
 import io.github.vlsergey.recommend4me.api.model.FoundTagEntry
+import io.github.vlsergey.recommend4me.api.model.HierarchyOfferKind
+import io.github.vlsergey.recommend4me.api.model.TagAboveRequest
+import io.github.vlsergey.recommend4me.api.model.HierarchyOffer as ApiHierarchyOffer
 import io.github.vlsergey.recommend4me.api.model.TagDescription
 import io.github.vlsergey.recommend4me.api.model.TagEntryInfo
 import io.github.vlsergey.recommend4me.api.model.TagEntryRequest
@@ -99,6 +102,37 @@ class TagsController(
         val r = tagEntryRequest
         return try {
             tags.bindEntry(t, facet, r.tag, r.catalogue, r.entry, r.bound)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
+        } catch (e: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        }
+    }
+
+    override fun listHierarchyOffers(type: String): ResponseEntity<List<ApiHierarchyOffer>> {
+        val (t, facet) = of(type)
+        val offers = tags.hierarchyOffers(t, facet)
+        val (names, kept) = tags.namesOf(t, offers)
+        fun label(ref: TagEntryRef) = kept[ref]?.labels?.first() ?: ref.entry
+        return ResponseEntity.ok(
+            offers.map { o ->
+                ApiHierarchyOffer(
+                    kind = HierarchyOfferKind.valueOf(o.kind.name),
+                    catalogue = o.catalogue,
+                    tags = o.tags.map { TagRef(it, names[it] ?: it) },
+                    path = o.way.map(::label),
+                    graded = o.graded,
+                    levels = o.levels,
+                    entry = o.entry?.entry,
+                    url = o.entry?.let { kept[it]?.url },
+                )
+            },
+        )
+    }
+
+    override fun createTagAbove(type: String, tagAboveRequest: TagAboveRequest): ResponseEntity<TagInfo> {
+        val (t, facet) = of(type)
+        val r = tagAboveRequest
+        return try {
+            tags.createAbove(t, facet, r.catalogue, r.entry, r.children)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
         } catch (e: NoSuchElementException) {
             ResponseEntity.notFound().build()
         }

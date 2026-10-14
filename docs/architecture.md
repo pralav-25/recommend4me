@@ -249,6 +249,16 @@ is a kind of the other's, and under it the other way round, with the way up — 
 catalogue" on the card reads its entries and every level above them again, what was kept shown
 meanwhile.
 
+Under the list of tags the screen shows the offers of the tags' graph (`Tags.hierarchyOffers`),
+read apart and again by its own button: a tag under another as above; two tags bound to one entry
+merged; a new tag of an entry no tag is bound to, above the tags that meet there first — of the
+entries both of two tags are a kind of, the nearest to the farther of the two; where a tag is bound
+there already, that tag is offered instead. Each says how many graded works it changes — of a link
+the child's graded works without the parent, which get it, and the ones said to have not the parent,
+which have not the child either; of a merge, the smaller tag's; of a new tag, all of its tags'. The
+nearest in the catalogue come first — "oral sex" right above two tags before "process" three levels
+up — and of those alike near, the ones changing most.
+
 The names are worked out again a few seconds after the works or
 their grades change and kept in the type's model database (`tag_shown_name`): made of the rest, not
 the user's word. Every source reads them from there, as the universes' names are read from their

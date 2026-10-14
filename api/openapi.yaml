@@ -1240,6 +1240,48 @@ paths:
         '404':
           description: No such tag, catalogue or entry
 
+  /api/types/{type}/tags/hierarchy-offers:
+    get:
+      tags: [tags]
+      operationId: listHierarchyOffers
+      summary: >
+        The offers of the tags' graph by the catalogues - a tag under another, two tags of one entry merged, a new tag
+        above two or more - the ones that change most of the graded works first
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      responses:
+        '200':
+          description: The offers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HierarchyOffer'
+
+  /api/types/{type}/tags/above:
+    post:
+      tags: [tags]
+      operationId: createTagAbove
+      summary: A new tag bound to an entry of a catalogue - named by its label - put above the tags given
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagAboveRequest'
+      responses:
+        '200':
+          description: The new tag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagInfo'
+        '404':
+          description: No such tag, catalogue or entry
+
   /api/types/{type}/tags/entries/refresh:
     post:
       tags: [tags]
@@ -3619,6 +3661,61 @@ components:
         path:
           type: array
           description: The entries of the way up, from the lower tag's to the upper's, by their labels
+          items:
+            type: string
+
+    HierarchyOfferKind:
+      type: string
+      description: LINK - the first tag under the second; MERGE - the two tags one; NEW_PARENT - a new tag of the entry above the tags
+      enum: [LINK, MERGE, NEW_PARENT]
+
+    HierarchyOffer:
+      type: object
+      required: [kind, catalogue, tags, path, graded, levels]
+      properties:
+        kind:
+          $ref: '#/components/schemas/HierarchyOfferKind'
+        catalogue:
+          type: string
+        tags:
+          type: array
+          description: LINK - the child, then the parent; MERGE - the two, the one of more works first, which the other is merged into; NEW_PARENT - the tags under the new one, the most graded first
+          items:
+            $ref: '#/components/schemas/TagRef'
+        entry:
+          type: string
+          description: The entry the two tags are bound to (MERGE) or the new tag would be (NEW_PARENT)
+        url:
+          type: string
+          description: The entry's page
+        path:
+          type: array
+          description: The entries of the way up from the child's entry to the parent's (LINK), the entry alone else - by their labels
+          items:
+            type: string
+        graded:
+          type: integer
+          description: >
+            The graded works it changes - LINK - of the child without the parent, which get it, and the ones said to
+            have not the parent, which have not the child either; MERGE - of the smaller of the two; NEW_PARENT - of any
+            of the tags, which get the new one
+
+        levels:
+          type: integer
+          description: >
+            How many levels up the catalogue the tags meet - LINK - from the child's entry to the parent's; MERGE - 0;
+            NEW_PARENT - the farther of the two of its nearest pair. The nearest come first
+
+    TagAboveRequest:
+      type: object
+      required: [catalogue, entry, children]
+      properties:
+        catalogue:
+          type: string
+        entry:
+          type: string
+        children:
+          type: array
           items:
             type: string
 
