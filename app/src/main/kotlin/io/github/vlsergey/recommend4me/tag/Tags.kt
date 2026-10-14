@@ -363,6 +363,11 @@ class Tags(
      * - a new tag above two tags or more, of an entry no tag is bound to where two of them meet
      *   first — of the entries both are a kind of, the nearest to the farther of the two: the graded
      *   works of any of them get it. Not where a tag is there already: that tag is offered instead.
+     *   Of several such entries of a pair, the most precise alone: one none of the others is under,
+     *   of those the nearer by the two ways together. Never of two tags one under the other by the
+     *   user's word; above the roots of the user's trees alone, a tag under another of them left out.
+     *   A tag in one such offer alone, the nearest: one sharing a tag with a nearer one is not offered
+     *   till the nearer is said — then it is offered above the new tag.
      */
     fun hierarchyOffers(type: TypeStore, facet: String): List<HierarchyOffer> {
         val started = System.currentTimeMillis()
@@ -398,24 +403,39 @@ class Tags(
         val keys = graph.reached.keys.sorted()
         keys.forEachIndexed { i, a ->
             val upA = graph.reached.getValue(a)
+            val relatedA = n.hierarchy.ancestors(a) + n.hierarchy.descendants(a)
             keys.drop(i + 1).forEach { b ->
+                // One under the other already: no tag above the two, the upper one stands for both
+                if (b in relatedA) return@forEach
                 val upB = graph.reached.getValue(b)
                 val common = upA.keys.filter { it in upB }
                 val nearest = common.minOfOrNull { maxOf(upA.getValue(it).size, upB.getValue(it).size) } ?: return@forEach
                 val meet = common.filter { maxOf(upA.getValue(it).size, upB.getValue(it).size) == nearest }
-                if (meet.none { it in graph.tagsOf }) meet.forEach {
-                    under.getOrPut(it) { HashSet() } += listOf(a, b)
-                    levels.merge(it, nearest - 1, ::minOf)
-                }
+                if (meet.any { it in graph.tagsOf }) return@forEach
+                // One place a pair: the most precise of where it meets — none of the others under it, the nearer of the two ways together
+                // A catalogue's classes may go round: then all of them are alike precise
+                val precise = meet.filter { e -> meet.none { other -> other != e && e in graph.up(listOf(other)) } }.ifEmpty { meet }
+                    .minWith(compareBy<TagEntryRef> { upA.getValue(it).size + upB.getValue(it).size }.thenBy { it.entry })
+                under.getOrPut(precise) { HashSet() } += listOf(a, b)
+                levels.merge(precise, nearest - 1, ::minOf)
             }
         }
-        under.forEach { (ref, tags) ->
+        under.forEach { (ref, all) ->
+            // Above the roots of the user's trees: a tag under another of them is under the new one through it
+            val tags = all.filter { t -> n.hierarchy.ancestors(t).none { it in all } }
+            if (tags.size < 2) return@forEach
             val children = tags.sortedByDescending { graded(it).size }
-            out += HierarchyOffer(HierarchyKind.NEW_PARENT, ref.catalogue, children, ref, listOf(ref), children.flatMap(::graded).toSet().size, levels.getValue(ref))
+            out += HierarchyOffer(HierarchyKind.NEW_PARENT, ref.catalogue, children, ref, listOf(ref), all.flatMap(::graded).toSet().size, levels.getValue(ref))
         }
         log.info("{}: {} offers of the tags' graph worked out in {} ms", type.id, out.size, System.currentTimeMillis() - started)
         // The nearest first — what the entries are right above, not "process" all of them are far up — then the ones changing most
-        return out.sortedWith(compareBy<HierarchyOffer> { it.levels }.thenByDescending { it.graded }.thenBy { it.kind }.thenBy { it.tags.joinToString() })
+        val sorted = out.sortedWith(compareBy<HierarchyOffer> { it.levels }.thenByDescending { it.graded }.thenBy { it.kind }.thenBy { it.tags.joinToString() })
+        // A tag in one new tag alone, the most precise: one sharing a tag with a nearer is left till that is said
+        val placed = HashSet<String>()
+        return sorted.filter { o ->
+            if (o.kind != HierarchyKind.NEW_PARENT) return@filter true
+            (o.tags.none { it in placed }).also { if (it) placed += o.tags }
+        }
     }
 
     /** The names of the tags of [offers] and their entries as kept: of one reading. */
