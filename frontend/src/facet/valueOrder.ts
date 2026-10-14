@@ -5,11 +5,12 @@ import type { FacetValueInfo } from "@/api/client";
 export const decided = (v: FacetValueInfo) => v.corrected !== undefined && v.corrected !== null;
 
 /**
- * The first order of a facet's values: by the model's chance, the likeliest first — the user's
- * answers aside, a rejected value too; a value the model has no chance of after them.
+ * The first order of a facet's values: the server's — by the model's chance, the likeliest first,
+ * the user's answers aside, a rejected value too, a value the model has no chance of after them;
+ * and a tag above another before it, whatever its chance.
  */
 function firstOrder(values: FacetValueInfo[]): string[] {
-  return [...values].sort((a, b) => (b.chance ?? -1) - (a.chance ?? -1)).map((v) => v.key);
+  return values.map((v) => v.key);
 }
 
 /**

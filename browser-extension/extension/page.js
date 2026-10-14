@@ -629,18 +629,16 @@
   const orders = new Map();
 
   /**
-   * The values in the order first shown — by the model's chance, the likeliest first, the user's
-   * answers aside, a rejected value too: an answer changes how a value looks, never where it is,
-   * until the page is opened again. A value that comes later goes after them.
+   * The values in the order first shown — the application's: by the model's chance, the likeliest
+   * first, the user's answers aside, a rejected value too, and a tag above another before it: an
+   * answer changes how a value looks, never where it is, until the page is opened again. A value
+   * that comes later goes after them.
    */
   function stableOrder(item, facet, values) {
     const id = `${item.summary.source}/${item.summary.item}/${facet}`;
     const order = orders.get(id) || [];
     const known = new Set(order);
-    const fresh = values
-      .filter((v) => !known.has(v.key))
-      .sort((a, b) => (b.chance ?? -1) - (a.chance ?? -1))
-      .map((v) => v.key);
+    const fresh = values.filter((v) => !known.has(v.key)).map((v) => v.key);
     const all = order.concat(fresh);
     orders.set(id, all);
     const at = new Map(all.map((k, i) => [k, i]));

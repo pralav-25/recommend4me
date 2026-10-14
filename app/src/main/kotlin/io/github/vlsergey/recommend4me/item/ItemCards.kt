@@ -127,12 +127,16 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                 facet = def.key,
                 labelKey = I18nKeys.facetLabel(store.id, def),
                 editable = def.editable,
-                propertyValues = keys.map { k ->
+                // In the order shown: the likeliest first — a value with no chance after them — and a
+                // tag above another before it ([TagHierarchy.parentsFirst]); the pages keep it
+                propertyValues = (keys.map { k ->
                     // Confirmed: the site or the model gave it — the model even when the user's answer
                     // has since made it the work's own, no longer the model's to give
                     val given = k in had || (own[k]?.chance ?: 0.0) > ModelValues.LIKELY
                     info(k, if (k in added) (if (given) FacetValueInfo.Corrected.CONFIRMED else FacetValueInfo.Corrected.ADDED) else null)
-                } + offered.map { info(it, null, offer = true) } + removed.map { info(it, FacetValueInfo.Corrected.REMOVED) },
+                } + offered.map { info(it, null, offer = true) } + removed.map { info(it, FacetValueInfo.Corrected.REMOVED) })
+                    .sortedByDescending { it.chance ?: -1.0 }
+                    .let { values -> hierarchy?.parentsFirst(values) { it.key } ?: values },
                 original = original,
                 complete = (def.key in complete).takeIf { it },
             )

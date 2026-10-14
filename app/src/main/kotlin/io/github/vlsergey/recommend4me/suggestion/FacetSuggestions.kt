@@ -717,6 +717,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
         val candidates = (scored + unscored)
             .sortedWith(compareByDescending<FacetCandidate> { it.chance ?: -1.0 }.thenByDescending { it.mentions ?: 0 })
+            // A tag above another before it, whatever its chance
+            .let { list -> store.hierarchies()[facet]?.parentsFirst(list) { it.key } ?: list }
         return ItemFacetCandidates(def, candidates, store.names(facet, candidates.map { it.key }))
     }
 

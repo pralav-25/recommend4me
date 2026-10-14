@@ -25,6 +25,28 @@ class TagHierarchy(private val parents: Map<String, Set<String>>) {
     /** Every tag under [tag], however far. */
     fun descendants(tag: String): Set<String> = walk(tag, children)
 
+    /**
+     * [items] in their order, but every one of them above another before it: a tag above a tag is
+     * shown before it, its own place by its chance kept otherwise — the likeliest first, of a
+     * parent less likely than its child the parent put just before the child. [key] tells an
+     * item's tag.
+     */
+    fun <T> parentsFirst(items: List<T>, key: (T) -> String): List<T> {
+        if (empty || items.size < 2) return items
+        val out = LinkedHashSet<T>()
+        // Being placed: a cycle, which the user's word never makes, would not loop
+        val placing = HashSet<T>()
+        fun place(item: T) {
+            if (item in out || !placing.add(item)) return
+            // Its ancestors among the items first, in the items' order
+            val above = ancestors(key(item))
+            items.filter { key(it) in above }.forEach(::place)
+            out += item
+        }
+        items.forEach(::place)
+        return out.toList()
+    }
+
     private fun walk(from: String, next: Map<String, Set<String>>): Set<String> {
         val out = LinkedHashSet<String>()
         val queue = ArrayDeque(next[from].orEmpty())

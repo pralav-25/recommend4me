@@ -30,6 +30,16 @@ class TagHierarchyTest {
     }
 
     @Test
+    fun `a tag above another is put before it, the order of the rest kept`() {
+        // By chance: the slow burn, the drama, the relations, the romance
+        val ordered = h.parentsFirst(listOf("слоуберн", "драма", "отношения", "романтика")) { it }
+        // The romance and the relations above the slow burn, before it — the relations first, above the romance
+        assertEquals(listOf("отношения", "романтика", "слоуберн", "драма"), ordered)
+        // Tags unrelated keep their order
+        assertEquals(listOf("драма", "флафф"), h.parentsFirst(listOf("драма", "флафф")) { it })
+    }
+
+    @Test
     fun `a has of a tag is a has of every tag above it, for the model to learn`() {
         val expanded = h.expand("tags", listOf(answer("слоуберн", true), answer("драма", false)))
         assertEquals(setOf("слоуберн", "романтика", "отношения"), expanded.filter { it.added }.map { it.key }.toSet())

@@ -750,6 +750,9 @@ class SiteTest {
         val parent = tagsOf("t2").single { it.key == hulls }
         assertTrue(parent.implied == true || (parent.chance ?: 0.0) > 0.5, "hulls of t2 $parent")
         assertTrue(parent.offered != true, "hulls of t2 $parent")
+        // The tag above shown before the tag under it, whatever their chances
+        val order = tagsOf("t2").map { it.key }
+        assertTrue(order.indexOf(hulls) < order.indexOf(other), "the order of t2 $order")
         // A tag of several parents: under cargo too
         tagsApi.relateTags("books", TagRelationRequest(cargo, other, TagRelation.CHILD))
         assertEquals(setOf(hulls, cargo), tagsApi.getTag("books", other).body!!.parents.map { it.key }.toSet())
