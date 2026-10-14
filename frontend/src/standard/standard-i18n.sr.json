@@ -26,6 +26,7 @@
   "error.siteSilent": "Sajt nije odgovorio: {{error}}",
   "error.tagAbove": "Ovaj tag je već iznad — kao podređeni bio bi sopstveni nadređeni",
   "error.tagBelow": "Ovaj tag je već ispod — kao nadređeni bio bi sopstveni podređeni",
+  "error.tagThrough": "Ovi tagovi su povezani preko drugih — veza se menja na tagovima između",
   "error.tagImplied": "Delo ima ovaj tag preko „{{tag}}“, koji ste potvrdili: prvo uklonite „{{tag}}“",
   "error.tagSelf": "Tag ne može da se poveže sam sa sobom",
   "facet.author": "Autor",

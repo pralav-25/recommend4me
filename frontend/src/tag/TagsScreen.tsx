@@ -662,13 +662,20 @@ function Variants({ tag }: { tag: TagInfo }) {
   );
 }
 
-type Said = Exclude<TagRelation, "NONE">;
+/** Above or under this one through other tags: read, never said of the two — said of the tags between. */
+type Through = "DESCENDANT" | "ANCESTOR";
+const THROUGH: Through[] = ["DESCENDANT", "ANCESTOR"];
+
+type Said = Exclude<TagRelation, "NONE" | Through>;
 
 /**
  * What the user may say another tag is to this one: a button of every row, and a filter of the rows
  * said so; the words of each are the keys "Relation.<relation>.label", ".title" and ".filter".
  */
 const RELATIONS: Said[] = ["MERGED", "CHILD", "PARENT", "DIFFERENT"];
+
+/** The filters of the table: of every relation the user says, and one of the tags related through others. */
+type Shown = Record<Said | "THROUGH", boolean>;
 
 /** The quiet after the last answer before the table is read anew. */
 const REFRESH_AFTER_MS = 2000;
@@ -702,9 +709,9 @@ function rowKey(tag: string, site?: TagVariantInfo): string {
  */
 function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   const { t } = useTranslation("tag");
-  const [stored, setShown] = usePref<Partial<Record<Said, boolean>>>("tags.similar.shown", {});
-  const shown: Record<Said, boolean> = { MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true, ...stored };
-  const hidden = RELATIONS.filter((r) => !shown[r]);
+  const [stored, setShown] = usePref<Partial<Shown>>("tags.similar.shown", {});
+  const shown: Shown = { MERGED: true, CHILD: true, PARENT: true, DIFFERENT: true, THROUGH: true, ...stored };
+  const hidden: TagRelation[] = [...RELATIONS.filter((r) => !shown[r]), ...(shown.THROUGH ? [] : THROUGH)];
   const [input, setInput] = useState("");
   const [query, setQuery] = useState("");
   useEffect(() => {
@@ -733,7 +740,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
   );
   const queryClient = useQueryClient();
   /** A page of the table as the filters and the search are now, read from [offset]. */
-  const readPage = async (offset: number, limit: number, asked: { query: string; hidden: Said[] }) =>
+  const readPage = async (offset: number, limit: number, asked: { query: string; hidden: TagRelation[] }) =>
     unwrap(
       await api.GET("/api/types/{type}/tags/similar", {
         params: {
@@ -878,6 +885,10 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
             {t(`Relation.${r}.filter`)}
           </label>
         ))}
+        <label className="flex items-center gap-1" title={t("Similar.throughTitle")}>
+          <input type="checkbox" checked={shown.THROUGH} onChange={() => setShown({ ...shown, THROUGH: !shown.THROUGH })} className="size-3.5" />
+          {t("Similar.through")}
+        </label>
         {(locked || similar.isFetching) && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
       </div>
       {similar.isLoading && (
@@ -936,6 +947,12 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                 {" · "}
                 <span title={t("Similar.similarity")}>{Math.round(similarity * 100)}%</span>
               </span>
+              {(THROUGH as TagRelation[]).includes(relation) ? (
+                // Related through other tags: said of the tags between, not here
+                <span className="text-xs text-muted-foreground" title={t("Similar.throughTitle")}>
+                  {t(`Similar.${relation as Through}`)}
+                </span>
+              ) : (
               <ButtonGroup className="w-full sm:w-fit">
                 {RELATIONS.map((r) => {
                   const pressed = relation === r;
@@ -966,6 +983,7 @@ function Similar({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
                   );
                 })}
               </ButtonGroup>
+              )}
             </li>
             );
           })}

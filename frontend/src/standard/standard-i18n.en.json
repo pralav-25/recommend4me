@@ -26,6 +26,7 @@
   "error.siteSilent": "The site did not answer: {{error}}",
   "error.tagAbove": "This tag is above already — as a child tag it would be its own parent",
   "error.tagBelow": "This tag is below already — as a parent tag it would be its own child",
+  "error.tagThrough": "These tags are related through others — the link is changed on the tags between",
   "error.tagImplied": "The work has this tag through «{{tag}}», which you confirmed: remove «{{tag}}» first",
   "error.tagSelf": "A tag cannot be linked with itself",
   "facet.author": "Author",

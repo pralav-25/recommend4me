@@ -3812,8 +3812,9 @@ components:
       type: string
       description: |
         What a tag is to another: NONE; MERGED - one tag (merged into it; of a site's tag, bound to it);
-        CHILD - under it; PARENT - above it; DIFFERENT - a different tag
-      enum: [NONE, MERGED, CHILD, PARENT, DIFFERENT]
+        CHILD - under it; PARENT - above it; DIFFERENT - a different tag; DESCENDANT - under it through other tags,
+        ANCESTOR - above it through others: read only, never said of the two
+      enum: [NONE, MERGED, CHILD, PARENT, DIFFERENT, DESCENDANT, ANCESTOR]
 
     TagRelationRequest:
       type: object

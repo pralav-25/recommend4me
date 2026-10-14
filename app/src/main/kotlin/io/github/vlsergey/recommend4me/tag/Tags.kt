@@ -135,6 +135,12 @@ enum class TagRelation {
 
     /** A different tag, not offered as alike. */
     DIFFERENT,
+
+    /** Under it through other tags: read only — said of the tags between. */
+    DESCENDANT,
+
+    /** Above it through other tags: read only — said of the tags between. */
+    ANCESTOR,
 }
 
 /**
@@ -568,11 +574,15 @@ class Tags(
         val asked = query?.trim()?.takeIf { it.isNotEmpty() }
         val target = if (asked == null) meaning.direction(own.variants.keys, own.key) else meaning.ofText(asked)
         fun likeness(sites: Collection<SiteTagRef>, key: String? = null): Double = meaning.likeness(target, sites, key)
+        val descendants = n.hierarchy.descendants(tag)
+        val ancestors = n.hierarchy.ancestors(tag)
         fun relation(key: String): TagRelation {
             val other = TagRepository.idOf(key)!!
             return when {
                 key in n.hierarchy.childrenOf(tag) -> TagRelation.CHILD
                 key in n.hierarchy.parentsOf(tag) -> TagRelation.PARENT
+                key in descendants -> TagRelation.DESCENDANT
+                key in ancestors -> TagRelation.ANCESTOR
                 TagRepository.pair(own.id, other) in distinct -> TagRelation.DIFFERENT
                 else -> TagRelation.NONE
             }
@@ -695,6 +705,9 @@ class Tags(
      */
     fun relate(type: TypeStore, facet: String, tag: String, other: String, relation: TagRelation): NamedTag? {
         if (tag == other) throw Refusal.TAG_SELF.refuse(HttpStatus.BAD_REQUEST, "The tag $tag is not related to itself")
+        if (relation == TagRelation.DESCENDANT || relation == TagRelation.ANCESTOR) {
+            throw Refusal.TAG_THROUGH.refuse(HttpStatus.BAD_REQUEST, "$relation is read, never said: said of the tags between")
+        }
         val a = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
         val b = TagRepository.idOf(other)?.takeIf(type.tags::exists) ?: return null
         val before = stats(type, facet)
@@ -721,7 +734,7 @@ class Tags(
                 type.tags.setParent(a, b, true, now)
             }
             TagRelation.DIFFERENT -> type.tags.setDistinct(a, b, true, now)
-            TagRelation.NONE -> Unit
+            TagRelation.NONE, TagRelation.DESCENDANT, TagRelation.ANCESTOR -> Unit
         }
         log.info("{}: tag {} is {} to {}", type.id, other, relation, tag)
         changed(type, facet, before[tag]?.items.orEmpty() + before[other]?.items.orEmpty())
