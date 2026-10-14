@@ -28,7 +28,13 @@ import java.time.format.DateTimeFormatter
  * Лонгботтом" of the fans is found as an alias of "Невилл Долгопупс" of the translation — and the
  * labels and descriptions are answered in each of them that has them.
  */
-class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCatalogue {
+class WikidataCatalogue(
+    private val json: JsonMapper,
+    /** The API's address: Wikidata's own, another only in the tests. */
+    private val api: String = API,
+    /** The query service's address. */
+    private val sparqlUrl: String = SPARQL,
+) : UniverseCatalogue, TagCatalogue {
     override val id = "wikidata"
 
     /**
@@ -39,7 +45,7 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCa
         val asked = ITEM_IN.find(text.trim())?.value
         if (asked != null) return entries(listOf(asked), languages)
         val found = languages.flatMap { lang ->
-            get("$API?action=wbsearchentities&type=item&limit=$SEARCHED&format=json&language=$lang&uselang=$lang&search=${enc(text.trim())}")
+            get("$api?action=wbsearchentities&type=item&limit=$SEARCHED&format=json&language=$lang&uselang=$lang&search=${enc(text.trim())}")
                 .path("search").mapNotNull { it.path("id").asString(null) }
         }
         return entries(found.distinct(), languages)
@@ -50,7 +56,7 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCa
         val items = ids.filter { ITEM.matches(it) }.distinct()
         return items.chunked(ENTITIES_ASKED).flatMap { chunk ->
             val entities = get(
-                "$API?action=wbgetentities&props=labels%7Caliases%7Cdescriptions&format=json&ids=${chunk.joinToString("%7C")}&languages=${languages.joinToString("%7C")}",
+                "$api?action=wbgetentities&props=labels%7Caliases%7Cdescriptions&format=json&ids=${chunk.joinToString("%7C")}&languages=${languages.joinToString("%7C")}",
             ).path("entities")
             chunk.mapNotNull { id ->
                 val e = entities.path(id)
@@ -72,7 +78,7 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCa
     override fun above(ids: Collection<String>): Map<String, List<String>> {
         val items = ids.filter { ITEM.matches(it) }.distinct()
         return items.chunked(ENTITIES_ASKED).flatMap { chunk ->
-            val entities = get("$API?action=wbgetentities&props=claims&format=json&ids=${chunk.joinToString("%7C")}").path("entities")
+            val entities = get("$api?action=wbgetentities&props=claims&format=json&ids=${chunk.joinToString("%7C")}").path("entities")
             chunk.mapNotNull { id ->
                 val claims = entities.path(id).path("claims")
                 val parents = ABOVE.flatMap { p ->
@@ -93,10 +99,10 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCa
      */
     override fun findUniverses(name: String, languages: List<String>): List<UniverseEntry> {
         val byName = languages.flatMap { lang ->
-            get("$API?action=wbsearchentities&type=item&limit=$SEARCHED&format=json&language=$lang&uselang=$lang&search=${enc(name)}")
+            get("$api?action=wbsearchentities&type=item&limit=$SEARCHED&format=json&language=$lang&uselang=$lang&search=${enc(name)}")
                 .path("search").mapNotNull { it.path("id").asString(null) }
         }
-        val byText = get("$API?action=query&list=search&srnamespace=0&srlimit=$SEARCHED&format=json&srsearch=${enc(name)}")
+        val byText = get("$api?action=query&list=search&srnamespace=0&srlimit=$SEARCHED&format=json&srsearch=${enc(name)}")
             .path("query").path("search").mapNotNull { it.path("title").asString(null) }
         return universeEntries((byName + byText).distinct(), languages)
     }
@@ -226,7 +232,7 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCa
 
     /** The rows a query of the query service answers; sent in the body, as a list of hundreds of items does not fit an address. */
     private fun sparql(query: String): List<JsonNode> {
-        val request = HttpRequest.newBuilder(URI.create(SPARQL)).timeout(TIMEOUT).header("User-Agent", USER_AGENT)
+        val request = HttpRequest.newBuilder(URI.create(sparqlUrl)).timeout(TIMEOUT).header("User-Agent", USER_AGENT)
             .header("Accept", "application/sparql-results+json").header("Content-Type", "application/x-www-form-urlencoded")
             .POST(HttpRequest.BodyPublishers.ofString("query=${enc(query)}")).build()
         return json.readTree(send(request)).path("results").path("bindings").toList()
@@ -259,7 +265,7 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCa
         val items = ids.filter { ITEM.matches(it) }
         if (items.isEmpty()) return emptyList()
         val entities = get(
-            "$API?action=wbgetentities&props=labels%7Cdescriptions&format=json&ids=${items.joinToString("%7C")}&languages=${languages.joinToString("%7C")}",
+            "$api?action=wbgetentities&props=labels%7Cdescriptions&format=json&ids=${items.joinToString("%7C")}&languages=${languages.joinToString("%7C")}",
         ).path("entities")
         return items.mapNotNull { id ->
             val e = entities.path(id)

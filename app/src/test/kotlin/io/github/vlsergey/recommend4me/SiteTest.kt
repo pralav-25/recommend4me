@@ -657,6 +657,13 @@ class SiteTest {
             stores.source("site")!!.drafts.ofItems(listOf("g1")).getValue("g1").map { it.facet to it.key }.toSet(),
         )
 
+        // The site's page changes: the drafts follow it — the pilot no more on the line, no more drafted
+        capture("g3|Wingmen third|space|They fly a third time|Space Pilot & Captain")
+        assertEquals("Space Pilot", valueOf("g3", "characters", "fake:C1")?.draftedFrom)
+        capture("g3|Wingmen third|space|They fly a third time|Captain & Navigator")
+        assertNull(valueOf("g3", "characters", "fake:C1")?.draftedFrom)
+        assertTrue(stores.source("site")!!.drafts.ofItems(listOf("g3")).values.all { it.isEmpty() })
+
         // The user takes the pilot away: taken away it stays, whatever the dictionary does
         corrections.correctFacet("site", "g1", FacetCorrection(facet = "characters", added = false, key = "fake:C1"))
         universes.addUniverse("books", UniverseRef("fake", "U2"))
