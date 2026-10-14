@@ -89,6 +89,9 @@ enum class HierarchyKind {
 
     /** A new tag of [HierarchyOffer.entry] above the tags. */
     NEW_PARENT,
+
+    /** The tag [HierarchyOffer.existing], of the entry's name, bound to it and put above the tags. */
+    BIND_PARENT,
 }
 
 /**
@@ -98,6 +101,8 @@ enum class HierarchyKind {
  */
 class HierarchyOffer(
     val kind: HierarchyKind, val catalogue: String, val tags: List<String>, val entry: TagEntryRef?, val way: List<TagEntryRef>, val graded: Int, val levels: Int,
+    /** Of [HierarchyKind.BIND_PARENT], the tag of the entry's name to bind and put above. */
+    val existing: String? = null,
 )
 
 /** The entry of a catalogue a tag is bound to, as the catalogue gave it when last asked. */
@@ -420,11 +425,26 @@ class Tags(
                 levels.merge(precise, nearest - 1, ::minOf)
             }
         }
+        // A tag of the entry's label already — of a site, the user's — bound to it not: that tag offered above, not a new one
+        val texts = type.tags.keptEntries(under.keys)
+        val byName = HashMap<String, MutableSet<String>>()
+        if (under.isNotEmpty()) n.stats.values.forEach { t -> (n.allNames(t) + n.shown(t.key)).forEach { byName.getOrPut(it.trim().lowercase()) { HashSet() } += t.key } }
         under.forEach { (ref, all) ->
             // Above the roots of the user's trees: a tag under another of them is under the new one through it
-            val tags = all.filter { t -> n.hierarchy.ancestors(t).none { it in all } }
-            if (tags.size < 2) return@forEach
-            val children = tags.sortedByDescending { graded(it).size }
+            val roots = all.filter { t -> n.hierarchy.ancestors(t).none { it in all } }
+            // Its labels alone: an alias is too loose — "action" is one of "activity", and no "Экшн" stands for it
+            val names = texts[ref]?.labels?.values.orEmpty().map { it.trim().lowercase() }
+            val named = names.flatMap { byName[it].orEmpty() }.distinct().filter { it !in all }.maxByOrNull { n.stats[it]?.items?.size ?: 0 }
+            if (named != null) {
+                val related = n.hierarchy.ancestors(named) + n.hierarchy.descendants(named)
+                val tags = roots.filter { it !in related }.sortedByDescending { graded(it).size }
+                if (tags.isEmpty()) return@forEach
+                val gets = all.flatMap(::graded).toSet() - graded(named)
+                out += HierarchyOffer(HierarchyKind.BIND_PARENT, ref.catalogue, tags, ref, listOf(ref), gets.size, levels.getValue(ref), named)
+                return@forEach
+            }
+            if (roots.size < 2) return@forEach
+            val children = roots.sortedByDescending { graded(it).size }
             out += HierarchyOffer(HierarchyKind.NEW_PARENT, ref.catalogue, children, ref, listOf(ref), all.flatMap(::graded).toSet().size, levels.getValue(ref))
         }
         log.info("{}: {} offers of the tags' graph worked out in {} ms", type.id, out.size, System.currentTimeMillis() - started)
@@ -433,31 +453,32 @@ class Tags(
         // A tag in one new tag alone, the most precise: one sharing a tag with a nearer is left till that is said
         val placed = HashSet<String>()
         return sorted.filter { o ->
-            if (o.kind != HierarchyKind.NEW_PARENT) return@filter true
+            if (o.kind != HierarchyKind.NEW_PARENT && o.kind != HierarchyKind.BIND_PARENT) return@filter true
             (o.tags.none { it in placed }).also { if (it) placed += o.tags }
         }
     }
 
     /** The names of the tags of [offers] and their entries as kept: of one reading. */
     fun namesOf(type: TypeStore, offers: List<HierarchyOffer>): Pair<Map<String, String>, Map<TagEntryRef, TagEntry>> =
-        type.tags.shown(offers.flatMap { it.tags }.toSet()) to type.tags.keptEntries(offers.flatMap { it.way }.toSet())
+        type.tags.shown(offers.flatMap { it.tags + listOfNotNull(it.existing) }.toSet()) to type.tags.keptEntries(offers.flatMap { it.way }.toSet())
 
     /**
-     * A new tag bound to the entry [entry] of [catalogue] — named by its label — put above the tags
-     * [children]. Returns it.
+     * A new tag bound to the entry [entry] of [catalogue] — named by its label — or the tag [existing]
+     * bound to it besides its own, put above the tags [children]. Returns it.
      */
-    fun createAbove(type: TypeStore, facet: String, catalogue: String, entry: String, children: List<String>): NamedTag? {
+    fun createAbove(type: TypeStore, facet: String, catalogue: String, entry: String, children: List<String>, existing: String? = null): NamedTag? {
         val ids = children.map { TagRepository.idOf(it)?.takeIf(type.tags::exists) ?: return null }
+        val above = existing?.let { TagRepository.idOf(it)?.takeIf(type.tags::exists) ?: return null }
         val source = plugins.tagCatalogues.firstOrNull { it.id == catalogue } ?: throw NoSuchElementException("No catalogue of tags $catalogue")
         val read = source.entries(listOf(entry), languages).firstOrNull() ?: throw NoSuchElementException("$catalogue has no $entry")
         val before = stats(type, facet)
         val now = Instant.now()
-        val id = type.tags.create()
+        val id = above ?: type.tags.create()
         type.tags.keepEntry(catalogue, read, now)
         type.tags.bindEntry(id, TagEntryRef(catalogue, read.id), true, now)
         ids.forEach { type.tags.setParent(it, id, true, now) }
-        log.info("{}: tag {} made of {}:{} above {}", type.id, id, catalogue, read.id, children)
-        changed(type, facet, children.flatMap { before[it]?.items.orEmpty() })
+        log.info("{}: tag {} {} {}:{} above {}", type.id, id, if (above == null) "made of" else "bound to", catalogue, read.id, children)
+        changed(type, facet, children.flatMap { before[it]?.items.orEmpty() } + before[TagRepository.key(id)]?.items.orEmpty())
         return one(type, facet, TagRepository.key(id))
     }
 

@@ -121,6 +121,7 @@ class TagsController(
                     path = o.way.map(::label),
                     graded = o.graded,
                     levels = o.levels,
+                    existing = o.existing?.let { TagRef(it, names[it] ?: it) },
                     entry = o.entry?.entry,
                     url = o.entry?.let { kept[it]?.url },
                 )
@@ -132,7 +133,7 @@ class TagsController(
         val (t, facet) = of(type)
         val r = tagAboveRequest
         return try {
-            tags.createAbove(t, facet, r.catalogue, r.entry, r.children)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
+            tags.createAbove(t, facet, r.catalogue, r.entry, r.children, r.tag)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
         } catch (e: NoSuchElementException) {
             ResponseEntity.notFound().build()
         }

@@ -793,6 +793,16 @@ class SiteTest {
         tagsApi.relateTags("books", TagRelationRequest(craft.key, hulls, TagRelation.NONE))
         tagsApi.relateTags("books", TagRelationRequest(craft.key, cargo, TagRelation.NONE))
         tagsApi.bindTagEntry("books", TagEntryRequest(craft.key, "fake", "E3", false))
+        // A tag of the entry's name there already, bound to it not: that tag offered above both, not a new one
+        tagsApi.nameTag("books", TagNameRequest(craft.key, "Аппарат"))
+        val bind = tagsApi.listHierarchyOffers("books").body!!.single()
+        assertEquals(Triple(HierarchyOfferKind.BIND_PARENT, craft.key, setOf(hulls, cargo)), Triple(bind.kind, bind.existing?.key, bind.tags.map { it.key }.toSet()))
+        val boundAbove = tagsApi.createTagAbove("books", TagAboveRequest("fake", "E3", bind.tags.map { it.key }, craft.key)).body!!
+        assertEquals(craft.key to listOf("E3"), boundAbove.key to boundAbove.catalogueEntries.map { it.entry })
+        assertEquals(setOf(hulls, cargo), boundAbove.children.map { it.key }.toSet())
+        tagsApi.relateTags("books", TagRelationRequest(craft.key, hulls, TagRelation.NONE))
+        tagsApi.relateTags("books", TagRelationRequest(craft.key, cargo, TagRelation.NONE))
+        tagsApi.bindTagEntry("books", TagEntryRequest(craft.key, "fake", "E3", false))
         tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1", false))
         tagsApi.bindTagEntry("books", TagEntryRequest(cargo, "fake", "E4", false))
 

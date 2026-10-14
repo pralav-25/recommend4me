@@ -208,7 +208,13 @@ function HierarchyOffers({ type }: { type: ContentTypeInfo }) {
     const [first, second] = o.tags;
     if (o.kind === "LINK") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "PARENT" } }));
     else if (o.kind === "MERGE") unwrap(await api.PUT("/api/types/{type}/tags/relation", { ...path, body: { tag: first.key, other: second.key, relation: "MERGED" } }));
-    else unwrap(await api.POST("/api/types/{type}/tags/above", { ...path, body: { catalogue: o.catalogue, entry: o.entry!, children: o.tags.map((r) => r.key) } }));
+    else
+      unwrap(
+        await api.POST("/api/types/{type}/tags/above", {
+          ...path,
+          body: { catalogue: o.catalogue, entry: o.entry!, children: o.tags.map((r) => r.key), tag: o.existing?.key },
+        }),
+      );
     await changed();
   };
   const list = offers.data ?? [];
@@ -238,6 +244,21 @@ function HierarchyOffers({ type }: { type: ContentTypeInfo }) {
                   {o.kind === "MERGE" && (
                     <>
                       <TagLink tag={o.tags[1]} /> {t("Hierarchy.into")} <TagLink tag={o.tags[0]} />
+                    </>
+                  )}
+                  {o.kind === "BIND_PARENT" && (
+                    <>
+                      <TagLink tag={o.existing!} /> {t("Hierarchy.as")}{" "}
+                      <a href={o.url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+                        «{o.path[0]}» ({o.entry})
+                      </a>{" "}
+                      {t("Hierarchy.above")}{" "}
+                      {o.tags.map((r, i) => (
+                        <span key={r.key}>
+                          {i > 0 && ", "}
+                          <TagLink tag={r} />
+                        </span>
+                      ))}
                     </>
                   )}
                   {o.kind === "NEW_PARENT" && (

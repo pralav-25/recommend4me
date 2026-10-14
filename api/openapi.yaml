@@ -1263,7 +1263,7 @@ paths:
     post:
       tags: [tags]
       operationId: createTagAbove
-      summary: A new tag bound to an entry of a catalogue - named by its label - put above the tags given
+      summary: A new tag bound to an entry of a catalogue - named by its label - or a tag there already, put above the tags given
       parameters:
         - $ref: '#/components/parameters/Type'
       requestBody:
@@ -3666,8 +3666,10 @@ components:
 
     HierarchyOfferKind:
       type: string
-      description: LINK - the first tag under the second; MERGE - the two tags one; NEW_PARENT - a new tag of the entry above the tags
-      enum: [LINK, MERGE, NEW_PARENT]
+      description: >
+        LINK - the first tag under the second; MERGE - the two tags one; NEW_PARENT - a new tag of the entry above the
+        tags; BIND_PARENT - the tag of the entry's name (existing) bound to it and put above the tags
+      enum: [LINK, MERGE, NEW_PARENT, BIND_PARENT]
 
     HierarchyOffer:
       type: object
@@ -3700,6 +3702,8 @@ components:
             have not the parent, which have not the child either; MERGE - of the smaller of the two; NEW_PARENT - of any
             of the tags, which get the new one
 
+        existing:
+          $ref: '#/components/schemas/TagRef'
         levels:
           type: integer
           description: >
@@ -3718,6 +3722,9 @@ components:
           type: array
           items:
             type: string
+        tag:
+          type: string
+          description: A tag there already, bound to the entry besides its own and put above - none, a new tag made
 
     TagDescription:
       type: object
