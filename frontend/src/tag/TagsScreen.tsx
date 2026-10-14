@@ -79,9 +79,9 @@ function SiteNames({ tag, className }: { tag: TagInfo; className?: string }) {
   );
 }
 
-/** The sites a tag is used on, each once. */
+/** The sites a tag is used on, each once, and after them the catalogues it is bound to an entry of: shown as sites. */
 function sitesOf(tag: TagInfo): string[] {
-  return [...new Set(tag.variants.map((v) => v.source))];
+  return [...new Set([...tag.variants.map((v) => v.source), ...tag.catalogueEntries.map((e) => e.catalogue)])];
 }
 
 /**
