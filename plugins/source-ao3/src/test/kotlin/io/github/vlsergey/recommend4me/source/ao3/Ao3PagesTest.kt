@@ -4,6 +4,7 @@ import io.github.vlsergey.recommend4me.contenttype.Books
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.MemorySourceContext
 import io.github.vlsergey.recommend4me.universe.UniverseFacets
+import org.jsoup.Jsoup
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -147,5 +148,22 @@ class Ao3PagesTest {
         val other = MemorySourceContext()
         source.capture(CapturedPage("https://archiveofourown.org/works/$saints?view_full_work=true", page("full.html"), now), other)
         assertTrue(other.signalValues.isEmpty())
+    }
+
+    @Test
+    fun `a summary whose text is not found is left as it was, a summary the work has not is none`() {
+        val context = MemorySourceContext()
+        val url = "https://archiveofourown.org/works/$saints?view_full_work=true"
+        capture(context, url, "full.html")
+        val summary = context.texts.getValue(saints)["annotation"]
+        assertTrue(!summary.isNullOrBlank())
+
+        val otherMarkup = Jsoup.parse(page("full.html")).also { it.select(".preface .summary blockquote").remove() }.outerHtml()
+        source.capture(CapturedPage(url, otherMarkup, now), context)
+        assertEquals(summary, context.texts.getValue(saints)["annotation"])
+
+        val noSummary = Jsoup.parse(page("full.html")).also { it.select(".preface .summary").remove() }.outerHtml()
+        source.capture(CapturedPage(url, noSummary, now), context)
+        assertNull(context.texts.getValue(saints)["annotation"])
     }
 }

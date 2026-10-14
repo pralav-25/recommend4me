@@ -159,10 +159,16 @@ class FicbookPages(private val context: SourceContext) {
 
     // --- A work's page ---
 
+    /**
+     * A work's own page: its header ("hat") and the blocks of it, the table of contents. A page
+     * without the header — an error page, a changed markup — says nothing of the work, and nothing
+     * is written: what it does not show is not known to be gone. Of the header, a block it has not
+     * is a thing the work has not.
+     */
     private fun work(doc: Document, id: String, now: Instant): String? {
         val title = doc.selectFirst("h1.heading, h1[itemprop=name]")?.text()?.trim()?.ifEmpty { null } ?: return null
-        val hat = doc.selectFirst(".fanfic-hat")
-        val blocks = hat?.select(".description > .mb-10").orEmpty().associate { block ->
+        val hat = doc.selectFirst(".fanfic-hat") ?: return null
+        val blocks = hat.select(".description > .mb-10").associate { block ->
             block.selectFirst("strong")?.text()?.trim()?.removeSuffix(":").orEmpty() to block.selectFirst("strong + div")
         }
         val parts = doc.select("ul.list-of-fanfic-parts li.part").mapIndexedNotNull { i, li ->
@@ -174,12 +180,13 @@ class FicbookPages(private val context: SourceContext) {
         items.upsert(ItemHead(id, "$BASE/readfic/$id", title, updatedAt = parts.mapNotNull { it.publishedAt }.maxOrNull()), now)
         badges(id, doc.selectFirst("section.fanfic-badges"))
         doc.selectFirst("section.fanfic-badges button span")?.text()?.let(PageText::number)?.let { items.setNumbers(id, mapOf(LIKES to it.toDouble())) }
-        val authors = hat?.select("[itemprop=author]").orEmpty().mapNotNull { a ->
+        val authors = hat.select("[itemprop=author]").mapNotNull { a ->
             AUTHOR_ID.find(a.attr("href"))?.groupValues?.get(1)?.let { FacetValue(it, a.text().trim()) }
         }
         if (authors.isNotEmpty()) items.setFacet(id, AUTHOR, authors)
         described(id, blocks.filterKeys { it != "Автор" })
-        blocks["Метки"]?.select("a.tag")?.let { tags(id, it) }
+        // The block of tags with no tag found in it: its markup changed, not the work's tags gone
+        blocks["Метки"]?.let { block -> block.select("a.tag").takeIf { it.isNotEmpty() || block.text().isBlank() }?.let { tags(id, it) } }
         items.setTexts(
             id,
             mapOf(

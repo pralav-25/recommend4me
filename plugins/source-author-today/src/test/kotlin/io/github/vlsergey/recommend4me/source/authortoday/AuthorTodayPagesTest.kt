@@ -2,6 +2,7 @@ package io.github.vlsergey.recommend4me.source.authortoday
 
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.MemorySourceContext
+import org.jsoup.Jsoup
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -120,5 +121,20 @@ class AuthorTodayPagesTest {
         capture(context, "https://author.today/work/661269", html.replace("state: 'Reading'", "state: 'Finished'"))
         assertEquals("finished", context.signalValues["661269" to "shelf"])
         assertEquals("yes", context.signalValues["661269" to "read"])
+    }
+
+    @Test
+    fun `a work's page without the block of tags or the tab of texts leaves them as they were`() {
+        val context = MemorySourceContext()
+        val url = "https://author.today/work/661269"
+        capture(context, url, page("work-661269.html"))
+        val tags = context.facets.getValue("661269").getValue("tag")
+        val texts = context.texts.getValue("661269").toMap()
+        assertTrue(tags.isNotEmpty() && texts.isNotEmpty())
+
+        val changed = Jsoup.parse(page("work-661269.html")).also { it.select(".book-meta-panel .tags, #tab-annotation").remove() }.outerHtml()
+        assertEquals(listOf("661269"), capture(context, url, changed))
+        assertEquals(tags, context.facets.getValue("661269").getValue("tag"))
+        assertEquals(texts, context.texts.getValue("661269").toMap())
     }
 }

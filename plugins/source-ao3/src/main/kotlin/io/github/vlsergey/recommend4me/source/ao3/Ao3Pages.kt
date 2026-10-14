@@ -121,12 +121,15 @@ class Ao3Pages(private val context: SourceContext) {
         meta.selectFirst("dd.series span.position a[href^=/series/]")?.let { series(id, it) }
         stats?.let { stats(id, it) }
         meta.selectFirst("dd.language")?.let(::language)?.let { items.setFacet(id, LANGUAGE, listOf(it)) }
+        // A section of the preface the work has not: none; one whose text is not found: its markup changed, left as it is
+        fun text(section: String): Pair<Boolean, String?> {
+            val found = preface.selectFirst(section) ?: return true to null
+            return found.selectFirst("blockquote.userstuff")?.let { true to PageText.of(it) } ?: (false to null)
+        }
         items.setTexts(
             id,
-            mapOf(
-                ANNOTATION to preface.selectFirst(".summary blockquote.userstuff")?.let(PageText::of),
-                NOTES to preface.selectFirst(".notes blockquote.userstuff")?.let(PageText::of),
-            ),
+            listOf(ANNOTATION to text(".summary"), NOTES to text(".notes"))
+                .filter { (_, read) -> read.first }.associate { (key, read) -> key to read.second },
         )
         marks(doc, id)
         chapters(doc, id, title)

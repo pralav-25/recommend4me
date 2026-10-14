@@ -2,6 +2,7 @@ package io.github.vlsergey.recommend4me.source.ficbook
 
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.MemorySourceContext
+import org.jsoup.Jsoup
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -136,5 +137,28 @@ class FicbookPagesTest {
             "Работа сосредоточена на эмоциональных и/или физических страданиях одних персонажей и заботе о них со стороны других персонажей.",
             context.facetDescriptions.getValue("tag")["hurt/comfort"],
         )
+    }
+
+    @Test
+    fun `a work's page without its header changes nothing, a block of tags of a changed markup leaves the tags`() {
+        val context = MemorySourceContext()
+        val url = "https://ficbook.net/readfic/$work"
+        capture(context, url, "readfic.html")
+        val title = context.heads.getValue(work).title
+        val texts = context.texts.getValue(work).toMap()
+        val tags = context.facets.getValue(work).getValue("tag")
+        assertTrue(texts.isNotEmpty() && tags.isNotEmpty())
+
+        // An error page with a heading: no word of the work
+        val noHeader = Jsoup.parse(page("readfic.html")).also { it.select(".fanfic-hat").remove() }.outerHtml()
+        assertEquals(emptyList(), source.capture(CapturedPage(url, noHeader, now), context))
+        assertEquals(title, context.heads.getValue(work).title)
+        assertEquals(texts, context.texts.getValue(work).toMap())
+        assertEquals(tags, context.facets.getValue(work).getValue("tag"))
+
+        // The block of tags there, its links of another markup: the tags are not taken away
+        val otherTags = Jsoup.parse(page("readfic.html")).also { d -> d.select("a.tag").forEach { it.tagName("span").removeClass("tag") } }.outerHtml()
+        source.capture(CapturedPage(url, otherTags, now), context)
+        assertEquals(tags, context.facets.getValue(work).getValue("tag"))
     }
 }

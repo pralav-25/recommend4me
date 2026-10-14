@@ -57,7 +57,14 @@ interface SiteSignals {
     fun withSignal(signal: String): Map<String, String>
 }
 
-/** The generic data of a source's items, written by the source, read by the application. */
+/**
+ * The generic data of a source's items, written by the source, read by the application.
+ *
+ * A PAGE SAYS ONLY WHAT IT SHOWS: a parser writes what it found, and an empty list, a null or a
+ * blank only for what the page shows to be empty — a block the work's header has not. A block it
+ * could not find, a page that is not the work's (an error page answered with 200, a changed
+ * markup), says nothing: nothing of it is written, as nothing is known to be gone.
+ */
 interface ItemStore {
     /** Creates or updates an item; true when it is new or its version changed. */
     fun upsert(item: ItemHead, now: Instant): Boolean

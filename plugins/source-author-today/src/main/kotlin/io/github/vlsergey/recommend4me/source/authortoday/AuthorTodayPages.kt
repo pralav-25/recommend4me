@@ -173,10 +173,13 @@ class AuthorTodayPages(private val context: SourceContext) {
         writeGenres(id, form, genres)
         status(panel)?.let { items.setFacet(id, STATUS, listOf(it)) }
         series(panel)?.let { items.setFacet(id, SERIES, listOf(it)) }
-        items.setFacet(id, TAG, panel.select(".tags a").map { a ->
-            val name = a.attr("title").ifBlank { a.text() }.trim()
-            FacetValue(name.lowercase(), name)
-        })
+        // The tags of the block of them; no block — a changed markup — is no word that the work has none
+        panel.selectFirst(".tags")?.let { block ->
+            items.setFacet(id, TAG, block.select("a").map { a ->
+                val name = a.attr("title").ifBlank { a.text() }.trim()
+                FacetValue(name.lowercase(), name)
+            })
+        }
         val like = LIKE_BUTTON.find(html)
         items.setNumbers(
             id,
@@ -189,15 +192,18 @@ class AuthorTodayPages(private val context: SourceContext) {
                 panel.selectFirst(".btn-reward")?.text()?.let(PageText::number)?.let { AWARDS to it.toDouble() },
             ).toMap(),
         )
-        val annotation = doc.select("#tab-annotation .annotation .rich-content")
-        val notes = annotation.firstOrNull { it.selectFirst("p.text-primary")?.text()?.startsWith("Примечания") == true }
-        items.setTexts(
-            id,
-            mapOf(
-                ANNOTATION to annotation.firstOrNull { it != notes }?.let(PageText::of),
-                NOTES to notes?.let { n -> PageText.of(n, "p.text-primary, script, style") },
-            ),
-        )
+        // The texts of the tab of them; no tab — a changed markup — is no word that the work has none
+        if (doc.selectFirst("#tab-annotation") != null) {
+            val annotation = doc.select("#tab-annotation .annotation .rich-content")
+            val notes = annotation.firstOrNull { it.selectFirst("p.text-primary")?.text()?.startsWith("Примечания") == true }
+            items.setTexts(
+                id,
+                mapOf(
+                    ANNOTATION to annotation.firstOrNull { it != notes }?.let(PageText::of),
+                    NOTES to notes?.let { n -> PageText.of(n, "p.text-primary, script, style") },
+                ),
+            )
+        }
         val parts = doc.select("#tab-chapters .table-of-content li").mapIndexedNotNull { i, li ->
             val a = li.selectFirst("a[href^=/reader/]") ?: return@mapIndexedNotNull null
             val partId = READER.matchEntire(a.attr("href").substringBefore('?'))?.groupValues?.get(2) ?: return@mapIndexedNotNull null
