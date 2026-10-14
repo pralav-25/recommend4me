@@ -275,7 +275,9 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         // after the change that made it other, which was a newer one itself
         if (!current && only != null) changed(store.id, newer = false)
         val refitted = !current && only == null
-        val known = if (only == null) store.suggestions.fingerprints(facet.key) else mapOf(only to store.suggestions.fingerprint(only, facet.key))
+        // The fingerprints the chances were made of, read before the scoring: of the whole facet, what the writing compares with
+        val fingerprintsRead = if (only == null) store.suggestions.fingerprints(facet.key) else null
+        val known = fingerprintsRead ?: mapOf(only to store.suggestions.fingerprint(only!!, facet.key))
         val rows = data.ids.indices.filter { i ->
             val id = data.ids[i]
             refitted || ((only == null || id == only) && known[id] != data.fingerprints[i])
@@ -309,7 +311,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             }
             val writeAt = System.currentTimeMillis()
             keeping += writeAt - keptAt
-            store.suggestions.replace(facet.key, made, out, now)
+            // Of the whole facet: a work whose chances an answer made since [known] was read keeps those
+            store.suggestions.replace(facet.key, made, out, now, expected = fingerprintsRead)
             writing += System.currentTimeMillis() - writeAt
         }
         if (changedIds.isNotEmpty()) events.publishEvent(FacetChancesChanged(store.id, changedIds))

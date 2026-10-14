@@ -72,18 +72,23 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
      * facet may write the same item together, and the second one's insert would meet the first one's
      * rows, which its delete did not see.
      */
-    fun replace(facet: String, made: Map<String, Long>, chances: List<Chance>, now: Instant) {
+    fun replace(facet: String, made: Map<String, Long>, chances: List<Chance>, now: Instant, expected: Map<String, Long>? = null) {
         if (made.isEmpty()) return
-        writing.withLock { write(facet, made, chances, now) }
+        writing.withLock { write(facet, made, chances, now, expected) }
     }
 
     /**
      * WRITES ONLY WHAT CHANGED: a refit makes every item's chances anew, and most come out as they
-     * were. An item whose rows — keys, kinds, chances to [CHANCE_STEP], mentions — are the stored
+     * were. An item whose rows — keys, kinds, chances to a ten-thousandth, mentions — are the stored
      * ones is not written again, nor a fingerprint that is the stored one: a file rewritten whole on
      * every pass only grows.
+     *
+     * NOR WHAT WAS WRITTEN SINCE IT WAS READ: a refit of the whole facet reads the items' fingerprints
+     * before it scores them ([expected]), and the chances of a work an answer made meanwhile —
+     * written by the work's own path with its new fingerprint — are newer than the refit's; they are
+     * left as they are, not overwritten by chances made without the answer.
      */
-    private fun write(facet: String, made: Map<String, Long>, chances: List<Chance>, now: Instant) {
+    private fun write(facet: String, made: Map<String, Long>, chances: List<Chance>, now: Instant, expected: Map<String, Long>?) {
         fun row(c: Chance) = StoredRow(c.key.take(500), c.had, rounded(c.chance), c.mentions)
         val wanted = chances.groupBy({ it.itemId }, ::row).mapValues { it.value.toSet() }
         db.transaction { tx ->
@@ -101,7 +106,8 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
                     .where(FACET_SUGGESTION_BASIS.SOURCE.eq(source), FACET_SUGGESTION_BASIS.FACET.eq(facet), FACET_SUGGESTION_BASIS.ITEM_ID.`in`(chunk))
                     .fetch().forEach { storedPrints[it.value1()!!] = it.value2()!! }
             }
-            val changed = made.keys.filter { (wanted[it] ?: emptySet()) != (stored[it] ?: emptySet<StoredRow>()) }.toSet()
+            val newer = if (expected == null) emptySet() else made.keys.filter { storedPrints[it] != expected[it] }.toSet()
+            val changed = made.keys.filter { it !in newer && (wanted[it] ?: emptySet()) != (stored[it] ?: emptySet<StoredRow>()) }.toSet()
             changed.chunked(BATCH).forEach { chunk ->
                 t.deleteFrom(FACET_SUGGESTION)
                     .where(FACET_SUGGESTION.SOURCE.eq(source), FACET_SUGGESTION.FACET.eq(facet), FACET_SUGGESTION.ITEM_ID.`in`(chunk))
@@ -116,7 +122,7 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
                         .set(FACET_SUGGESTION.MENTIONS, c.mentions)
                 }).execute()
             }
-            made.entries.filter { (id, fingerprint) -> storedPrints[id] != fingerprint }.chunked(BATCH).forEach { chunk ->
+            made.entries.filter { (id, fingerprint) -> id !in newer && storedPrints[id] != fingerprint }.chunked(BATCH).forEach { chunk ->
                 t.batch(chunk.map { (id, fingerprint) ->
                     t.insertInto(FACET_SUGGESTION_BASIS)
                         .set(FACET_SUGGESTION_BASIS.SOURCE, source).set(FACET_SUGGESTION_BASIS.ITEM_ID, id).set(FACET_SUGGESTION_BASIS.FACET, facet)
@@ -216,9 +222,10 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
         private const val LACKED = "S"
 
         /** A chance kept to a ten-thousandth: what a refit changes beyond it is noise, and no row is written again for it. */
-        private const val CHANCE_STEP = 1e-4
+        private const val CHANCE_STEPS = 10_000.0
 
-        private fun rounded(chance: Double): Double = Math.round(chance / CHANCE_STEP) * CHANCE_STEP
+        /** Divided, not multiplied by the step: the double nearest the rounded value, 0.95 and not 0.9500000000000001. */
+        private fun rounded(chance: Double): Double = Math.round(chance * CHANCE_STEPS) / CHANCE_STEPS
     }
 }
 
