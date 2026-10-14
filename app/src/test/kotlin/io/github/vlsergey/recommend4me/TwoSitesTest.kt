@@ -40,6 +40,7 @@ import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TextDef
 import io.github.vlsergey.recommend4me.tag.SiteTagRef
 import io.github.vlsergey.recommend4me.tag.TagRepository
+import io.github.vlsergey.recommend4me.tag.Tags
 import io.github.vlsergey.recommend4me.tag.TagsController
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.BeforeAll
@@ -217,6 +218,7 @@ class TwoSitesTest {
     @Autowired lateinit var settingsApi: SettingsController
     @Autowired lateinit var settings: Settings
     @Autowired lateinit var model: ModelController
+    @Autowired lateinit var tagService: Tags
 
     private fun alpha(body: String) = captures.capturePage(CaptureRequest("https://alpha.example/work/${body.substringBefore('|')}", body))
     private fun beta(body: String) = captures.capturePage(CaptureRequest("https://beta.example/work/${body.substringBefore('|')}", body))
@@ -267,6 +269,44 @@ class TwoSitesTest {
         fun answers(source: String, item: String) = stores.source(source)!!.corrections.facetsOf(item).filter { it.facet == "tags" }.map { it.key to it.added }
         assertEquals(listOf(waves to true), answers("alpha", "a3"))
         assertEquals(listOf(waves to false), answers("beta", "b3"))
+    }
+
+    @Test
+    fun `a word on two tags refused leaves what was said of them as it was`() {
+        alpha("t1|Fleet|fleet|A fleet sails||")
+        alpha("t2|Frigates|frigates|Frigates of the fleet||")
+        alpha("t3|Gunboats|gunboats|Gunboats of the frigates||")
+        val fleet = tagOf("alpha", "fleet")
+        val frigates = tagOf("alpha", "frigates")
+        val gunboats = tagOf("alpha", "gunboats")
+        tags.relateTags("books", TagRelationRequest(fleet, frigates, TagRelation.CHILD))
+        tags.relateTags("books", TagRelationRequest(frigates, gunboats, TagRelation.CHILD))
+        // And right under the fleet as well
+        tags.relateTags("books", TagRelationRequest(fleet, gunboats, TagRelation.CHILD))
+        // The fleet put under the gunboats: it is above them through the frigates — refused, and the
+        // link said of the two before is not taken away by the refused word
+        assertEquals(Refusal.TAG_ABOVE, assertThrows<Refused> { tags.relateTags("books", TagRelationRequest(gunboats, fleet, TagRelation.CHILD)) }.refusal)
+        assertTrue(fleet in tags.getTag("books", gunboats).body!!.parents.map { it.key })
+        tags.relateTags("books", TagRelationRequest(fleet, gunboats, TagRelation.NONE))
+        tags.relateTags("books", TagRelationRequest(frigates, gunboats, TagRelation.NONE))
+        tags.relateTags("books", TagRelationRequest(fleet, frigates, TagRelation.NONE))
+    }
+
+    @Test
+    fun `the answers of a merge a stop left unmoved are moved on the start`() {
+        alpha("t4|Anchors|anchors|Anchors aweigh||")
+        beta("t5|Moorings|moorings|At the moorings")
+        val anchors = tagOf("alpha", "anchors")
+        val moorings = tagOf("beta", "moorings")
+        corrections.correctFacet("beta", "t5", FacetCorrection(facet = "tags", added = true, key = moorings))
+        // Merged, and stopped before the answers were moved
+        val type = stores.type("books")!!
+        type.tags.merge(TagRepository.idOf(moorings)!!, TagRepository.idOf(anchors)!!, Instant.now())
+        assertEquals(listOf(moorings to true), stores.source("beta")!!.corrections.facetsOf("t5").filter { it.facet == "tags" }.map { it.key to it.added })
+
+        tagService.start()
+        assertEquals(listOf(anchors to true), stores.source("beta")!!.corrections.facetsOf("t5").filter { it.facet == "tags" }.map { it.key to it.added })
+        assertEquals(emptyList(), type.tags.pendingMerges())
     }
 
     @Test

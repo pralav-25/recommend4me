@@ -511,10 +511,14 @@ class Tags(
         val read = source.entries(listOf(entry), languages).firstOrNull() ?: throw NoSuchElementException("$catalogue has no $entry")
         val before = stats(type, facet)
         val now = Instant.now()
-        val id = above ?: type.tags.create()
-        type.tags.keepEntry(catalogue, read, now)
-        type.tags.bindEntry(id, TagEntryRef(catalogue, read.id), true, now)
-        ids.forEach { type.tags.setParent(it, id, true, now) }
+        // The tag, its entry and its place above the children, all or nothing; the catalogue asked before
+        val id = type.tags.transaction { t ->
+            val made = above ?: t.create()
+            t.keepEntry(catalogue, read, now)
+            t.bindEntry(made, TagEntryRef(catalogue, read.id), true, now)
+            ids.forEach { t.setParent(it, made, true, now) }
+            made
+        }
         log.info("{}: tag {} {} {}:{} above {}", type.id, id, if (above == null) "made of" else "bound to", catalogue, read.id, children)
         changed(type, facet, children.flatMap { before[it]?.items.orEmpty() } + before[TagRepository.key(id)]?.items.orEmpty())
         return one(type, facet, TagRepository.key(id))
@@ -720,33 +724,51 @@ class Tags(
         val b = TagRepository.idOf(other)?.takeIf(type.tags::exists) ?: return null
         val before = stats(type, facet)
         val now = Instant.now()
-        type.tags.setParent(b, a, false, now)
-        type.tags.setParent(a, b, false, now)
-        type.tags.setDistinct(a, b, false, now)
-        val hierarchy = TagHierarchy(type.tags.parents())
-        when (relation) {
-            TagRelation.MERGED -> {
-                type.tags.merge(b, a, now)
-                type.sources.forEach { s -> s.corrections.moveFacetValues(facet, listOf(other), tag) }
-            }
-            TagRelation.CHILD -> {
-                if (other in hierarchy.ancestors(tag)) {
-                    throw Refusal.TAG_ABOVE.refuse(HttpStatus.BAD_REQUEST, "The tag $other is above $tag already: as its child it would be its own parent")
+        // What was said of the two taken back and the new word said, all or nothing: a refusal leaves them as they were
+        type.tags.transaction { t ->
+            t.setParent(b, a, false, now)
+            t.setParent(a, b, false, now)
+            t.setDistinct(a, b, false, now)
+            val hierarchy = TagHierarchy(t.parents())
+            when (relation) {
+                TagRelation.MERGED -> t.merge(b, a, now)
+                TagRelation.CHILD -> {
+                    if (other in hierarchy.ancestors(tag)) {
+                        throw Refusal.TAG_ABOVE.refuse(HttpStatus.BAD_REQUEST, "The tag $other is above $tag already: as its child it would be its own parent")
+                    }
+                    t.setParent(b, a, true, now)
                 }
-                type.tags.setParent(b, a, true, now)
-            }
-            TagRelation.PARENT -> {
-                if (other in hierarchy.descendants(tag)) {
-                    throw Refusal.TAG_BELOW.refuse(HttpStatus.BAD_REQUEST, "The tag $other is below $tag already: as its parent it would be its own child")
+                TagRelation.PARENT -> {
+                    if (other in hierarchy.descendants(tag)) {
+                        throw Refusal.TAG_BELOW.refuse(HttpStatus.BAD_REQUEST, "The tag $other is below $tag already: as its parent it would be its own child")
+                    }
+                    t.setParent(a, b, true, now)
                 }
-                type.tags.setParent(a, b, true, now)
+                TagRelation.DIFFERENT -> t.setDistinct(a, b, true, now)
+                TagRelation.NONE, TagRelation.DESCENDANT, TagRelation.ANCESTOR -> Unit
             }
-            TagRelation.DIFFERENT -> type.tags.setDistinct(a, b, true, now)
-            TagRelation.NONE, TagRelation.DESCENDANT, TagRelation.ANCESTOR -> Unit
         }
+        if (relation == TagRelation.MERGED) moveMergedAnswers(type, facet)
         log.info("{}: tag {} is {} to {}", type.id, other, relation, tag)
         changed(type, facet, before[tag]?.items.orEmpty() + before[other]?.items.orEmpty())
         return one(type, facet, tag)
+    }
+
+    /**
+     * The user's answers of every merge not done moved to the tag kept, in every source — the
+     * earliest merge first, a chain of merges in its order — and the merge done once they all are.
+     * A source that fails leaves its merge to the next start: moving again what was moved is no
+     * change.
+     */
+    private fun moveMergedAnswers(type: TypeStore, facet: String) {
+        type.tags.pendingMerges().forEach { (from, into) ->
+            try {
+                type.sources.forEach { s -> s.corrections.moveFacetValues(facet, listOf(TagRepository.key(from)), TagRepository.key(into)) }
+                type.tags.answersMoved(from)
+            } catch (e: Exception) {
+                log.warn("{}: the answers on tag {} merged into {} were not moved, left to the next start: {}", type.id, from, into, e.message, e)
+            }
+        }
     }
 
     /**
@@ -757,8 +779,9 @@ class Tags(
     fun bind(type: TypeStore, facet: String, site: SiteTagRef, tag: String?): NamedTag? {
         val before = stats(type, facet)
         val was = type.tags.bindings()[site] ?: return null
-        val to = if (tag == null) type.tags.create() else TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
-        type.tags.bind(site, to, Instant.now())
+        val known = tag?.let { TagRepository.idOf(it)?.takeIf(type.tags::exists) ?: return null }
+        // A new tag of its own and the site's tag bound to it, both or neither
+        val to = type.tags.transaction { t -> (known ?: t.create()).also { t.bind(site, it, Instant.now()) } }
         log.info("{}: {} of {} bound to tag {}, was {}", type.id, site.tag, site.source, to, was)
         changed(type, facet, before[TagRepository.key(was)]?.items.orEmpty() + before[TagRepository.key(to)]?.items.orEmpty())
         return one(type, facet, TagRepository.key(to))
@@ -800,8 +823,10 @@ class Tags(
         } else {
             val source = plugins.tagCatalogues.firstOrNull { it.id == catalogue } ?: throw NoSuchElementException("No catalogue of tags $catalogue")
             val read = source.entries(listOf(entry), languages).firstOrNull() ?: throw NoSuchElementException("$catalogue has no $entry")
-            type.tags.keepEntry(catalogue, read, now)
-            type.tags.bindEntry(id, TagEntryRef(catalogue, read.id), true, now)
+            type.tags.transaction { t ->
+                t.keepEntry(catalogue, read, now)
+                t.bindEntry(id, TagEntryRef(catalogue, read.id), true, now)
+            }
             log.info("{}: tag {} bound to {}:{} ({})", type.id, tag, catalogue, read.id, languages.firstNotNullOfOrNull { read.labels[it] })
             // What it is a kind of: the binding stands without it, read again from the tag's card
             try {
@@ -879,6 +904,8 @@ class Tags(
     @Order(-5)
     @EventListener(ApplicationReadyEvent::class)
     fun start() = stores.types.forEach { type ->
+        // The answers of a merge a stop or a failure left unmoved: moved before anything reads them
+        facetOf(type)?.let { facet -> moveMergedAnswers(type, facet) }
         schedule(type.id)
         // The bindings made before what their entries are a kind of was read: read once, in the background
         scheduler.execute { if (facetOf(type) != null) readAboveOfBound(type) }

@@ -4,6 +4,7 @@ import io.github.vlsergey.recommend4me.database.model.tables.references.TAG_SHOW
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_DISTINCT
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_ENTRY
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_MERGE
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_PARENT
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.SITE_TAG
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_ENTRY
@@ -36,6 +37,13 @@ data class SiteTagRef(val source: String, val tag: String)
  */
 class TagRepository(private val db: DSLContext, private val model: DSLContext) {
 
+    /**
+     * The writes of one action of the user on the tags — every one of them, or, failed, none: the
+     * repository [block] is given writes in one transaction of the database of the user's word. A
+     * write of a repository's own transaction inside it (a merge) is a part of it.
+     */
+    fun <T> transaction(block: (TagRepository) -> T): T = db.transactionResult { c -> block(TagRepository(DSL.using(c), model)) }
+
     // --- The normalized tags and the sites' tags bound to them ---
 
     /** Every site's tag and the normalized tag it is bound to. */
@@ -66,11 +74,15 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
     /**
      * The normalized tag [from] merged into [into]: every site's tag of it bound to [into], its links
      * of the graph, its pairs told apart and its entries of the catalogues moved to [into] — none of
-     * [into] with itself — and [from]
-     * gone. The user's answers on it are moved by the caller: they are in the sources' databases.
+     * [into] with itself — and [from] gone. The user's answers on it are in the sources' databases:
+     * the merge is kept as one whose answers are still to be moved ([pendingMerges]) till the
+     * caller has moved them ([answersMoved]).
      */
     fun merge(from: Long, into: Long, now: Instant) = db.transaction { c ->
         val tx = DSL.using(c)
+        val m = NORMALIZED_TAG_MERGE
+        tx.insertInto(m).set(m.FROM_TAG, from).set(m.INTO_TAG, into).set(m.MERGED_AT, now)
+            .onDuplicateKeyUpdate().set(m.INTO_TAG, into).set(m.MERGED_AT, now).execute()
         tx.update(SITE_TAG).set(SITE_TAG.NORMALIZED, into).set(SITE_TAG.BOUND_AT, now).where(SITE_TAG.NORMALIZED.eq(from)).execute()
         val p = NORMALIZED_TAG_PARENT
         val links = tx.selectFrom(p).where(p.CHILD.eq(from).or(p.PARENT.eq(from))).fetch()
@@ -91,6 +103,17 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
         told.filter { (a, b) -> a != b }.distinct().forEach { (a, b) ->
             tx.insertInto(d).set(d.FIRST_TAG, a).set(d.OTHER_TAG, b).set(d.SAID_AT, now).onDuplicateKeyIgnore().execute()
         }
+    }
+
+    /** The merges whose answers are still to be moved, the earliest first: tag merged, tag kept. */
+    fun pendingMerges(): List<Pair<Long, Long>> {
+        val m = NORMALIZED_TAG_MERGE
+        return db.select(m.FROM_TAG, m.INTO_TAG).from(m).orderBy(m.MERGED_AT).fetch { it.value1()!! to it.value2()!! }
+    }
+
+    /** The answers on the tag [from] merged are moved in every source: its merge done. */
+    fun answersMoved(from: Long) {
+        db.deleteFrom(NORMALIZED_TAG_MERGE).where(NORMALIZED_TAG_MERGE.FROM_TAG.eq(from)).execute()
     }
 
     // --- Names ---
