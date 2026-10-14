@@ -31,7 +31,11 @@ class DatabaseCompaction(private val databases: Databases) {
             try {
                 val started = System.currentTimeMillis()
                 val (before, after) = db.compact(BUDGET_MS) ?: return@forEach
-                log.info("{}: compacted from {} MB to {} MB in {} ms", db.name, before shr 20, after shr 20, System.currentTimeMillis() - started)
+                val used = db.usage()
+                log.info(
+                    "{}: compacted from {} MB to {} MB in {} ms; of it used {} %, of its chunks {} %",
+                    db.name, before shr 20, after shr 20, System.currentTimeMillis() - started, used?.second, used?.third,
+                )
             } catch (e: Exception) {
                 log.warn("{}: not compacted: {}", db.name, e.message, e)
             }

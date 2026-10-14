@@ -5,6 +5,7 @@ import com.zaxxer.hikari.HikariDataSource
 import org.flywaydb.core.Flyway
 import org.h2.engine.SessionLocal
 import org.h2.jdbc.JdbcConnection
+import org.h2.mvstore.RandomAccessStore
 import org.jooq.DSLContext
 import org.jooq.SQLDialect
 import org.jooq.impl.DSL
@@ -95,8 +96,24 @@ class Database(
         // The file's blocks in use, and the live pages within the chunks in them: either low, much to give back
         if (before < MIN_COMPACT_SIZE || minOf(mv.fillRate, mv.fileStore.chunksFillRate) >= FILL_TO_COMPACT) return null
         val retention = mv.retentionTime
+        val until = System.nanoTime() + maxMillis * 1_000_000L
         try {
+            // The chunks mostly unused written anew, their pages together
             store.compactFile(maxMillis)
+            // And the chunks after the first free space moved into it, the file cut short: H2 does it
+            // after the rewriting alone — a file of full chunks with holes between them, a file written
+            // all day, never shrinks so — and at its closing; here a part at a time, while it shrinks
+            val fileStore = mv.fileStore
+            if (fileStore is RandomAccessStore) {
+                mv.retentionTime = 0
+                var size = fileStore.size()
+                while (System.nanoTime() < until) {
+                    fileStore.compactMoveChunks(100, MOVE_BYTES, mv)
+                    val now = fileStore.size()
+                    if (now >= size) break
+                    size = now
+                }
+            }
         } finally {
             mv.retentionTime = retention
         }
@@ -119,5 +136,8 @@ class Database(
 
         /** A file of less than this share of it used, in per cent, is compacted while open. */
         private const val FILL_TO_COMPACT = 70
+
+        /** The chunks moved to the free space before the file is cut short, at a time: the writes wait meanwhile. */
+        private const val MOVE_BYTES = 512L shl 20
     }
 }
