@@ -1029,12 +1029,19 @@ internal class FacetData(
             }
             val hierarchies = store.hierarchies()
             val facets = schema.facets.map { it.key }.toSet()
-            val contextIndex = HashMap<String, Int>()
-            val context = ids.map { id ->
+            val contextOf = ids.map { id ->
                 TagHierarchy.corrected(ModelValues.of(schema, learnt[id].orEmpty(), modelled[id]), corrections[id].orEmpty(), hierarchies)
                     .filterKeys { it != facet.key && it in facets }
-                    .flatMap { (f, keys) -> keys.map { "$f\u0001$it" } }
-                    .map { contextIndex.getOrPut(it) { contextIndex.size } }.distinct().toIntArray()
+                    .flatMap { (f, keys) -> keys.map { "$f\u0001$it" } }.distinct()
+            }
+            // A value of the context only one item of the fitting has teaches nothing of the others: no
+            // column of it — of a catalogue of games, the developers of one game each, the operating
+            // systems and languages written by hand once. An item judged alone ([only]) is read by the
+            // columns of the layout fitted last: every value of its own kept
+            val shared = if (only != null) null else HashMap<String, Int>().also { n -> contextOf.forEach { keys -> keys.forEach { n.merge(it, 1, Int::plus) } } }
+            val contextIndex = HashMap<String, Int>()
+            val context = contextOf.map { keys ->
+                keys.filter { shared == null || shared.getValue(it) > 1 }.map { contextIndex.getOrPut(it) { contextIndex.size } }.toIntArray()
             }
 
             val d = encoder.dim
