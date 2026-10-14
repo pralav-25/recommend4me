@@ -529,8 +529,9 @@ class Tags(
     /**
      * A page of the table of the alike of [tag]: every other normalized tag and every site's tag
      * bound to it (merged), but the rows of the relations [hidden], the likest first by the meaning
-     * of their names, of one site or another — a site's tag's name encoded as the search encodes
-     * short texts, a tag the mean of its sites' tags' directions, alike by the cosine. Alike the
+     * of their names, of one site or another and of the entries of the catalogues they are bound to
+     * ([Meaning]) — a name encoded as the search encodes short texts, a tag the mean of its names'
+     * directions, alike by the cosine. Alike the
      * tag's own names; alike the text [query] instead, when one is given. Of rows alike equally, by
      * key: a page read after another continues it while nothing changed.
      */
@@ -539,10 +540,10 @@ class Tags(
         val own = stats[tag] ?: return null
         val n = naming(type, facet, stats)
         val distinct = type.tags.distinct()
-        val meaning = Meaning(type, stats)
+        val meaning = Meaning(type, stats, n)
         val asked = query?.trim()?.takeIf { it.isNotEmpty() }
-        val target = if (asked == null) meaning.direction(own.variants.keys) else meaning.ofText(asked)
-        fun likeness(sites: Collection<SiteTagRef>): Double = meaning.likeness(target, sites)
+        val target = if (asked == null) meaning.direction(own.variants.keys, own.key) else meaning.ofText(asked)
+        fun likeness(sites: Collection<SiteTagRef>, key: String? = null): Double = meaning.likeness(target, sites, key)
         fun relation(key: String): TagRelation {
             val other = TagRepository.idOf(key)!!
             return when {
@@ -554,7 +555,7 @@ class Tags(
         }
         /** A row before it is named — a tag, or a site's tag bound to this one — named only on the page asked for. */
         class Row(val tag: TagStats, val similarity: Double, val relation: TagRelation, val site: TagVariant?, val key: String)
-        val others = stats.values.filter { it.key != tag }.map { t -> Row(t, likeness(t.variants.keys), relation(t.key), null, t.key) }
+        val others = stats.values.filter { it.key != tag }.map { t -> Row(t, likeness(t.variants.keys, t.key), relation(t.key), null, t.key) }
         // Every site's tag bound to this one: a row of its own, merged — taken out by the user, a tag of its own
         val bound = own.variants.values.map { v -> Row(own, likeness(listOf(v.site)), TagRelation.MERGED, v, "site:${v.site.source}/${v.site.tag}") }
         val rows = (others + bound).filter { it.relation !in hidden }
@@ -564,12 +565,16 @@ class Tags(
     }
 
     /**
-     * THE MEANING OF THE SITES' TAGS' NAMES of one reading ([stats]): every name encoded as the search
-     * encodes short texts, a tag's direction the mean of its sites' tags', alike by the cosine. Read
+     * THE MEANING OF THE TAGS' NAMES of one reading ([stats]): every name of the sites' tags and of
+     * the entries of the catalogues the tags are bound to — their labels and aliases — encoded as the
+     * search encodes short texts; a tag's direction the mean of its names', alike by the cosine. Read
      * for one operation, kept nowhere.
      */
-    private inner class Meaning(type: TypeStore, stats: Map<String, TagStats>) {
+    private inner class Meaning(type: TypeStore, stats: Map<String, TagStats>, n: Naming) {
         private val vectors = HashMap<SiteTagRef, FloatArray>()
+
+        /** The directions of the names of the entries every tag is bound to, by its key. */
+        private val ofEntries = HashMap<String, List<FloatArray>>()
 
         init {
             type.sources.forEach { s ->
@@ -578,11 +583,19 @@ class Tags(
                 val encoded = phrases.of(s, names.values.distinct())
                 names.forEach { (site, name) -> encoded[name]?.let { vectors[site] = it } }
             }
+            // The entries' names are no site's: encoded here, at once, and kept nowhere
+            val entryNames = stats.keys.associateWith { key -> n.entriesOf(key).flatMap { it.names }.distinct() }.filterValues { it.isNotEmpty() }
+            val distinct = entryNames.values.flatten().distinct()
+            val encoder = if (distinct.isEmpty()) null else phrases.encoder()
+            if (encoder != null) {
+                val encoded = distinct.zip(encoder.encode(distinct)).toMap()
+                entryNames.forEach { (key, names) -> ofEntries[key] = names.mapNotNull { encoded[it] } }
+            }
         }
 
-        /** The mean direction of the sites' tags [sites]; null when none is encoded. */
-        fun direction(sites: Collection<SiteTagRef>): FloatArray? {
-            val list = sites.mapNotNull { vectors[it] }
+        /** The mean direction of the names of the sites' tags [sites] and of the entries the tag [key] is bound to; null when none is encoded. */
+        fun direction(sites: Collection<SiteTagRef>, key: String? = null): FloatArray? {
+            val list = sites.mapNotNull { vectors[it] } + key?.let { ofEntries[it] }.orEmpty()
             if (list.isEmpty()) return null
             val sum = FloatArray(list.first().size)
             list.forEach { v ->
@@ -599,9 +612,9 @@ class Tags(
             FloatArray(v.size) { v[it] / norm }
         }
 
-        /** How alike the sites' tags [sites] are to [target]: the cosine; nought when either is not known. */
-        fun likeness(target: FloatArray?, sites: Collection<SiteTagRef>): Double =
-            target?.let { tv -> direction(sites)?.let { d -> d.indices.sumOf { (d[it] * tv[it]).toDouble() } } } ?: 0.0
+        /** How alike the sites' tags [sites] — with the entries of the tag [key] — are to [target]: the cosine; nought when either is not known. */
+        fun likeness(target: FloatArray?, sites: Collection<SiteTagRef>, key: String? = null): Double =
+            target?.let { tv -> direction(sites, key)?.let { d -> d.indices.sumOf { (d[it] * tv[it]).toDouble() } } } ?: 0.0
     }
 
     /**
@@ -634,11 +647,11 @@ class Tags(
         step { t -> t.variants.values.filter { it.site.source == source }.map { it.name } }
         step { t -> n.allNames(t) + n.shown(t.key) }
         if (found.size < limit && wanted.isNotEmpty()) {
-            val meaning = Meaning(type, stats)
+            val meaning = Meaning(type, stats, n)
             val target = meaning.ofText(query.trim())
             if (target != null) {
-                stats.values.filter { it.key !in found && it.variants.isNotEmpty() }
-                    .map { it to meaning.likeness(target, it.variants.keys) }
+                stats.values.filter { it.key !in found && (it.variants.isNotEmpty() || n.entriesOf(it.key).isNotEmpty()) }
+                    .map { it to meaning.likeness(target, it.variants.keys, it.key) }
                     .sortedWith(compareByDescending<Pair<TagStats, Double>> { it.second }.thenBy { it.first.key })
                     .take(limit - found.size)
                     .forEach { found[it.first.key] = it.first }
