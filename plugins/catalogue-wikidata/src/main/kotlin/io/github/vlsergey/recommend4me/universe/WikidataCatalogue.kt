@@ -94,11 +94,13 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCa
         require(ITEM.matches(id)) { "Not an item of Wikidata: $id" }
         val langs = languages.joinToString(",") { "\"$it\"" }
         // Two subqueries, each evaluated by itself: within one, the union of the two ways makes
-        // the service walk the parts for every character there is
+        // the service walk the parts for every character there is. The parts are walked as the
+        // universe's own statements are (P1434 "takes place in fictional universe" too): a
+        // character only of a work set in the universe is one of its characters
         val entries = """
-            { SELECT DISTINCT ?c WHERE { ?part (wdt:P179|wdt:P361|wdt:P8345)* wd:$id . ?c (wdt:P1441|wdt:P1080|wdt:P8345) ?part . } }
+            { SELECT DISTINCT ?c WHERE { ?part (wdt:P179|wdt:P361|wdt:P8345|wdt:P1434)* wd:$id . ?c (wdt:P1441|wdt:P1080|wdt:P8345) ?part . } }
             UNION
-            { SELECT DISTINCT ?c WHERE { ?part (wdt:P179|wdt:P361|wdt:P8345)* wd:$id . ?part wdt:P674 ?c . } }
+            { SELECT DISTINCT ?c WHERE { ?part (wdt:P179|wdt:P361|wdt:P8345|wdt:P1434)* wd:$id . ?part wdt:P674 ?c . } }
         """.trimIndent()
         val query = """
             SELECT ?c ?kind ?text WHERE {
