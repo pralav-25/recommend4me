@@ -155,6 +155,22 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
         return out
     }
 
+    /**
+     * The values of the [facet] the model alone gives every item — those it lacked and more likely
+     * has than not ([ModelValues.given] without the drafts) — of the item [only], when given: what a
+     * refresh compares the new ones with, read of that facet alone, not every chance of every facet.
+     */
+    fun givenOf(facet: String, only: String? = null): Map<String, Set<String>> {
+        val out = HashMap<String, MutableSet<String>>()
+        db.select(FACET_SUGGESTION.ITEM_ID, FACET_SUGGESTION.VALUE_KEY).from(FACET_SUGGESTION)
+            .where(
+                FACET_SUGGESTION.SOURCE.eq(source), only?.let { FACET_SUGGESTION.ITEM_ID.eq(it) } ?: DSL.noCondition(), FACET_SUGGESTION.FACET.eq(facet),
+                FACET_SUGGESTION.KIND.eq(LACKED), FACET_SUGGESTION.CHANCE.gt(ModelValues.LIKELY),
+            )
+            .fetchSize(5000).fetchLazy().use { cursor -> cursor.forEach { out.getOrPut(it.value1()!!) { HashSet() } += it.value2()!! } }
+        return out
+    }
+
     /** Every draft a value of its item's chances, marked so: the model's chance of it kept, 1 when the model has none. */
     private fun drafted(out: HashMap<String, HashMap<String, HashMap<String, Chance>>>, drafts: Map<String, List<LayerDraft>>) {
         drafts.forEach { (id, list) ->

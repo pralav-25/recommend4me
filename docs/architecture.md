@@ -186,6 +186,12 @@ other works is read, and of a facet whose values a work may have are limited (it
 characters) only those values are chosen from. Whether the weights still fit is told by the
 background refresh, which reads every work.
 
+Of a work's chances only those shown are kept — of the values it has, rejected, given as examples,
+more likely than not, and the few likeliest others offered — whatever the facet: not every
+character of a work's universes, thousands of them written at every refresh. The user choosing
+among every value a work may have (the candidates) gets them made at the asking. A refresh tells
+which works' values changed by the model's given values of that facet alone.
+
 ## The normalized tags
 
 The application's layer of tags ("Теги") is of normalized tags, kept in the database of the type's

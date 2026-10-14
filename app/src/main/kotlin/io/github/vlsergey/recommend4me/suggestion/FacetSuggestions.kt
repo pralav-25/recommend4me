@@ -204,15 +204,15 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     )
 
     /**
-     * The chance of EVERY value of the facet for the item, made now by the weights fitted last and
-     * not kept: of a facet whose values a work may have are not limited ([Vocabulary.allowed]) only
-     * the likeliest of an item's chances are kept, and the user who asks for more gets the rest
-     * from here. Null when the facet was never fitted.
+     * The chance of EVERY value of the facet for the item — of a facet whose values a work may have
+     * are limited ([Vocabulary.allowed]), of those it may have — made now by the weights fitted last
+     * and not kept: only the likeliest of an item's chances are kept, and the user who asks for more
+     * gets the rest from here. Null when the facet was never fitted.
      */
-    private fun everyChance(store: SourceStore, facet: FacetDef, itemId: String): List<Chance>? {
+    private fun everyChance(store: SourceStore, facet: FacetDef, itemId: String, vocabulary: Vocabulary?): List<Chance>? {
         val suggester = plugins.suggester ?: return null
         val encoder = plugins.textEncoder() ?: return null
-        val data = load(store, facet, encoder, universeVocabulary(store, facet, itemId) ?: examplesVocabulary(store, facet), itemId)
+        val data = load(store, facet, encoder, vocabulary, itemId)
         val i = data.ids.indexOf(itemId).takeIf { it >= 0 } ?: return null
         val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id } ?: return null
         val fitted = suggester.unpack(stored.content, data.task) ?: return null
@@ -281,27 +281,43 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             refitted || ((only == null || id == only) && known[id] != data.fingerprints[i])
         }
         if (rows.isEmpty()) return
+        val fittedAt = System.currentTimeMillis() - started
         val scores = fitted.on(data.task)
-        // What the model made alone before: the drafts are not of its making
-        val before = if (facet.infer) store.suggestions.ofItems(rows.map { data.ids[it] }, withDrafts = false) else emptyMap()
+        // What the model gave alone before: the drafts are not of its making — of this facet alone
+        val before = if (facet.infer) store.suggestions.givenOf(facet.key, only) else emptyMap()
+        val beforeAt = System.currentTimeMillis() - started
         val changedIds = ArrayList<String>()
         var scored = 0L
+        // Of every item: the scores, what is kept of them, the writing — each summed over the chunks
+        var scoring = 0L
+        var keeping = 0L
+        var writing = 0L
         rows.chunked(CHUNK).forEach { chunk ->
+            val at = System.currentTimeMillis()
             val chances = scores.of(chunk.toIntArray())
             scored = System.currentTimeMillis() - started
+            scoring += System.currentTimeMillis() - at
             val made = HashMap<String, Long>()
             val out = ArrayList<Chance>()
+            val keptAt = System.currentTimeMillis()
             chunk.forEachIndexed { k, i ->
                 val id = data.ids[i]
                 made[id] = data.fingerprints[i]
                 val own = chancesOf(id, facet.key, chances[k], data, i, vocabulary?.allowed?.invoke(id))
                 out += own
-                if (facet.infer && ModelValues.given(own.associateBy { it.key }) != ModelValues.given(before[id]?.get(facet.key).orEmpty())) changedIds += id
+                if (facet.infer && ModelValues.given(own.associateBy { it.key }).toSet() != before[id].orEmpty()) changedIds += id
             }
+            val writeAt = System.currentTimeMillis()
+            keeping += writeAt - keptAt
             store.suggestions.replace(facet.key, made, out, now)
+            writing += System.currentTimeMillis() - writeAt
         }
         if (changedIds.isNotEmpty()) events.publishEvent(FacetChancesChanged(store.id, changedIds))
-        if (rows.size > 1) log.info("{}: chances of {} of {} items made in {} ms", store.id, facet.key, rows.size, System.currentTimeMillis() - started)
+        if (rows.size > 1) log.info(
+            "{}: chances of {} of {} items made in {} ms — the dictionary {}, reading {}, the weights {}, fitting {}, the chances before {}, scoring {}, keeping {}, writing {}",
+            store.id, facet.key, rows.size, System.currentTimeMillis() - started,
+            vocabularyMillis, read - vocabularyMillis, unpacked - read, fittedAt - unpacked, beforeAt - fittedAt, scoring, keeping, writing,
+        )
         // What an answer waits for, a stage at a time: the whole is made again for one work
         else if (only != null) log.info(
             "{}: chances of {} of {} made in {} ms — the dictionary {}, reading {}, the weights {}, the chances {}, kept {}",
@@ -325,11 +341,13 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
 
     /**
      * What is kept of item [i]'s chances: of every value it has, of every value the user rejected
-     * (shown crossed out, in its place by its chance), and of the values it lacks — of a facet that
-     * says which values a work may have ([allowed]: a work's characters are of its universes, its
-     * pairings of its characters) every one of those, for the user to choose among; of any other
-     * facet those it more likely has than not, the likeliest others offered besides, and every one
-     * the site gives it as an example — offered to answer on whatever its chance, shown with it.
+     * (shown crossed out, in its place by its chance), every one the site gives it as an example —
+     * offered to answer on whatever its chance, shown with it — and of the values it lacks those it
+     * more likely has than not and the likeliest others offered besides; of a facet that says which
+     * values a work may have ([allowed]: a work's characters are of its universes, its pairings of
+     * its characters) of those alone. Not every value it may have: of a work of a large universe
+     * thousands of characters, written at every refresh — the user choosing among them gets every one
+     * made at the asking ([candidates]).
      */
     private fun chancesOf(id: String, facet: String, chances: FloatArray, data: FacetData, i: Int, allowed: Set<String>?): List<Chance> {
         val has = data.held[i].toHashSet()
@@ -338,16 +356,15 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         fun chance(v: Int, had: Boolean) = Chance(id, facet, data.values[v], had, chances[v].toDouble(), named?.let { it[v] ?: 0 })
         // All named by the user's word: the item has its own values and is offered no other
         if (data.complete[i]) return has.map { chance(it, true) }
+        fun may(v: Int) = allowed == null || data.values[v] in allowed
         // The likeliest of the rest too, likely or not, to offer the work at least so many the site does not give
-        val offered = if (allowed != null) emptySet() else {
-            val unanswered = chances.indices.filter { it !in has && it !in rejected }
-            ModelValues.offered(
-                unanswered.associate { data.values[it] to chances[it].toDouble() },
-                shown = unanswered.filter { chances[it] > ModelValues.LIKELY }.map { data.values[it] }.toSet(),
-                answered = emptySet(),
-                fromSite = data.task.examples[i].map { data.values[it] }.toSet(),
-            ).toSet()
-        }
+        val unanswered = chances.indices.filter { it !in has && it !in rejected && may(it) }
+        val offered = ModelValues.offered(
+            unanswered.associate { data.values[it] to chances[it].toDouble() },
+            shown = unanswered.filter { chances[it] > ModelValues.LIKELY }.map { data.values[it] }.toSet(),
+            answered = emptySet(),
+            fromSite = data.task.examples[i].map { data.values[it] }.toSet(),
+        ).toSet()
         val examples = data.task.examples[i].toHashSet()
         return chances.indices.mapNotNull { v ->
             when {
@@ -356,8 +373,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
                 v in examples -> chance(v, false)
                 // A value the user rejected keeps its chance: it is shown crossed out, in its place by it
                 v in rejected -> chance(v, false)
-                allowed != null -> if (data.values[v] in allowed) chance(v, false) else null
-                chances[v] > ModelValues.LIKELY || data.values[v] in offered -> chance(v, false)
+                may(v) && (chances[v] > ModelValues.LIKELY || data.values[v] in offered) -> chance(v, false)
                 else -> null
             }
         }
@@ -680,9 +696,11 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val site = store.items.facets(itemId)
         // The facet and those worked out before it, its values made of theirs: not the long fittings after it
         ensure(store, itemId, facets.take(facets.indexOf(def) + 1), site, corrections, now = true)
-        // A work's universes, characters and pairings are chosen among those it may have, every one
-        // of them kept; of any other facet only the likeliest are kept, the rest made now
-        val chances = (if (facet in CHOSEN) null else everyChance(store, def, itemId))
+        // Only the likeliest are kept: every other made now — of a work's universes, characters and
+        // pairings, those it may have alone
+        val vocabulary = universeVocabulary(store, def, itemId) ?: examplesVocabulary(store, def)
+        val may = vocabulary?.allowed?.invoke(itemId)
+        val chances = everyChance(store, def, itemId, vocabulary)?.filter { may == null || it.key in may || it.had }
             ?: store.suggestions.ofItems(listOf(itemId))[itemId].orEmpty()[facet].orEmpty().values
         val answered = corrections.filter { it.facet == facet }.map { it.key }.toSet()
         val current = site[facet].orEmpty().toSet()
@@ -692,9 +710,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val scored = chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
             .map { FacetCandidate(it.key, it.chance, it.mentions) }
         val unscored = if (facet !in UniverseFacet.CHARACTER_FACETS || chances.any { !it.had } || facet in store.corrections.completeOf(itemId)) emptyList() else {
-            val vocabulary = universeVocabulary(store, def, itemId)
             val named = vocabulary?.mentions(store, itemId)?.invoke(itemId)
-            vocabulary?.allowed?.invoke(itemId).orEmpty()
+            may.orEmpty()
                 .filter { it !in answered && it !in current && it !in out && chances.none { c -> c.key == it } }
                 .map { FacetCandidate(it, null, named?.let { n -> n[it] ?: 0 }) }
         }
@@ -827,9 +844,6 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
 
         /** Items scored at once and written in one transaction: memory, not meaning. */
         private const val CHUNK = 2_000
-
-        /** The facets whose values a work is chosen among those it may have: every chance of them is kept. */
-        private val CHOSEN = setOf(UniverseFacets.UNIVERSE, UniverseFacets.CHARACTERS, UniverseFacets.SECONDARY_CHARACTERS, UniverseFacets.PAIRINGS)
     }
 }
 
@@ -853,9 +867,10 @@ internal class FacetData(
     companion object {
         /**
          * The rule of what is kept of an item's chances: 2 — the likeliest others offered besides the
-         * likely ones; 3 — the rejected ones too; 4 — the site's examples too.
+         * likely ones; 3 — the rejected ones too; 4 — the site's examples too; 5 — of a facet of
+         * limited values, not every value the work may have: the likely and the offered alone.
          */
-        private const val KEPT = 4
+        private const val KEPT = 5
 
         /**
          * How much a drafted value the user has not confirmed weighs in what the model learns, against
