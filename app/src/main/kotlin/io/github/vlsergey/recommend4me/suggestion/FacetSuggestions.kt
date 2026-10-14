@@ -41,8 +41,10 @@ import java.util.IdentityHashMap
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
@@ -754,13 +756,47 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         }
     }
 
-    /** Waits until the item's chances are made current after every answer on it so far; at once when none is being made. */
-    fun settled(store: SourceStore, itemId: String) {
-        synchronized(answering) { answering["${store.id}/$itemId"]?.settled }?.get()
+    /**
+     * Waits until the item's chances are made current after every answer on it so far; at once when
+     * none is being made. Never longer than [SETTLE_WAIT_SECONDS]: the chances of a work of a great
+     * universe behind those of other works may take long, and a page is not held for them — it shows
+     * the chances as they are, the newer come with the next reading. True when they are current.
+     */
+    fun settled(store: SourceStore, itemId: String): Boolean {
+        val waiting = synchronized(answering) { answering["${store.id}/$itemId"]?.settled } ?: return true
+        return try {
+            waiting.get(SETTLE_WAIT_SECONDS, TimeUnit.SECONDS)
+            true
+        } catch (e: TimeoutException) {
+            log.info("{}: chances of {} still being made after {} s: read as they are", store.id, itemId, SETTLE_WAIT_SECONDS)
+            false
+        } catch (e: ExecutionException) {
+            false
+        } catch (e: CancellationException) {
+            false
+        }
     }
 
-    /** The making of an item's chances after the user's answers: until no answer came while it was made. */
+    /**
+     * The making of an item's chances after the user's answers: until no answer came while it was
+     * made. Whatever ends it — an error of the JVM too, out of memory on a great task — the work is
+     * free after: no answer on it is left unmade for good, no reader waits for it for ever.
+     */
     private fun makeCurrent(store: SourceStore, itemId: String, key: String, work: Answering) {
+        try {
+            makeCurrentRounds(store, itemId, key, work)
+        } catch (e: Throwable) {
+            log.error("{}: chances of {} were not made", store.id, itemId, e)
+            synchronized(answering) {
+                if (answering[key] === work) answering.remove(key)
+                work.running = false
+                work.settled.completeExceptionally(e)
+            }
+            if (e is Error) throw e
+        }
+    }
+
+    private fun makeCurrentRounds(store: SourceStore, itemId: String, key: String, work: Answering) {
         while (true) {
             val (generation, from) = synchronized(answering) { (work.generation to work.from).also { work.from = Int.MAX_VALUE } }
             val stop = { synchronized(answering) { work.generation != generation } }
@@ -841,11 +877,16 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
     fun shutdown() {
         worker.shutdownNow()
         answers.shutdownNow()
+        // Nobody waits for chances that will not be made
+        synchronized(answering) { answering.values.forEach { it.settled.cancel(false) } }
     }
 
     companion object {
         /** The quiet after the last change before a source is refreshed: a page sends itself several times as it grows. */
         private const val DELAY_SECONDS = 5L
+
+        /** The longest a reader waits for a work's chances made after the answers ([settled]). */
+        private const val SETTLE_WAIT_SECONDS = 30L
 
         /** The environment variable naming the folder every task of a whole facet is kept in ([SuggestionTaskFile]); unset, none is. */
         private const val TASKS_FOLDER = "RECOMMEND4ME_TASKS"
