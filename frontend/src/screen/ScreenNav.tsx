@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { TFunction } from "i18next";
-import { MenuIcon, OrbitIcon, RadarIcon, TagsIcon } from "lucide-react";
+import { HistoryIcon, MenuIcon, OrbitIcon, RadarIcon, TagsIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ContentTypeInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -76,6 +76,17 @@ function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFun
       ),
       title: t("Menu.tags.title"),
       active: screen.kind === "tags",
+    },
+    {
+      key: "history",
+      screen: { kind: "history" },
+      label: (
+        <>
+          <HistoryIcon /> {t("Menu.history")}
+        </>
+      ),
+      title: t("Menu.history.title"),
+      active: screen.kind === "history",
     },
     { key: "model", open: onModel, label: <ModelLabel type={type} />, title: t("Menu.model.title"), active: false },
     {

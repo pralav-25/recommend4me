@@ -4,6 +4,7 @@
   "App.failed.list": "Список работ не отрисовался",
   "App.failed.menu": "Меню",
   "App.failed.progress": "Ход работы не показывается",
+  "App.failed.history": "История не показывается",
   "App.failed.tags": "Теги не показываются",
   "App.failed.universes": "Вселенные не показываются",
   "App.hotkey.choose": "выбор работы",

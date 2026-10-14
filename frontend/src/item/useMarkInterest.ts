@@ -30,6 +30,7 @@ export function useMarkInterest() {
     const type = findSource(queryClient.getQueryData<ContentTypeInfo[]>(["types"]), updated.source)?.type;
     queryClient.invalidateQueries({ queryKey: ["model", type?.id] });
     queryClient.invalidateQueries({ queryKey: itemKey(updated) });
+    queryClient.invalidateQueries({ queryKey: ["history"] });
   };
 
   return useMutation({

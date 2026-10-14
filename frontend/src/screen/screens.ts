@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
  * THE SCREENS OF THE INTERFACE, each an address of its own: the works of a content type at
  * "/<type>" ("/books", "/games"), the dictionary of universes at "/universes" (one of them at
  * "/universes/<catalogue>/<id>"), the tags of every site at "/tags" (one at "/tags/<key>") — the
- * universes and the tags are every type's. What a page shows is all in its address: opened in
+ * universes and the tags are every type's; the user's grades and marks, the newest first, at
+ * "/history". What a page shows is all in its address: opened in
  * another tab, it shows the same. A work's dialog is the "#item=…" over any of them. The server
  * answers every such address with the same page.
  */
@@ -15,7 +16,8 @@ export type Screen =
       type?: string;
     }
   | { kind: "universes"; catalogue?: string; universe?: string }
-  | { kind: "tags"; tag?: string };
+  | { kind: "tags"; tag?: string }
+  | { kind: "history" };
 
 export function parseScreen(path: string): Screen {
   const parts = path.split("/").filter((p) => p.length > 0).map((p) => {
@@ -27,6 +29,7 @@ export function parseScreen(path: string): Screen {
   });
   if (parts[0] === "universes") return { kind: "universes", catalogue: parts[1], universe: parts[2] };
   if (parts[0] === "tags") return { kind: "tags", tag: parts.length > 1 ? parts.slice(1).join("/") : undefined };
+  if (parts[0] === "history") return { kind: "history" };
   return { kind: "works", type: parts[0] };
 }
 
@@ -39,6 +42,8 @@ export function screenHref(screen: Screen): string {
     case "tags":
       // A tag's key may hold slashes ("m/m"): each piece escaped, the slashes kept
       return screen.tag ? `/tags/${screen.tag.split("/").map(encodeURIComponent).join("/")}` : "/tags";
+    case "history":
+      return "/history";
   }
 }
 

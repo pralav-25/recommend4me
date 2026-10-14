@@ -4,6 +4,7 @@
   "App.failed.list": "The list of works failed to render",
   "App.failed.menu": "Menu",
   "App.failed.progress": "The progress cannot be shown",
+  "App.failed.history": "The history cannot be shown",
   "App.failed.tags": "The tags cannot be shown",
   "App.failed.universes": "The universes cannot be shown",
   "App.hotkey.choose": "choose a work",

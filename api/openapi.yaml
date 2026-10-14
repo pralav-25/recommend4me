@@ -41,6 +41,27 @@ paths:
                 items:
                   $ref: '#/components/schemas/ContentTypeInfo'
 
+  /api/history:
+    get:
+      tags: [history]
+      operationId: listHistory
+      summary: The user's grades and marks of interest as they stand, of every content type, the newest first
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 200
+      responses:
+        '200':
+          description: The latest of them
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/HistoryEntry'
+
   /api/types/{type}/items:
     post:
       tags: [items]
@@ -2060,6 +2081,32 @@ components:
           description: What moves that model's score, part by part, strongest first
           items:
             $ref: '#/components/schemas/ContributionGroup'
+
+    HistoryEntry:
+      type: object
+      description: A grade or a mark of interest the user gave a work, and when; a grade or mark taken back is no more here
+      required: [type, source, item, title, kind, at]
+      properties:
+        type:
+          type: string
+        source:
+          type: string
+        item:
+          type: string
+        title:
+          type: string
+        kind:
+          type: string
+          enum: [GRADE, INTEREST]
+        grade:
+          type: integer
+        version:
+          type: string
+        interesting:
+          type: boolean
+        at:
+          type: string
+          format: date-time
 
     ItemRef:
       type: object

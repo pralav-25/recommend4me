@@ -30,6 +30,7 @@ import { WorkProgress } from "@/status/WorkProgress";
 import { ThemeToggle } from "@/theme/ThemeToggle";
 import { ScreenBar, ScreenMenuButton } from "@/screen/ScreenNav";
 import { replaceScreen, useScreen, type Screen } from "@/screen/screens";
+import { HistoryScreen } from "@/history/HistoryScreen";
 import { TagsScreen } from "@/tag/TagsScreen";
 import { UniversesScreen } from "@/universe/Universes";
 
@@ -196,6 +197,11 @@ function TypeScreen({ type, types, screen }: { type: ContentTypeInfo; types: Con
       {screen.kind === "universes" && universes && (
         <ErrorBoundary title={t("App.failed.universes")}>
           <UniversesScreen type={universes} selected={screen.catalogue && screen.universe ? { catalogue: screen.catalogue, universe: screen.universe } : undefined} />
+        </ErrorBoundary>
+      )}
+      {screen.kind === "history" && (
+        <ErrorBoundary title={t("App.failed.history")}>
+          <HistoryScreen />
         </ErrorBoundary>
       )}
       {screen.kind === "tags" && (

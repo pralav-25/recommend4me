@@ -27,6 +27,7 @@ export function useRateItem() {
     const type = findSource(queryClient.getQueryData<ContentTypeInfo[]>(["types"]), updated.source)?.type;
     queryClient.invalidateQueries({ queryKey: ["model", type?.id] });
     queryClient.invalidateQueries({ queryKey: itemKey(updated) });
+    queryClient.invalidateQueries({ queryKey: ["history"] });
     heldOutLater(queryClient, updated);
   };
 
@@ -73,5 +74,6 @@ export function useTakeBackGrade(shown: ItemRef) {
     heldOutLater(queryClient, details.summary);
     const type = findSource(queryClient.getQueryData<ContentTypeInfo[]>(["types"]), shown.source)?.type;
     queryClient.invalidateQueries({ queryKey: ["model", type?.id] });
+    queryClient.invalidateQueries({ queryKey: ["history"] });
   };
 }
