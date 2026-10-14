@@ -64,14 +64,22 @@ class BilinearSuggester internal constructor(
             grid.subList(maxOf(0, at - 1), minOf(grid.size, at + 2))
         }
         var onCard = false
+        // The card found slower last time at as many groups of names or fewer: not opened again — its
+        // graph of hundreds of groups takes tens of seconds to open, only to be closed. More groups
+        // are more launches on the card, slower still; fewer may be faster, and are measured again
+        var slowerAt = (previous as? Fitted)?.cardSlowerAt?.takeIf { problem.hintGroups.size >= it }
         for (rank in ranks) {
             // The task put on the card once for every fold and penalty of the rank, when there is a
             // card: closed with the fitting, and the card's memory given back. Kept only where its
             // step is the faster: a node of the graph is a launch on the card, and names in hundreds
             // of small groups — the pairings' 301 — are thousands of launches, slower than the
             // processor's whole step
-            val card = onnx?.let { StepOnCard.open(it, problem, rank) }?.let { opened ->
-                if (faster(problem, rank, opened)) opened else { opened.close(); null }
+            val card = onnx?.takeIf { slowerAt == null }?.let { StepOnCard.open(it, problem, rank) }?.let { opened ->
+                if (faster(problem, rank, opened)) opened else {
+                    opened.close()
+                    slowerAt = problem.hintGroups.size
+                    null
+                }
             }
             onCard = onCard || card != null
             card.use { tried += fitRank(problem, rank, lambdas, last, card, stop) }
@@ -94,7 +102,7 @@ class BilinearSuggester internal constructor(
         val at = grid.indices.minBy { abs(ln(grid[it] / chosen.lambda)) }
         val beside = setOfNotNull(grid.getOrNull(at - 1), grid.getOrNull(at + 1))
         val nearby = tried.filter { it.rank == chosen.rank && it.lambda in beside }.associate { it.lambda to it.fitted.folds }
-        return Fitted(design, chosen.rank, chosen.lambda, chosen.fitted.folds, nearby)
+        return Fitted(design, chosen.rank, chosen.lambda, chosen.fitted.folds, nearby, slowerAt)
     }
 
     /** A penalty tried: what its folds held out, the folds' weights, how many losses each took and how long. */
@@ -152,15 +160,16 @@ class BilinearSuggester internal constructor(
     override fun unpack(bytes: ByteArray, task: SuggestionTask): FittedSuggester? = runCatching {
         // Buffered: the stream is read in many small pieces — the numbers in blocks, the keys one by one
         DataInputStream(GZIPInputStream(ByteArrayInputStream(bytes), BUFFER).buffered(BUFFER)).use { input ->
-            // Of the format before it, the same without the penalties beside the chosen one
+            // Of the formats before it, the same without what came later: the penalties beside the chosen one (6), the card's verdict (7)
             val format = input.readInt()
-            if (format != FORMAT && format != FORMAT - 1) return null
+            if (format !in FORMAT - 2..FORMAT) return null
             val design = Design.read(input)
             val rank = input.readInt()
             val lambda = input.readDouble()
             val weights = List(input.readInt()) { Weights.read(input) }
-            val nearby = if (format < FORMAT) emptyMap() else List(input.readInt()) { input.readDouble() to List(input.readInt()) { Weights.read(input) } }.toMap()
-            if (weights.size != FOLDS || !design.reads(task)) null else Fitted(design, rank, lambda, weights, nearby)
+            val nearby = if (format < 6) emptyMap() else List(input.readInt()) { input.readDouble() to List(input.readInt()) { Weights.read(input) } }.toMap()
+            val slowerAt = if (format < 7) null else input.readInt().takeIf { it >= 0 }
+            if (weights.size != FOLDS || !design.reads(task)) null else Fitted(design, rank, lambda, weights, nearby, slowerAt)
         }
     }.getOrNull()
 
@@ -170,6 +179,8 @@ class BilinearSuggester internal constructor(
      */
     private class Fitted(
         val design: Design, val rank: Int, val lambda: Double, val folds: List<Weights>, val nearby: Map<Double, List<Weights>> = emptyMap(),
+        /** How many groups of names the task had when a step on the card was measured slower than on the processor; null when it was not. */
+        val cardSlowerAt: Int? = null,
     ) : FittedSuggester {
 
         /** The folds' weights at the penalty kept nearest to [penalty]. */
@@ -235,6 +246,7 @@ class BilinearSuggester internal constructor(
                     out.writeInt(weights.size)
                     weights.forEach { it.write(out) }
                 }
+                out.writeInt(cardSlowerAt ?: -1)
             }
             return bytes.toByteArray()
         }
@@ -243,9 +255,10 @@ class BilinearSuggester internal constructor(
     companion object {
         /**
          * The version of what [pack] writes; 5: fitted in single precision, every facet fitted again;
-         * 6: the weights at the penalties beside the chosen one too — a state of 5 is read as one without.
+         * 6: the weights at the penalties beside the chosen one too — a state of 5 is read as one without;
+         * 7: the card's verdict, how many groups of names it was slower at — a state of 6 is read as one of none.
          */
-        private const val FORMAT = 6
+        private const val FORMAT = 7
 
         /** The buffer of the compressed state read and written: the numbers go in blocks of many kilobytes. */
         private const val BUFFER = 1 shl 16
