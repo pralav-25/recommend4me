@@ -47,6 +47,7 @@ class FicbookPages(private val context: SourceContext) {
         val path = runCatching { URI(page.url).path }.getOrDefault("")
         val touched = LinkedHashSet<String>()
         touched += cards(doc, page.capturedAt)
+        if (TAG_PAGE.matches(path)) tagPage(doc)
         READFIC.matchEntire(path)?.let { m ->
             val id = m.groupValues[1]
             val rest = m.groupValues[2]
@@ -144,6 +145,17 @@ class FicbookPages(private val context: SourceContext) {
 
     private fun tags(id: String, links: List<Element>) =
         items.setFacet(id, TAG, links.map { a -> a.text().trim().let { FacetValue(it.lowercase(), it) } }.filter { it.key.isNotEmpty() })
+
+    /**
+     * A tag's own page: its heading names it — «Метка «Hurt/Comfort» - фанфики и ориджиналы» — and
+     * the box under it says what it means. The tag is known by its name as the works write it.
+     */
+    private fun tagPage(doc: Document) {
+        val name = doc.selectFirst("h1.heading")?.text()?.let { TAG_HEADING.find(it)?.groupValues?.get(1) }?.trim()?.ifEmpty { null } ?: return
+        val description = doc.selectFirst(".primary-box p.text-t3")?.let { PageText.of(it) }?.trim()?.ifEmpty { null }
+        items.nameFacetValues(TAG, mapOf(name.lowercase() to name))
+        description?.let { items.describeFacetValues(TAG, mapOf(name.lowercase() to it)) }
+    }
 
     // --- A work's page ---
 
@@ -253,6 +265,10 @@ class FicbookPages(private val context: SourceContext) {
     companion object {
         /** A work's address: "/readfic/<id>", "/readfic/<id>/<part>", "/readfic/<id>/comments". */
         private val READFIC = Regex("/readfic/([0-9a-f-]+)/?([^/]*)/?")
+        private val TAG_PAGE = Regex("/tags/\\d+/?")
+
+        /** The heading of a tag's page: the name between the outer quotes, whatever quotes it holds itself. */
+        private val TAG_HEADING = Regex("^Метка «(.*)»\\s*-\\s*фанфики")
         private val AUTHOR_ID = Regex("^/authors/([^/?#]+)")
 
         /** The fandom of the original works. */

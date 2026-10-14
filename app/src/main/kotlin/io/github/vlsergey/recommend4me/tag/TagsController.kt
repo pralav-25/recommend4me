@@ -2,6 +2,7 @@ package io.github.vlsergey.recommend4me.tag
 
 import io.github.vlsergey.recommend4me.api.TagsApi
 import io.github.vlsergey.recommend4me.api.model.FoundTagEntry
+import io.github.vlsergey.recommend4me.api.model.TagDescription
 import io.github.vlsergey.recommend4me.api.model.TagEntryInfo
 import io.github.vlsergey.recommend4me.api.model.TagEntryRequest
 import org.springframework.beans.factory.annotation.Value
@@ -87,7 +88,7 @@ class TagsController(
         val (t, _) = of(type)
         return ResponseEntity.ok(
             tags.findEntries(t, query).map { f ->
-                FoundTagEntry(f.catalogue, f.entry.id, f.entry.url, f.entry.labels.first(), f.entry.descriptions.first(), f.tag)
+                FoundTagEntry(f.catalogue, f.entry.id, f.entry.url, f.tags.map { (key, name) -> TagRef(key, name) }, f.entry.labels.first(), f.entry.descriptions.first())
             },
         )
     }
@@ -96,7 +97,7 @@ class TagsController(
         val (t, facet) = of(type)
         val r = tagEntryRequest
         return try {
-            tags.bindEntry(t, facet, r.tag, r.catalogue, r.entry)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
+            tags.bindEntry(t, facet, r.tag, r.catalogue, r.entry, r.bound)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
         } catch (e: NoSuchElementException) {
             ResponseEntity.notFound().build()
         }
@@ -117,7 +118,10 @@ class TagsController(
         names = TagNaming.names(stats).map { it.first },
         parents = parents.map { (key, name) -> TagRef(key, name) },
         children = children.map { (key, name) -> TagRef(key, name) },
-        entry = entry?.let { b -> TagEntryInfo(b.catalogue, b.entry.id, b.entry.url, b.names, b.entry.labels.first(), b.entry.descriptions.first()) },
+        catalogueEntries = entries.map { b -> TagEntryInfo(b.catalogue, b.entry.id, b.entry.url, b.names, b.entry.labels.first(), b.entry.descriptions.first()) },
+        // The sites' words first, then the entries'
+        descriptions = descriptions.map { d -> TagDescription(d.site.source, d.text, stats.variants[d.site]?.name) } +
+            entries.mapNotNull { b -> b.entry.descriptions.first()?.let { TagDescription(b.catalogue, it, b.entry.labels.first()) } },
     )
 
     private fun TagVariant.toApi() = TagVariantInfo(site.source, site.tag, name, uses.works, uses.graded, uses.liked)

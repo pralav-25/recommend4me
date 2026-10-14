@@ -14,6 +14,7 @@ class MemorySourceContext(override val sourceId: String = "test") : SourceContex
     val heads = LinkedHashMap<String, StoredItem>()
     val facets = HashMap<String, MutableMap<String, List<String>>>()
     val facetNames = HashMap<String, MutableMap<String, String>>()
+    val facetDescriptions = HashMap<String, MutableMap<String, String>>()
     val numbers = HashMap<String, MutableMap<String, Double>>()
     val texts = HashMap<String, MutableMap<String, String>>()
     val pictures = HashMap<String, List<String?>>()
@@ -41,6 +42,10 @@ class MemorySourceContext(override val sourceId: String = "test") : SourceContex
 
         override fun nameFacetValues(facet: String, names: Map<String, String>) {
             facetNames.getOrPut(facet) { HashMap() } += names
+        }
+
+        override fun describeFacetValues(facet: String, descriptions: Map<String, String>) {
+            facetDescriptions.getOrPut(facet) { HashMap() } += descriptions
         }
 
         override fun facets(itemId: String): Map<String, List<String>> = facets[itemId].orEmpty()

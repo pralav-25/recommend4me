@@ -61,6 +61,8 @@ class SourceContexts(private val stores: Stores, private val settings: Settings,
             store.items.nameFacetValues(facet, if (standard?.values == null) names else names.mapValues { (key, name) -> standard.value(key)?.modelName ?: name })
         }
 
+        override fun describeFacetValues(facet: String, descriptions: Map<String, String>) = store.items.describeFacetValues(facet, descriptions)
+
         /**
          * The values of a standard facet with a closed list of them ([StandardFacet][io.github.vlsergey.recommend4me.contenttype.StandardFacet])
          * named as the standard names them; a value outside the list — one the source could not

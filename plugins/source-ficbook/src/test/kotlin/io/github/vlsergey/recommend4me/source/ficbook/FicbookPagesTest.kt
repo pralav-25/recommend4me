@@ -126,4 +126,15 @@ class FicbookPagesTest {
         assertEquals("Спасибо-спасибо-спасибо! Я очень рада, что вам понравилось) Приятного чтения!", comments.getValue("138019862").content)
         assertEquals(Instant.parse("2026-09-01T09:15:00Z"), comments.getValue("138019862").postedAt)
     }
+
+    @Test
+    fun `a tag's own page says what the tag means, the tag known by its name as the works write it`() {
+        val context = MemorySourceContext()
+        assertEquals(emptyList(), capture(context, "https://ficbook.net/tags/1682", "tag.html"))
+        assertEquals("Hurt/Comfort", context.facetNames.getValue("tag")["hurt/comfort"])
+        assertEquals(
+            "Работа сосредоточена на эмоциональных и/или физических страданиях одних персонажей и заботе о них со стороны других персонажей.",
+            context.facetDescriptions.getValue("tag")["hurt/comfort"],
+        )
+    }
 }

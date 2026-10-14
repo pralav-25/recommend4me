@@ -75,6 +75,9 @@ interface ItemStore {
     /** The names of facet values the items name by key; a name given before is replaced. */
     fun nameFacetValues(facet: String, names: Map<String, String>)
 
+    /** What the site says the facet's values mean — a tag's own page describing it — by key; a description given before is replaced. */
+    fun describeFacetValues(facet: String, descriptions: Map<String, String>)
+
     /** The keys of the item's values of every facet. */
     fun facets(itemId: String): Map<String, List<String>>
 

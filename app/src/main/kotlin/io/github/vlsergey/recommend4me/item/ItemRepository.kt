@@ -2,6 +2,7 @@ package io.github.vlsergey.recommend4me.item
 
 import io.github.vlsergey.recommend4me.database.source.tables.references.CAPTURED_PAGE
 import io.github.vlsergey.recommend4me.database.source.tables.references.FACET_VALUE
+import io.github.vlsergey.recommend4me.database.source.tables.references.FACET_VALUE_DESCRIPTION
 import io.github.vlsergey.recommend4me.database.source.tables.references.ITEM
 import io.github.vlsergey.recommend4me.database.source.tables.references.ITEM_FACET
 import io.github.vlsergey.recommend4me.database.source.tables.references.ITEM_NUMBER
@@ -114,12 +115,13 @@ class ItemRepository(
         if (named.isNotEmpty()) nameFacetValues(facet, named)
     }
 
-    /** Removes the values and the names of every facet not among [facets]; how many values were removed of each. */
+    /** Removes the values, the names and the descriptions of every facet not among [facets]; how many values were removed of each. */
     fun keepOnlyFacets(facets: Collection<String>): Map<String, Int> {
         val gone = db.select(ITEM_FACET.FACET).from(ITEM_FACET).where(ITEM_FACET.FACET.notIn(facets)).fetch(ITEM_FACET.FACET)
             .groupingBy { it!! }.eachCount()
         if (gone.isNotEmpty()) db.deleteFrom(ITEM_FACET).where(ITEM_FACET.FACET.notIn(facets)).execute()
         db.deleteFrom(FACET_VALUE).where(FACET_VALUE.FACET.notIn(facets)).execute()
+        db.deleteFrom(FACET_VALUE_DESCRIPTION).where(FACET_VALUE_DESCRIPTION.FACET.notIn(facets)).execute()
         return gone
     }
 
@@ -152,6 +154,28 @@ class ItemRepository(
         db.select(FACET_VALUE.VALUE_KEY, FACET_VALUE.NAME).from(FACET_VALUE).where(FACET_VALUE.FACET.eq(facet))
             .fetchSize(5000).fetchLazy().use { cursor -> cursor.forEach { if (it.value1()!! in wanted) out[it.value1()!!] = it.value2()!! } }
         return out
+    }
+
+    /** What the site says the facet's values mean, written where new or changed; one writer at a time, as of the names. */
+    @Synchronized
+    fun describeFacetValues(facet: String, descriptions: Map<String, String>) {
+        if (descriptions.isEmpty()) return
+        val d = FACET_VALUE_DESCRIPTION
+        val known = facetDescriptions(facet, descriptions.keys)
+        descriptions.filter { (key, text) -> known[key] != text }.forEach { (key, text) ->
+            db.insertInto(d).set(d.FACET, facet).set(d.VALUE_KEY, key.take(500)).set(d.DESCRIPTION, text.take(4000))
+                .onDuplicateKeyUpdate().set(d.DESCRIPTION, text.take(4000))
+                .execute()
+        }
+    }
+
+    /** What the site says the values [keys] of a facet mean: key to description. */
+    fun facetDescriptions(facet: String, keys: Collection<String>): Map<String, String> {
+        if (keys.isEmpty()) return emptyMap()
+        val d = FACET_VALUE_DESCRIPTION
+        return keys.distinct().chunked(1000).flatMap { chunk ->
+            db.select(d.VALUE_KEY, d.DESCRIPTION).from(d).where(d.FACET.eq(facet), d.VALUE_KEY.`in`(chunk)).fetch { it.value1()!! to it.value2()!! }
+        }.toMap()
     }
 
     /** Every named value of one facet: key to name. */

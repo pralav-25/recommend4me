@@ -64,7 +64,8 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
 
     /**
      * The normalized tag [from] merged into [into]: every site's tag of it bound to [into], its links
-     * of the graph and its pairs told apart moved to [into] — none of [into] with itself — and [from]
+     * of the graph, its pairs told apart and its entries of the catalogues moved to [into] — none of
+     * [into] with itself — and [from]
      * gone. The user's answers on it are moved by the caller: they are in the sources' databases.
      */
     fun merge(from: Long, into: Long, now: Instant) = db.transaction { c ->
@@ -76,9 +77,11 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
         val d = NORMALIZED_TAG_DISTINCT
         val told = tx.selectFrom(d).where(d.FIRST_TAG.eq(from).or(d.OTHER_TAG.eq(from))).fetch()
             .map { pair(if (it.firstTag == from) into else it.firstTag!!, if (it.otherTag == from) into else it.otherTag!!) }
-        // Its entry of a catalogue goes to [into] when [into] has none: the user's word kept
+        // Its entries of the catalogues go to [into] besides its own, bound when they were: the user's word kept
         val e = NORMALIZED_TAG_ENTRY
-        if (!tx.fetchExists(e, e.TAG.eq(into))) tx.update(e).set(e.TAG, into).where(e.TAG.eq(from)).execute()
+        tx.selectFrom(e).where(e.TAG.eq(from)).fetch().forEach {
+            tx.insertInto(e).set(e.TAG, into).set(e.CATALOGUE, it.catalogue).set(e.ENTRY, it.entry).set(e.BOUND_AT, it.boundAt).onDuplicateKeyIgnore().execute()
+        }
         // [from]'s links and pairs go with it, as it goes; the ones moved to [into] come back
         tx.deleteFrom(NORMALIZED_TAG).where(NORMALIZED_TAG.ID.eq(from)).execute()
         links.filter { (child, parent) -> child != parent }.distinct().forEach { (child, parent) ->
@@ -162,22 +165,21 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
 
     // --- The entries of a catalogue the tags are bound to ---
 
-    /** Every tag bound to an entry of a catalogue: tag id to the entry. */
-    fun entriesOfTags(): Map<Long, TagEntryRef> {
+    /** Every tag bound to entries of the catalogues: tag id to its entries, the one bound first first. */
+    fun entriesOfTags(): Map<Long, List<TagEntryRef>> {
         val e = NORMALIZED_TAG_ENTRY
-        return db.select(e.TAG, e.CATALOGUE, e.ENTRY).from(e).fetchMap({ it.value1()!! }, { TagEntryRef(it.value2()!!, it.value3()!!) })
+        return db.select(e.TAG, e.CATALOGUE, e.ENTRY).from(e).orderBy(e.BOUND_AT, e.CATALOGUE, e.ENTRY).fetch()
+            .groupBy({ it.value1()!! }, { TagEntryRef(it.value2()!!, it.value3()!!) })
     }
 
-    /** The tag [id] bound to the entry [ref] — whatever it was bound to — or, [ref] null, to none. */
-    fun bindEntry(id: Long, ref: TagEntryRef?, now: Instant) {
+    /** The tag [id] bound to the entry [ref] besides the ones it is — or, [bound] false, no more to it. */
+    fun bindEntry(id: Long, ref: TagEntryRef, bound: Boolean, now: Instant) {
         val e = NORMALIZED_TAG_ENTRY
-        if (ref == null) {
-            db.deleteFrom(e).where(e.TAG.eq(id)).execute()
-            return
+        if (bound) {
+            db.insertInto(e).set(e.TAG, id).set(e.CATALOGUE, ref.catalogue).set(e.ENTRY, ref.entry).set(e.BOUND_AT, now).onDuplicateKeyIgnore().execute()
+        } else {
+            db.deleteFrom(e).where(e.TAG.eq(id), e.CATALOGUE.eq(ref.catalogue), e.ENTRY.eq(ref.entry)).execute()
         }
-        db.insertInto(e).set(e.TAG, id).set(e.CATALOGUE, ref.catalogue).set(e.ENTRY, ref.entry).set(e.BOUND_AT, now)
-            .onDuplicateKeyUpdate().set(e.CATALOGUE, ref.catalogue).set(e.ENTRY, ref.entry).set(e.BOUND_AT, now)
-            .execute()
     }
 
     /** The entry of [catalogue] as the catalogue gave it now: its texts in place of those kept. */

@@ -111,9 +111,14 @@ class SiteTest {
         private fun en(text: String) = mapOf("en" to text)
 
         private val hull = TagEntry("E1", mapOf("en" to "Hull", "ru" to "Корпус"), mapOf("en" to listOf("Ship hull")), mapOf("en" to "the body of a ship"), "https://fake.example/E1")
+        private val vessel = TagEntry("E2", mapOf("en" to "Vessel", "ru" to "Судно"), emptyMap(), mapOf("en" to "a ship"), "https://fake.example/E2")
 
-        override fun find(text: String, languages: List<String>) = if ("hull" in text.lowercase() || text == "E1") listOf(hull) else emptyList()
-        override fun entries(ids: Collection<String>, languages: List<String>) = listOf(hull).filter { it.id in ids }
+        override fun find(text: String, languages: List<String>) = when {
+            "hull" in text.lowercase() || text == "E1" -> listOf(hull)
+            "vessel" in text.lowercase() || text == "E2" -> listOf(vessel)
+            else -> emptyList()
+        }
+        override fun entries(ids: Collection<String>, languages: List<String>) = listOf(hull, vessel).filter { it.id in ids }
         private fun entries(languages: List<String>) = listOf(
             UniverseEntry("U1", en("Space opera"), en("Ships and pilots"), "https://fake.example/U1", languages),
             UniverseEntry("U2", en("Fleet"), en("More ships"), "https://fake.example/U2", languages),
@@ -723,19 +728,31 @@ class SiteTest {
         // Bound to an entry of a catalogue, found by the user: named by its label in the user's first language
         val entries = tagsApi.findTagEntries("books", "hull").body!!
         assertEquals(listOf("fake" to "E1"), entries.map { it.catalogue to it.entry })
-        assertNull(entries.single().tag)
-        val bound = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1")).body!!
+        assertEquals(emptyList(), entries.single().tags)
+        val bound = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1", true)).body!!
         assertEquals("Корпус" to TagNameRule.CATALOGUE, bound.name to bound.rule)
-        assertEquals(setOf("Hull", "Корпус", "Ship hull"), bound.entry!!.names.toSet())
-        assertEquals(hulls, tagsApi.findTagEntries("books", "E1").body!!.single().tag)
+        assertEquals(setOf("Hull", "Корпус", "Ship hull"), bound.catalogueEntries.single().names.toSet())
+        assertEquals(listOf(hulls to "Корпус"), tagsApi.findTagEntries("books", "E1").body!!.single().tags.map { it.key to it.name })
         // Found by any name of its entry, in any language
         assertTrue(tagsApi.listTags("books", "ship hull", 0, 10).body!!.tags.any { it.key == hulls })
+        // A second entry besides: the one bound first still names it; the descriptions of the site's tag's page first, then of each entry
+        stores.source("site")!!.items.describeFacetValues(Books.TAG.key, mapOf("hulls" to "The hulls of ships"))
+        val both = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E2", true)).body!!
+        assertEquals(listOf("E1", "E2"), both.catalogueEntries.map { it.entry })
+        assertEquals("Корпус", both.name)
+        assertEquals(
+            listOf("site" to "The hulls of ships", "fake" to "the body of a ship", "fake" to "a ship"),
+            tagsApi.getTag("books", hulls).body!!.descriptions.map { it.origin to it.text },
+        )
         // The user's own name over the entry's
         assertEquals(TagNameRule.EXPLICIT, tagsApi.nameTag("books", TagNameRequest(hulls, "Корпуса")).body!!.rule)
         tagsApi.nameTag("books", TagNameRequest(hulls))
-        // Bound to none: the sites' names again
-        val unbound = tagsApi.bindTagEntry("books", TagEntryRequest(hulls)).body!!
-        assertNull(unbound.entry)
+        // The first no more: the other names it; bound to none, the sites' names again
+        val second = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1", false)).body!!
+        assertEquals(listOf("E2"), second.catalogueEntries.map { it.entry })
+        assertEquals("Судно", second.name)
+        val unbound = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E2", false)).body!!
+        assertEquals(emptyList(), unbound.catalogueEntries)
         assertEquals(TagNameRule.LIKED, unbound.rule)
 
         // Both site's tags merged rows of it; one taken out, to a new tag of its own; the answer stays with the tag

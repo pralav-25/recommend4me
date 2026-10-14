@@ -76,8 +76,9 @@ class Ficbook : Source {
      * another work the site puts among the paragraphs of a part is not its text. 5: the standard
      * statuses; the user's marks of a work — liked, read, followed. 6: the pairings and the
      * characters alone in one field, every entry of the line as written; the fandom a standard one.
+     * 7: what a tag's own page says the tag means.
      */
-    override val parserVersion = 6
+    override val parserVersion = 7
 
     override val signals = listOf(
         Books.READ.asSignal(),

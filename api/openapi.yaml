@@ -3522,7 +3522,7 @@ components:
 
     TagInfo:
       type: object
-      required: [key, name, rule, works, graded, liked, variants, names, parents, children]
+      required: [key, name, rule, works, graded, liked, variants, names, parents, children, catalogueEntries, descriptions]
       properties:
         key:
           type: string
@@ -3564,8 +3564,31 @@ components:
           description: The tags right under this one - a work said not to have this tag has none of them
           items:
             $ref: '#/components/schemas/TagRef'
-        entry:
-          $ref: '#/components/schemas/TagEntryInfo'
+        catalogueEntries:
+          type: array
+          description: The entries of the catalogues the tag is bound to, the one bound first first - its label names the tag
+          items:
+            $ref: '#/components/schemas/TagEntryInfo'
+        descriptions:
+          type: array
+          description: >
+            What the tag means, as its sites' tags' own pages say - in the order of its sites' tags - and then as its
+            entries do; of the one tag asked alone, none in a list
+          items:
+            $ref: '#/components/schemas/TagDescription'
+
+    TagDescription:
+      type: object
+      required: [origin, text]
+      properties:
+        origin:
+          type: string
+          description: Who says it - a source's id ("ficbook") or a catalogue's ("wikidata")
+        name:
+          type: string
+          description: The name of what is described there - the site's tag as written, the entry's label
+        text:
+          type: string
 
     TagEntryInfo:
       type: object
@@ -3594,7 +3617,7 @@ components:
 
     FoundTagEntry:
       type: object
-      required: [catalogue, entry, url]
+      required: [catalogue, entry, url, tags]
       properties:
         catalogue:
           type: string
@@ -3606,21 +3629,25 @@ components:
           type: string
         description:
           type: string
-        tag:
-          type: string
-          description: The key of the tag bound to it already, when one is
+        tags:
+          type: array
+          description: The tags bound to it already
+          items:
+            $ref: '#/components/schemas/TagRef'
 
     TagEntryRequest:
       type: object
-      required: [tag]
+      required: [tag, catalogue, entry, bound]
       properties:
         tag:
           type: string
         catalogue:
           type: string
-          description: With entry, the entry to bind the tag to; none of both - the tag bound to none
         entry:
           type: string
+        bound:
+          type: boolean
+          description: True - the tag bound to the entry besides the ones it is; false - no more to it
 
     TagRef:
       type: object
