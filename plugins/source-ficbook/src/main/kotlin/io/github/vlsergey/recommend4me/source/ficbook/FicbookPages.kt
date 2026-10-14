@@ -85,9 +85,9 @@ class FicbookPages(private val context: SourceContext) {
     private fun badges(id: String, badges: Element?) {
         badges ?: return
         badges.selectFirst(".direction")?.let { d ->
+            // The site's classes are the standard keys; "unknown" — not told — is no direction
             val key = d.classNames().firstOrNull { it.startsWith("direction-") }?.removePrefix("direction-")
-            val name = d.text().trim().ifEmpty { d.attr("title").substringBefore(" —").trim() }
-            if (key != null) items.setFacet(id, DIRECTION, listOf(FacetValue(key, name.ifEmpty { key })))
+            if (key != null) items.setFacet(id, DIRECTION, listOfNotNull(Books.DIRECTION.value(key)?.let { FacetValue(it.key, it.modelName) }))
         }
         badges.select("[class*=ds-label-rating-]").firstOrNull()?.let { r ->
             val key = r.classNames().first { it.startsWith("ds-label-rating-") }.removePrefix("ds-label-rating-")

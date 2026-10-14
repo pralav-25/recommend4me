@@ -37,7 +37,7 @@ class Ficbook : Source {
         facets = listOf(
             Books.AUTHOR.asFacet(AUTHOR),
             Books.FANDOM.asFacet(FANDOM),
-            FacetDef(DIRECTION, filter = true, onCard = true, role = FacetRole.CONTENT),
+            Books.DIRECTION.asFacet(DIRECTION),
             FacetDef(RATING, filter = true, onCard = true, role = FacetRole.CONTENT),
             Books.STATUS.asFacet(STATUS),
             Books.TAG.asFacet(TAG),
@@ -66,6 +66,9 @@ class Ficbook : Source {
         kindFrom = FANDOM,
     )
 
+    /** Its own changes of the values kept: the direction made a standard one. */
+    override val migrations = listOf("classpath:db/ficbook")
+
     override val capturePatterns = listOf(
         Regex("https://ficbook\\.net/(readfic|fanfiction|tags|authors|collections|series|pairings|find|find-fanfics[^/?#]*|popular-fanfics[^/?#]*|recommendation|home/[^?#]*)([/?#].*)?"),
     )
@@ -76,9 +79,9 @@ class Ficbook : Source {
      * another work the site puts among the paragraphs of a part is not its text. 5: the standard
      * statuses; the user's marks of a work — liked, read, followed. 6: the pairings and the
      * characters alone in one field, every entry of the line as written; the fandom a standard one.
-     * 7: what a tag's own page says the tag means.
+     * 7: what a tag's own page says the tag means. 8: the direction a standard one, with AO3's category.
      */
-    override val parserVersion = 7
+    override val parserVersion = 8
 
     override val signals = listOf(
         Books.READ.asSignal(),

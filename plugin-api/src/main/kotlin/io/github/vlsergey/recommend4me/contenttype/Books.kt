@@ -27,6 +27,26 @@ object Books {
         role = FacetRole.STATUS, filter = true, onCard = true,
     )
 
+    /**
+     * Whom the work's relationships are between — AO3's category, ficbook's direction: of a site
+     * that says the work has none ("No category", "Не определено"), no value.
+     */
+    object Direction {
+        val GEN = StandardValue("gen", "Джен")
+        val HET = StandardValue("het", "Гет")
+        val SLASH = StandardValue("slash", "Слэш")
+        val FEMSLASH = StandardValue("femslash", "Фемслэш")
+        val MIXED = StandardValue("mixed", "Смешанная")
+        val OTHER = StandardValue("other", "Другие виды отношений")
+        val ARTICLE = StandardValue("article", "Статья")
+    }
+
+    val DIRECTION = StandardFacet(
+        "direction",
+        values = listOf(Direction.GEN, Direction.HET, Direction.SLASH, Direction.FEMSLASH, Direction.MIXED, Direction.OTHER, Direction.ARTICLE),
+        role = FacetRole.CONTENT, filter = true, onCard = true,
+    )
+
     /** The tags as the site writes them: the site's word, read by the model, the examples of [TAGS]. */
     val TAG = StandardFacet("tag", role = FacetRole.ORIGINAL, searchWeight = 0.9f)
 
@@ -69,7 +89,7 @@ object Books {
     val TYPE = ContentType(
         id = ID,
         universes = true,
-        facets = listOf(AUTHOR, STATUS, UniverseFacets.KIND_FACET, TAG, FANDOM, PAIRINGS),
+        facets = listOf(AUTHOR, STATUS, DIRECTION, UniverseFacets.KIND_FACET, TAG, FANDOM, PAIRINGS),
         layer = listOf(TAGS),
         signals = listOf(READ, LIKED, SHELF),
         numbers = listOf(PARTS, StandardNumbers.WORDS, StandardNumbers.LIKES, StandardNumbers.VIEWS),

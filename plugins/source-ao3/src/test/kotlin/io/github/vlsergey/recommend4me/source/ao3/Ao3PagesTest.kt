@@ -58,7 +58,7 @@ class Ao3PagesTest {
         // Anonymous: no author named
         assertNull(facets["author"])
         assertEquals(listOf("teen"), facets["rating"])
-        assertEquals(listOf("Gen"), facets["category"])
+        assertEquals(listOf("gen"), facets["category"])
         assertEquals(listOf("Creator Chose Not To Use Archive Warnings"), facets["warning"])
         assertEquals(listOf("Fullmetal Alchemist - All Media Types", "Fullmetal Alchemist: Brotherhood & Manga"), facets["fandom"])
         // A relationship is one whatever the order of its names; a character is itself

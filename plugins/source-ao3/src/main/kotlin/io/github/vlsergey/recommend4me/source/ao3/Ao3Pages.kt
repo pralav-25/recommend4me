@@ -80,7 +80,7 @@ class Ao3Pages(private val context: SourceContext) {
         fandoms(id, card.select("h5.fandoms a.tag"))
         card.selectFirst("ul.required-tags span.rating")?.attr("title")?.let { rating(id, it) }
         card.selectFirst("ul.required-tags span.category")?.attr("title")?.let { written ->
-            items.setFacet(id, CATEGORY, written.split(',').map { it.trim() }.filter { it.isNotEmpty() }.map { FacetValue(it, it) })
+            category(id, written.split(',').map { it.trim() }.filter { it.isNotEmpty() })
         }
         card.selectFirst("ul.required-tags span.iswip")?.let { s ->
             val status = if (s.hasClass("complete-yes")) Books.Status.FINISHED else Books.Status.IN_PROGRESS
@@ -115,8 +115,7 @@ class Ao3Pages(private val context: SourceContext) {
         authors(id, preface.select("h3.byline a[rel=author]"))
         fandoms(id, meta.select("dd.fandom a.tag"))
         meta.selectFirst("dd.rating a.tag")?.text()?.let { rating(id, it.trim()) }
-        meta.select("dd.category a.tag").map { it.text().trim() }.filter { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
-            ?.let { items.setFacet(id, CATEGORY, it.map { c -> FacetValue(c, c) }) }
+        meta.select("dd.category a.tag").map { it.text().trim() }.filter { it.isNotEmpty() }.takeIf { it.isNotEmpty() }?.let { category(id, it) }
         tagged(id, meta.select("dd.warning a.tag"), meta.select("dd.relationship a.tag"), meta.select("dd.character a.tag"), meta.select("dd.freeform a.tag"))
         meta.selectFirst("dd.series span.position a[href^=/series/]")?.let { series(id, it) }
         stats?.let { stats(id, it) }
@@ -234,6 +233,11 @@ class Ao3Pages(private val context: SourceContext) {
         items.setFacet(id, UniverseFacets.KIND, listOf(FacetValue(if (original) UniverseFacets.ORIGINAL else UniverseFacets.FANFICTION)))
     }
 
+    /** The categories as the standard directions, shared with ficbook's; "No category" is none. */
+    private fun category(id: String, written: List<String>) {
+        items.setFacet(id, CATEGORY, written.mapNotNull { CATEGORIES[it] }.distinct().map { FacetValue(it.key, it.modelName) })
+    }
+
     private fun rating(id: String, written: String) {
         val key = RATINGS[written] ?: written.lowercase()
         items.setFacet(id, RATING, listOf(FacetValue(key, written)))
@@ -300,6 +304,11 @@ class Ao3Pages(private val context: SourceContext) {
         private const val ORIGINAL_WORK = "Original Work"
 
         /** The ratings by their names, to the keys the cards' symbols have (rating-<key>). */
+        private val CATEGORIES = mapOf(
+            "Gen" to Books.Direction.GEN, "F/M" to Books.Direction.HET, "M/M" to Books.Direction.SLASH,
+            "F/F" to Books.Direction.FEMSLASH, "Multi" to Books.Direction.MIXED, "Other" to Books.Direction.OTHER,
+        )
+
         private val RATINGS = mapOf(
             "General Audiences" to "general-audience", "Teen And Up Audiences" to "teen", "Mature" to "mature",
             "Explicit" to "explicit", "Not Rated" to "notrated",

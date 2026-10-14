@@ -50,7 +50,7 @@ class Ao3 : Source {
             Books.FANDOM.asFacet(FANDOM),
             FacetDef(RATING, filter = true, onCard = true, role = FacetRole.CONTENT),
             FacetDef(WARNING, filter = true, role = FacetRole.CONTENT),
-            FacetDef(CATEGORY, filter = true, onCard = true, role = FacetRole.CONTENT),
+            Books.DIRECTION.asFacet(CATEGORY),
             Books.STATUS.asFacet(STATUS),
             FacetDef(LANGUAGE, filter = true, onCard = true),
             Books.TAG.asFacet(TAG),
@@ -80,6 +80,12 @@ class Ao3 : Source {
         // A work of the fandom "Original Work" is an original one
         kindFrom = FANDOM,
     )
+
+    /** 2: the category a standard direction, with ficbook's. */
+    override val parserVersion = 2
+
+    /** Its own changes of the values kept: the direction made a standard one. */
+    override val migrations = listOf("classpath:db/ao3")
 
     override val capturePatterns = listOf(
         Regex("https://archiveofourown\\.org/(works|tags|users|series|collections|bookmarks)([/?#].*)?"),
