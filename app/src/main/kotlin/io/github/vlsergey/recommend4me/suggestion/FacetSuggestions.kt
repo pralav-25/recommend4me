@@ -1118,10 +1118,17 @@ internal class FacetData(
                     "\u0002" + Vectors.keyOf(hintNames.entries.sortedBy { it.key }.joinToString("\u0001") { (v, names) -> v + "=" + names.joinToString("|") }) +
                     // The tags under others: a tag put under another is learnt again
                     "\u0002" + (hierarchy?.signature() ?: "") +
-                    // The other facets' values: what the model gave of another facet since is learnt from again
+                    // The other facets' values as the site and the user give them: one of them changed is learnt
+                    // from again. NOT WHAT THE MODEL GAVE of the other facets: each refit of one changes what the
+                    // next reads, the circle never settles, and every start would fit every facet again for
+                    // nothing new. The model's values are read as they are when the chances are made
                     "\u0002" + Vectors.keyOf(
-                        contextIndex.entries.sortedBy { it.value }.joinToString("\u0001") { it.key } + "\u0002" +
-                            ids.indices.sortedBy { ids[it] }.joinToString(",") { i -> ids[i] + ":" + context[i].sorted().joinToString("+") },
+                        ids.indices.sortedBy { ids[it] }.joinToString(",") { i ->
+                            val id = ids[i]
+                            id + ":" + TagHierarchy.corrected(ModelValues.of(schema, learnt[id].orEmpty(), null), corrections[id].orEmpty(), hierarchies)
+                                .filterKeys { it != facet.key && it in facets }.entries.sortedBy { it.key }
+                                .joinToString(";") { (f, keys) -> f + "=" + keys.sorted().joinToString("+") }
+                        },
                     ),
             )
             return FacetData(ids, values, task, held, allNamed, fingerprints, basis)
