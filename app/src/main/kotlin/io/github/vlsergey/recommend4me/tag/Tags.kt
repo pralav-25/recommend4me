@@ -393,6 +393,8 @@ class Tags(
      *   Of several such entries of a pair, the most precise alone: one none of the others is under,
      *   of those the nearer by the two ways together. Never of two tags one under the other by the
      *   user's word; above the roots of the user's trees alone, a tag under another of them left out.
+     *   Of two tags under a tag of the user's both, only where they meet under its entry: a new tag
+     *   between them and it, never one over its head — nor of a tag above both bound to no entry.
      *   A tag in one such offer alone, the nearest: one sharing a tag with a nearer one is not offered
      *   till the nearer is said — then it is offered above the new tag.
      */
@@ -451,6 +453,12 @@ class Tags(
                 // A catalogue's classes may go round: then all of them are alike precise
                 val precise = meet.filter { e -> meet.none { other -> other != e && e in graph.up(listOf(other)) } }.ifEmpty { meet }
                     .minWith(compareBy<TagEntryRef> { upA.getValue(it).size + upB.getValue(it).size }.thenBy { it.entry })
+                // Under a tag of the user's both already: a new one only between — its entry under every such tag's entry — never over its head
+                val shared = n.hierarchy.ancestors(a).intersect(n.hierarchy.ancestors(b))
+                if (shared.isNotEmpty()) {
+                    val aboveIt = graph.up(listOf(precise)).keys
+                    if (shared.any { c -> graph.refsOf[c].orEmpty().none { it in aboveIt } }) return@forEach
+                }
                 under.getOrPut(precise) { HashSet() } += listOf(a, b)
                 levels.merge(precise, nearest - 1, ::minOf)
             }
