@@ -567,22 +567,9 @@
     return withFailure(line, "grade");
   }
 
-  /** The lowest grade that says a work was interesting, as the application takes it (Interest.MIN_GRADE). */
-  const INTERESTING_GRADE = 4;
-
-  /** The highest grade that says a work was not interesting (Interest.MAX_DULL_GRADE). */
-  const DULL_GRADE = 1;
-
-  /** What the grade of a work — its card or its summary — says of interest without a mark: true, false or null. */
-  function interestByGrade(s) {
-    const grade = s.grade || s.previousGrade;
-    if (s.interest != null || !grade) return null;
-    return grade >= INTERESTING_GRADE ? true : grade <= DULL_GRADE ? false : null;
-  }
-
   /**
    * Whether the work is interesting to read at all, beside how good it is: the user's mark; without
-   * one, a grade of 4 or 5 or of 1 that says so, or else the chance the model gives it.
+   * one, the chance the model gives it. A grade says nothing of it.
    */
   function interest(item) {
     const s = item.summary;
@@ -604,10 +591,7 @@
         "interest",
       ));
     });
-    const byGrade = interestByGrade(s);
-    if (byGrade != null) {
-      line.appendChild(el("span", "r4m-muted", ` ${t("interest.byGrade", { interest: t(byGrade ? "interest.yes" : "interest.no"), grade: s.grade || s.previousGrade })}`));
-    } else if (s.interest == null && s.interestChance != null) {
+    if (s.interest == null && s.interestChance != null) {
       line.appendChild(el("span", "r4m-muted", ` ${t("interest.byModel", { percent: Math.round(s.interestChance * 100) })}`));
     }
     return withFailure(line, "interest");
@@ -1241,17 +1225,13 @@
    */
   function cardInterest(badge, k, value, icon) {
     const current = k.interest === value;
-    const graded = interestByGrade(k);
-    const byGrade = graded === value;
     const word = t(value ? "interest.yesTitle" : "interest.noTitle");
-    const b = el("button", `r4m-interest-mark${current ? " r4m-current" : ""}${byGrade ? " r4m-implied" : ""}`, icon);
+    const b = el("button", `r4m-interest-mark${current ? " r4m-current" : ""}`, icon);
     b.type = "button";
-    const chance = graded == null && k.interest == null && k.interestChance != null
+    const chance = k.interest == null && k.interestChance != null
       ? ` ${t("card.interestChance", { percent: Math.round(k.interestChance * 100) })}`
       : "";
-    b.title = current
-      ? t("common.pressAgain", { what: word })
-      : byGrade ? t("card.interestByGrade", { interest: word, grade: k.grade || k.previousGrade }) : `${word}${chance}`;
+    b.title = current ? t("common.pressAgain", { what: word }) : `${word}${chance}`;
     b.addEventListener("click", async (e) => {
       e.preventDefault();
       e.stopPropagation();

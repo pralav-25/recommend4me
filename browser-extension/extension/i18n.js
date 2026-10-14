@@ -40,7 +40,6 @@ var R4M_WORDS = {
     "interest.no": "not interesting",
     "interest.yesTitle": "Interesting",
     "interest.noTitle": "Not interesting",
-    "interest.byGrade": "{{interest}} — by the grade {{grade}}",
     "interest.byModel": "model: interesting with a chance of {{percent}}%",
 
     "value.restore": "Bring back: you said the work does not have this",
@@ -93,7 +92,6 @@ var R4M_WORDS = {
     "card.pending": "recommend4me: the prediction is still being worked out",
     "card.prediction": "recommend4me: the prediction out of 10",
     "card.grade": "Your grade",
-    "card.interestByGrade": "{{interest}} — by the grade {{grade}}; mark it explicitly",
     "card.interestChance": "(model: interesting at {{percent}}%)",
     "card.notSaved": "recommend4me: the mark is not saved — {{error}}",
 
@@ -150,7 +148,6 @@ var R4M_WORDS = {
     "interest.no": "неинтересно",
     "interest.yesTitle": "Интересно",
     "interest.noTitle": "Неинтересно",
-    "interest.byGrade": "{{interest}} — по оценке {{grade}}",
     "interest.byModel": "модель: интересно с вероятностью {{percent}}%",
 
     "value.restore": "Вернуть: вы сказали, что этого у работы нет",
@@ -203,7 +200,6 @@ var R4M_WORDS = {
     "card.pending": "recommend4me: прогноз ещё считается",
     "card.prediction": "recommend4me: прогноз из 10",
     "card.grade": "Ваша оценка",
-    "card.interestByGrade": "{{interest}} — по оценке {{grade}}; отметить явно",
     "card.interestChance": "(модель: интересно на {{percent}}%)",
     "card.notSaved": "recommend4me: отметка не сохранена — {{error}}",
 
@@ -260,7 +256,6 @@ var R4M_WORDS = {
     "interest.no": "nezanimljivo",
     "interest.yesTitle": "Zanimljivo",
     "interest.noTitle": "Nezanimljivo",
-    "interest.byGrade": "{{interest}} — po oceni {{grade}}",
     "interest.byModel": "model: zanimljivo sa verovatnoćom od {{percent}}%",
 
     "value.restore": "Vrati: rekli ste da delo ovo nema",
@@ -313,7 +308,6 @@ var R4M_WORDS = {
     "card.pending": "recommend4me: predviđanje se još računa",
     "card.prediction": "recommend4me: predviđanje od 10",
     "card.grade": "Vaša ocena",
-    "card.interestByGrade": "{{interest}} — po oceni {{grade}}; označite izričito",
     "card.interestChance": "(model: zanimljivo sa {{percent}}%)",
     "card.notSaved": "recommend4me: oznaka nije sačuvana — {{error}}",
 

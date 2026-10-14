@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.model
 
-import io.github.vlsergey.recommend4me.interest.Interest
 import io.github.vlsergey.recommend4me.interest.InterestChanged
 import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.item.ItemKey
@@ -362,21 +361,14 @@ class Recommendations(
     }
 
     /**
-     * Every work the user said something of as of interest ([Interest.label]): marked, or graded 4
-     * or 5 — at its current version, else at its latest earlier one, as its card shows it. A row a
-     * work, at the time it was said.
+     * Every work the user marked of interest or not ([Interest]): the marks alone, no grade taken for
+     * one. A row a work, at the time it was marked.
      */
-    private fun interestRows(catalogue: Catalogue): List<TypedRating> {
-        val ratings = catalogue.ratings.groupBy { it.key }
-        return catalogue.items.mapNotNull { item ->
-            val mark = catalogue.interest[item.key]
-            val own = ratings[item.key].orEmpty()
-            val rating = own.filter { it.version == item.version }.maxByOrNull { it.ratedAt } ?: own.maxByOrNull { it.ratedAt }
-            val label = Interest.label(mark?.interesting, rating?.grade) ?: return@mapNotNull null
-            val at = if (mark != null) mark.markedAt else rating!!.ratedAt
-            TypedRating(item.key, item.version, if (label) INTERESTING else NOT_INTERESTING, at)
+    private fun interestRows(catalogue: Catalogue): List<TypedRating> =
+        catalogue.items.mapNotNull { item ->
+            val mark = catalogue.interest[item.key] ?: return@mapNotNull null
+            TypedRating(item.key, item.version, if (mark.interesting) INTERESTING else NOT_INTERESTING, mark.markedAt)
         }
-    }
 
     /**
      * THE MODEL OF INTEREST: the type's scorer learns to put the works the user found interesting

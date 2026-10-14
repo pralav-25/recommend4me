@@ -259,14 +259,9 @@ r4m-grade-mark {
   vertical-align: middle;
 }
 
-[data-r4m].r4m-interest-mark:hover, [data-r4m].r4m-interest-mark.r4m-implied {
+[data-r4m].r4m-interest-mark:hover {
   opacity: 0.9;
   filter: none;
-}
-
-[data-r4m].r4m-interest-mark.r4m-implied {
-  border-style: dashed;
-  border-color: var(--r4m-muted);
 }
 
 [data-r4m].r4m-interest-mark.r4m-current {

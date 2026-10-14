@@ -122,24 +122,10 @@ export function RatingButtons({
   );
 }
 
-/** The lowest grade that says a work was interesting, as the application takes it (Interest.MIN_GRADE). */
-const INTERESTING_GRADE = 4;
-
-/** The highest grade that says a work was not interesting (Interest.MAX_DULL_GRADE). */
-const DULL_GRADE = 1;
-
-/** What the grade says of interest without a mark: interesting, not, or nothing. */
-function interestByGrade(summary: ItemSummary): boolean | null {
-  const grade = summary.grade ?? summary.previousGrade;
-  if (summary.interest != null || grade == null) return null;
-  return grade >= INTERESTING_GRADE ? true : grade <= DULL_GRADE ? false : null;
-}
-
 /**
  * Whether the work is interesting to read at all — beside how good it is: the user's mark, pressed
- * again to take it back. Without a mark a grade of 4 or 5 says it was (the 🤔 drawn dashed), a
- * grade of 1 that it was not (the 🥱 dashed), or else the model's chance is shown. The list sorted
- * by the prediction multiplies it by the chance.
+ * again to take it back; without one the model's chance is shown. A grade says nothing of it. The
+ * list sorted by the formula multiplies the prediction by the chance.
  */
 export function InterestButtons({
   summary,
@@ -155,9 +141,7 @@ export function InterestButtons({
 }) {
   const { t } = useTranslation("item");
   const mark = useMarkInterest();
-  const grade = summary.grade ?? summary.previousGrade;
-  const byGrade = interestByGrade(summary);
-  const chance = summary.interest == null && byGrade == null ? summary.interestChance : undefined;
+  const chance = summary.interest == null ? summary.interestChance : undefined;
   const press = (value: boolean) => (e: React.MouseEvent) => {
     e.stopPropagation();
     mark.mutate({ summary, interesting: summary.interest === value ? null : value });
@@ -175,7 +159,6 @@ export function InterestButtons({
               className={cn(
                 "min-w-0 px-2",
                 summary.interest === true ? "border-emerald-600! bg-emerald-600! text-white! hover:bg-emerald-600/90!" : "hover:border-emerald-600 hover:text-emerald-600",
-                byGrade === true && "border-dashed border-emerald-600 text-emerald-600",
               )}
               onClick={press(true)}
             />
@@ -186,11 +169,7 @@ export function InterestButtons({
           {labels && <span>{t("InterestButtons.interesting")}</span>}
         </TooltipTrigger>
         <TooltipContent>
-          {summary.interest === true
-            ? t("InterestButtons.takeBackInteresting")
-            : byGrade === true
-              ? t("InterestButtons.interestingByGrade", { grade })
-              : t("InterestButtons.interestingHint")}
+          {summary.interest === true ? t("InterestButtons.takeBackInteresting") : t("InterestButtons.interestingHint")}
         </TooltipContent>
       </Tooltip>
       <Tooltip>
@@ -204,7 +183,6 @@ export function InterestButtons({
               className={cn(
                 "min-w-0 px-2",
                 summary.interest === false ? "border-grade-1! bg-grade-1! text-white! hover:bg-grade-1/90!" : "hover:border-grade-1 hover:text-grade-1",
-                byGrade === false && "border-dashed border-grade-1 text-grade-1",
               )}
               onClick={press(false)}
             />
@@ -214,11 +192,7 @@ export function InterestButtons({
           {labels && <span>{t("InterestButtons.dull")}</span>}
         </TooltipTrigger>
         <TooltipContent>
-          {summary.interest === false
-            ? t("InterestButtons.takeBackDull")
-            : byGrade === false
-              ? t("InterestButtons.dullByGrade", { grade })
-              : t("InterestButtons.dullHint")}
+          {summary.interest === false ? t("InterestButtons.takeBackDull") : t("InterestButtons.dullHint")}
         </TooltipContent>
       </Tooltip>
       {chance != null && (
