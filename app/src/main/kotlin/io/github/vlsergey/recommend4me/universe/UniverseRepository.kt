@@ -1,14 +1,14 @@
 package io.github.vlsergey.recommend4me.universe
 
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CHARACTER
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CHARACTER_CHOICE
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CHARACTER_CLASS
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CHARACTER_PROPERTY
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CLASS
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_CLASS_CHOICE
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_LOCAL_NAME
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.UNIVERSE_PROPERTY
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_CHARACTER
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_CHARACTER_CHOICE
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_CHARACTER_CLASS
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_CHARACTER_PROPERTY
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_CLASS
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_CLASS_CHOICE
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_LOCAL_NAME
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_PROPERTY
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import java.time.Instant

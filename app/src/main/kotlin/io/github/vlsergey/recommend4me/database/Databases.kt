@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.database
 
+import io.github.vlsergey.recommend4me.dictionary.DictionaryMove
 import io.github.vlsergey.recommend4me.folder.DataFolder
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import org.jooq.DSLContext
@@ -19,6 +20,13 @@ class TypeDatabases(val corrections: Database, val model: Database)
 @Component
 class Databases(folder: DataFolder, plugins: Plugins) : DisposableBean {
 
+    /**
+     * The user's dictionaries, common to every content type: the tags of every site as the user
+     * merges and names them, and the universes. Opened first: the files of the types give theirs to
+     * it, once, before their migrations drop them ([DictionaryMove]).
+     */
+    val dictionaries = Database("dictionaries", DataFolder.database(folder.root, "dictionaries"), "dictionaries")
+
     private val sources: Map<String, SourceDatabases> = plugins.sources.associate { s ->
         val dir = folder.source(s.id)
         s.id to SourceDatabases(
@@ -31,8 +39,12 @@ class Databases(folder: DataFolder, plugins: Plugins) : DisposableBean {
     private val types: Map<String, TypeDatabases> = plugins.types.associate { t ->
         val dir = folder.type(t.id)
         t.id to TypeDatabases(
-            corrections = Database("${t.id}/corrections", dir.resolve("corrections"), "typecorrections"),
-            model = Database("${t.id}/model", dir.resolve("model"), "model"),
+            corrections = Database("${t.id}/corrections", dir.resolve("corrections"), "typecorrections") { db ->
+                DictionaryMove.copy("${t.id}/corrections", db, dictionaries.dsl, DictionaryMove.CORRECTIONS)
+            },
+            model = Database("${t.id}/model", dir.resolve("model"), "model") { db ->
+                DictionaryMove.copy("${t.id}/model", db, dictionaries.dsl, DictionaryMove.MODEL)
+            },
         )
     }
 
@@ -49,10 +61,11 @@ class Databases(folder: DataFolder, plugins: Plugins) : DisposableBean {
 
     /** Every database file. */
     fun all(): List<Database> =
-        sources.values.flatMap { listOf(it.source, it.corrections, it.ratings) } + types.values.flatMap { listOf(it.corrections, it.model) }
+        sources.values.flatMap { listOf(it.source, it.corrections, it.ratings) } + types.values.flatMap { listOf(it.corrections, it.model) } + dictionaries
 
     override fun destroy() {
         sources.values.forEach { listOf(it.source, it.corrections, it.ratings).forEach(Database::close) }
         types.values.forEach { listOf(it.corrections, it.model).forEach(Database::close) }
+        dictionaries.close()
     }
 }

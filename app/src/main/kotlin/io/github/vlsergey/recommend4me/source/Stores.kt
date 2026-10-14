@@ -106,7 +106,7 @@ class SourceStore(
     val suggestions = SuggestionRepository(databases.model(source.contentType), source.id, drafts)
 
     /** The names of the layer of universes: the dictionary's of the content type, whatever the source; none for a type without universes. */
-    private val dictionaryNames = if (contentType.universes) UniverseNames(UniverseRepository(databases.typeCorrections(contentType.id), languages)) else null
+    private val dictionaryNames = if (contentType.universes) UniverseNames(UniverseRepository(databases.dictionaries.dsl, languages)) else null
 
     /**
      * What the values [keys] of a facet are shown by: of the layer of universes, as the dictionary
@@ -140,7 +140,7 @@ class SourceStore(
         schema.facet(facet)?.let { I18nKeys.standardValue(it, key) } ?: UniverseFacet.originalCharacterKey(key)
 
     /** The user's word on the sites' free tags of the content type: merged, named, told apart — every source's alike. */
-    val tags = TagRepository(databases.typeCorrections(contentType.id), databases.model(contentType.id))
+    val tags = TagRepository(databases.dictionaries.dsl)
 
     /** The facets of the layer learnt from the sites' tags by their names: the tags the user merges and names. */
     val tagFacets = schema.facets.filter { it.editable && it.examplesFrom != null }.map { it.key }.toSet()
@@ -160,9 +160,9 @@ class TypeStore(val type: ContentType, val sources: List<SourceStore>, databases
     val id: String get() = type.id
 
     val links = TypeLinkRepository(databases.typeCorrections(type.id))
-    val universes = UniverseRepository(databases.typeCorrections(type.id), languages)
+    val universes = UniverseRepository(databases.dictionaries.dsl, languages)
     val searchJudgments = SearchJudgmentRepository(databases.typeCorrections(type.id))
-    val tags = TagRepository(databases.typeCorrections(type.id), databases.model(type.id))
+    val tags = TagRepository(databases.dictionaries.dsl)
     val models = ModelRepository(databases.model(type.id))
     val embeddings = SetEmbeddingRepository(databases.model(type.id))
     val likeness = MarkLikenessRepository(databases.model(type.id))

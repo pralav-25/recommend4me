@@ -45,7 +45,7 @@ dependencies {
 val migrations = layout.projectDirectory.dir("src/main/resources/db")
 
 /** Every kind of database file, by the folder of its migrations: the package of its classes. */
-val schemas = listOf("app", "source", "corrections", "ratings", "typecorrections", "model")
+val schemas = listOf("app", "source", "corrections", "ratings", "typecorrections", "model", "dictionaries")
 
 /**
  * H2 ITSELF READS THE SCHEMA: the generator is given an empty database in memory that runs every

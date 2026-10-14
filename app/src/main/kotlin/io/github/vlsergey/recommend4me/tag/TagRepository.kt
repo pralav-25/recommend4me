@@ -1,15 +1,15 @@
 package io.github.vlsergey.recommend4me.tag
 
-import io.github.vlsergey.recommend4me.database.model.tables.references.TAG_SHOWN_NAME
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_DISTINCT
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_ENTRY
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_MERGE
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_PARENT
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.SITE_TAG
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_ENTRY
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_ENTRY_ABOVE
-import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_ENTRY_TEXT
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_SHOWN_NAME
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG_DISTINCT
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG_ENTRY
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG_MERGE
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG_PARENT
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.SITE_TAG
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_ABOVE
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_TEXT
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import java.time.Instant
@@ -27,22 +27,22 @@ data class ShownName(val name: String, val rule: NameRule)
 data class SiteTagRef(val source: String, val tag: String)
 
 /**
- * THE NORMALIZED TAGS OF A CONTENT TYPE, in its database of the user's word ([db]): every normalized
+ * THE NORMALIZED TAGS OF EVERY CONTENT TYPE, in the user's dictionaries ([db]): every normalized
  * tag — an id and the name the user gave it, if any — every site's tag bound to one of them, the
- * graph of them, the pairs told apart. The names worked out of the sites' are kept apart, in the
- * type's model database ([model]): they are made again from the rest.
+ * graph of them, the pairs told apart; and the names worked out of the sites', made again from the
+ * rest.
  *
  * A tag is known to the application — as a value of the works' tags, in the user's answers — by its
  * id, written as a text ([key]).
  */
-class TagRepository(private val db: DSLContext, private val model: DSLContext) {
+class TagRepository(private val db: DSLContext) {
 
     /**
      * The writes of one action of the user on the tags — every one of them, or, failed, none: the
      * repository [block] is given writes in one transaction of the database of the user's word. A
      * write of a repository's own transaction inside it (a merge) is a part of it.
      */
-    fun <T> transaction(block: (TagRepository) -> T): T = db.transactionResult { c -> block(TagRepository(DSL.using(c), model)) }
+    fun <T> transaction(block: (TagRepository) -> T): T = db.transactionResult { c -> block(TagRepository(DSL.using(c))) }
 
     // --- The normalized tags and the sites' tags bound to them ---
 
@@ -144,7 +144,7 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
         val ids = keys?.mapNotNull(::idOf)
         if (ids != null && ids.isEmpty()) return emptyMap()
         val out = HashMap<String, String>()
-        fun worked(only: List<Long>?) = model.select(TAG_SHOWN_NAME.TAG, TAG_SHOWN_NAME.NAME).from(TAG_SHOWN_NAME)
+        fun worked(only: List<Long>?) = db.select(TAG_SHOWN_NAME.TAG, TAG_SHOWN_NAME.NAME).from(TAG_SHOWN_NAME)
             .where(only?.let { TAG_SHOWN_NAME.TAG.`in`(it) } ?: DSL.noCondition()).fetch()
         fun given(only: List<Long>?) = db.select(NORMALIZED_TAG.ID, NORMALIZED_TAG.NAME).from(NORMALIZED_TAG)
             .where(NORMALIZED_TAG.NAME.isNotNull, only?.let { NORMALIZED_TAG.ID.`in`(it) } ?: DSL.noCondition()).fetch()
@@ -156,12 +156,12 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
 
     /** The name a new tag is shown by until the names are worked out again: of the site's tag it is made for. */
     fun showAs(id: Long, name: ShownName) {
-        model.insertInto(TAG_SHOWN_NAME).set(TAG_SHOWN_NAME.TAG, id).set(TAG_SHOWN_NAME.NAME, name.name.take(1000)).set(TAG_SHOWN_NAME.RULE, name.rule.name)
+        db.insertInto(TAG_SHOWN_NAME).set(TAG_SHOWN_NAME.TAG, id).set(TAG_SHOWN_NAME.NAME, name.name.take(1000)).set(TAG_SHOWN_NAME.RULE, name.rule.name)
             .onDuplicateKeyIgnore().execute()
     }
 
-    /** The names worked out of every tag replaced by [named]: kept in the model database, made again from the rest. */
-    fun replaceShown(named: Map<Long, ShownName>) = model.transaction { c ->
+    /** The names worked out of every tag replaced by [named]: made again from the rest. */
+    fun replaceShown(named: Map<Long, ShownName>) = db.transaction { c ->
         val tx = DSL.using(c)
         // Only what changed: a tag gone, a name or its rule changed, a tag new — not the whole table every few seconds
         val stored = tx.select(TAG_SHOWN_NAME.TAG, TAG_SHOWN_NAME.NAME, TAG_SHOWN_NAME.RULE).from(TAG_SHOWN_NAME).fetch()

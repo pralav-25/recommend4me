@@ -26,6 +26,8 @@ class Database(
     kind: String,
     pluginMigrations: List<String> = emptyList(),
     classLoader: ClassLoader = Thread.currentThread().contextClassLoader,
+    /** Done with the file as it is, before its migrations: what a migration drops copied elsewhere first. */
+    beforeMigrations: (DSLContext) -> Unit = {},
 ) : AutoCloseable {
 
     private val pool = HikariDataSource(HikariConfig().apply {
@@ -50,6 +52,7 @@ class Database(
     val dsl: DSLContext = DSL.using(pool, SQLDialect.H2)
 
     init {
+        beforeMigrations(dsl)
         migrate(listOf("classpath:db/$kind"), "flyway_schema_history", classLoader, shared = false)
         if (pluginMigrations.isNotEmpty()) migrate(pluginMigrations, "plugin_schema_history", classLoader, shared = true)
     }
