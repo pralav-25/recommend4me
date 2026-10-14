@@ -704,8 +704,11 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             ?: store.suggestions.ofItems(listOf(itemId))[itemId].orEmpty()[facet].orEmpty().values
         val answered = corrections.filter { it.facet == facet }.map { it.key }.toSet()
         val current = site[facet].orEmpty().toSet()
-        // A character of the work's other facet of characters is no candidate here
-        val out = leftOut(store, facet, itemId)(itemId)
+        // A character of the work's other facet of characters is no candidate here; nor a tag under
+        // one the user said the work has not — it has none of them ([TagHierarchy])
+        val hierarchy = store.hierarchies()[facet]
+        val out = leftOut(store, facet, itemId)(itemId) +
+            corrections.filter { it.facet == facet && !it.added }.flatMap { hierarchy?.descendants(it.key).orEmpty() }
         // A value the model gives the work is the work's already
         val scored = chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
             .map { FacetCandidate(it.key, it.chance, it.mentions) }
@@ -718,7 +721,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         val candidates = (scored + unscored)
             .sortedWith(compareByDescending<FacetCandidate> { it.chance ?: -1.0 }.thenByDescending { it.mentions ?: 0 })
             // A tag above another before it, whatever its chance
-            .let { list -> store.hierarchies()[facet]?.parentsFirst(list) { it.key } ?: list }
+            .let { list -> hierarchy?.parentsFirst(list) { it.key } ?: list }
         return ItemFacetCandidates(def, candidates, store.names(facet, candidates.map { it.key }))
     }
 

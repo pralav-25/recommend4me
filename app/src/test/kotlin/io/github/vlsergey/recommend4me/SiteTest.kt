@@ -798,6 +798,9 @@ class SiteTest {
         corrections.correctFacet("site", "t2", FacetCorrection(facet = "tags", added = false, key = hulls))
         assertTrue(tagsOf("t2").none { it.key == other }, "tags ${tagsOf("t2")}")
         assertEquals(io.github.vlsergey.recommend4me.api.model.FacetValueInfo.Corrected.REMOVED, tagsOf("t2").single { it.key == hulls }.corrected)
+        // Nor offered among the candidates
+        val candidates = suggestionsApi.getCandidates("site", "t2", "tags").body!!.map { it.key }
+        assertTrue(other !in candidates, "candidates of t2 $candidates")
         // The other way round: above it
         assertEquals(listOf(other), tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.PARENT)).body!!.parents.map { it.key })
         tagsApi.relateTags("books", TagRelationRequest(hulls, other, TagRelation.NONE))
