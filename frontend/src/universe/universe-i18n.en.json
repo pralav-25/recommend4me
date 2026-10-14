@@ -154,5 +154,5 @@
   "UniversesScreen.empty": "The dictionary is empty. Find a universe in Wikidata above and add it.",
   "UniversesScreen.inDictionary": "In the dictionary",
   "UniversesScreen.loadFailed": "Could not load the dictionary: {{error}}",
-  "UniversesScreen.title": "Universes: {{type}}"
+  "UniversesScreen.title": "Universes of every site"
 }

@@ -162,5 +162,5 @@
   "UniversesScreen.empty": "Словарь пуст. Найдите вселенную в Викиданных выше и добавьте её.",
   "UniversesScreen.inDictionary": "В словаре",
   "UniversesScreen.loadFailed": "Не удалось загрузить словарь: {{error}}",
-  "UniversesScreen.title": "Вселенные: {{type}}"
+  "UniversesScreen.title": "Вселенные всех сайтов"
 }

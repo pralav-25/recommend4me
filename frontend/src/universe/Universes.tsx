@@ -6,7 +6,6 @@ import { api, ensureOk, unwrap, type CharacterInfo, type ContentTypeInfo, type F
 import { AsyncButton } from "@/components/AsyncButton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { typeTitle } from "@/contenttype/types";
 import { ago, formatDate } from "@/i18n/format";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
@@ -21,7 +20,7 @@ export function useUniverses(typeId: string, enabled = true) {
   return useQuery({
     queryKey: [UNIVERSES, typeId],
     enabled,
-    queryFn: async () => unwrap(await api.GET("/api/types/{type}/universes", { params: { path: { type: typeId } } })),
+    queryFn: async () => unwrap(await api.GET("/api/universes", {})),
   });
 }
 
@@ -31,8 +30,8 @@ export function charactersQuery(typeId: string, u: { catalogue: string; universe
     queryKey: [UNIVERSES, typeId, u.catalogue, u.universe, "characters"],
     queryFn: async () =>
       unwrap(
-        await api.GET("/api/types/{type}/universes/{catalogue}/{universe}/characters", {
-          params: { path: { type: typeId, catalogue: u.catalogue, universe: u.universe } },
+        await api.GET("/api/universes/{catalogue}/{universe}/characters", {
+          params: { path: { catalogue: u.catalogue, universe: u.universe } },
         }),
       ),
   };
@@ -74,7 +73,7 @@ export function UniversesScreen({ type, selected }: { type: ContentTypeInfo; sel
     <div className="mx-auto flex max-w-5xl flex-col gap-4 px-4 py-4">
       <header className="flex flex-col gap-1">
         <h1 className="flex items-center gap-2 text-xl font-semibold">
-          <OrbitIcon className="size-5" /> {t("UniversesScreen.title", { type: typeTitle(type.id).toLowerCase() })}
+          <OrbitIcon className="size-5" /> {t("UniversesScreen.title")}
         </h1>
         <p className="text-sm text-muted-foreground">{t("UniversesScreen.description")}</p>
       </header>
@@ -121,12 +120,12 @@ function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; u
   const toggle = () => navigate(expanded ? { kind: "universes" } : { kind: "universes", ...ref });
   // The spinner stays until the list shows what the catalogue gave
   const refresh = useMutation({
-    mutationFn: async () => unwrap(await api.POST("/api/types/{type}/universes", { params: { path: { type: type.id } }, body: ref })),
+    mutationFn: async () => unwrap(await api.POST("/api/universes", { body: ref })),
     onSuccess: () => changed(false),
   });
   const remove = useMutation({
     mutationFn: async () =>
-      ensureOk(await api.DELETE("/api/types/{type}/universes/{catalogue}/{universe}", { params: { path: { type: type.id, ...ref } } })),
+      ensureOk(await api.DELETE("/api/universes/{catalogue}/{universe}", { params: { path: { ...ref } } })),
     onSuccess: () => changed(true),
   });
 
@@ -158,7 +157,6 @@ function UniverseRow({ type, universe: u, expanded }: { type: ContentTypeInfo; u
             <ExternalLinkIcon className="size-3.5" />
           </a>
           <LocalNameEdit
-            typeId={type.id}
             catalogue={u.catalogue}
             entry={u.universe}
             localName={u.localName}
@@ -218,8 +216,8 @@ export function classesQuery(typeId: string, u: { catalogue: string; universe: s
     queryKey: [UNIVERSES, typeId, u.catalogue, u.universe, "classes"],
     queryFn: async () =>
       unwrap(
-        await api.GET("/api/types/{type}/universes/{catalogue}/{universe}/classes", {
-          params: { path: { type: typeId, catalogue: u.catalogue, universe: u.universe } },
+        await api.GET("/api/universes/{catalogue}/{universe}/classes", {
+          params: { path: { catalogue: u.catalogue, universe: u.universe } },
         }),
       ),
   };
@@ -232,15 +230,15 @@ export function classesQuery(typeId: string, u: { catalogue: string; universe: s
  */
 export function useInclusion(typeId: string, u: { catalogue: string; universe: string }) {
   const changed = useDictionaryChanged(typeId);
-  const path = { type: typeId, catalogue: u.catalogue, universe: u.universe };
+  const path = { catalogue: u.catalogue, universe: u.universe };
   return {
     setClass: async (cls: UniverseClassInfo) => {
       const included = !cls.included;
       const params = { path: { ...path, class: cls.class } };
       ensureOk(
         included === cls.character
-          ? await api.DELETE("/api/types/{type}/universes/{catalogue}/{universe}/classes/{class}", { params })
-          : await api.PUT("/api/types/{type}/universes/{catalogue}/{universe}/classes/{class}", { params, body: { included } }),
+          ? await api.DELETE("/api/universes/{catalogue}/{universe}/classes/{class}", { params })
+          : await api.PUT("/api/universes/{catalogue}/{universe}/classes/{class}", { params, body: { included } }),
       );
       await changed(false);
     },
@@ -250,8 +248,8 @@ export function useInclusion(typeId: string, u: { catalogue: string; universe: s
       const params = { path: { ...path, character: c.character } };
       ensureOk(
         included === byClasses
-          ? await api.DELETE("/api/types/{type}/universes/{catalogue}/{universe}/characters/{character}", { params })
-          : await api.PUT("/api/types/{type}/universes/{catalogue}/{universe}/characters/{character}", { params, body: { included } }),
+          ? await api.DELETE("/api/universes/{catalogue}/{universe}/characters/{character}", { params })
+          : await api.PUT("/api/universes/{catalogue}/{universe}/characters/{character}", { params, body: { included } }),
       );
       await changed(false);
     },
@@ -322,7 +320,6 @@ function Characters({ type, universe: u }: { type: ContentTypeInfo; universe: Un
             onToggle={() => inclusion.setEntry(c, byClasses(c))}
             naming={
               <LocalNameEdit
-                typeId={type.id}
                 catalogue={u.catalogue}
                 entry={c.character}
                 localName={c.localName}
@@ -451,7 +448,7 @@ export function CatalogueSearch({ type, dictionary, forWork }: { type: ContentTy
   const [query, setQuery] = useState("");
   const search = useMutation({
     mutationFn: async (q: string) =>
-      unwrap(await api.GET("/api/types/{type}/universes/search", { params: { path: { type: type.id }, query: { query: q } } })),
+      unwrap(await api.GET("/api/universes/search", { params: { query: { query: q } } })),
   });
   const submit = () => {
     const q = query.trim();
@@ -516,7 +513,7 @@ function FoundRow({
   const add = useMutation({
     mutationFn: async () => {
       const universe = unwrap(
-        await api.POST("/api/types/{type}/universes", { params: { path: { type: type.id } }, body: { catalogue: f.catalogue, universe: f.universe } }),
+        await api.POST("/api/universes", { body: { catalogue: f.catalogue, universe: f.universe } }),
       );
       if (forWork) await forWork.link(universe.value);
       return universe;

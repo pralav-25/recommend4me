@@ -32,7 +32,7 @@ enum class Refusal(val code: String, val params: List<String> = emptyList()) {
     BAD_GRADE("badGrade", listOf("min", "max")),
     BAD_MARK("badMark"),
     BAD_ANSWER("badAnswer"),
-    NO_UNIVERSES("noUniverses", listOf("type")),
+    NO_UNIVERSES("noUniverses"),
     NOT_IN_CATALOGUE("notInCatalogue", listOf("universe")),
     CATALOGUE_SILENT("catalogueSilent", listOf("error")),
     NO_SUCH_UNIVERSE("noSuchUniverse"),

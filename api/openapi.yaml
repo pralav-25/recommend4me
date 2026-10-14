@@ -825,13 +825,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/JobStatus'
 
-  /api/types/{type}/universes:
+  /api/universes:
     get:
       tags: [universes]
       operationId: listUniverses
       summary: The dictionary of universes of the type, with how many characters and works each has
-      parameters:
-        - $ref: '#/components/parameters/Type'
       responses:
         '200':
           description: The universes, by name
@@ -846,8 +844,6 @@ paths:
       operationId: addUniverse
       summary: Adds a universe of a catalogue to the dictionary with its characters - or refreshes it
       description: The catalogue is asked now; it may take seconds.
-      parameters:
-        - $ref: '#/components/parameters/Type'
       requestBody:
         required: true
         content:
@@ -864,13 +860,12 @@ paths:
         '404':
           description: No such catalogue or entry
 
-  /api/types/{type}/universes/search:
+  /api/universes/search:
     get:
       tags: [universes]
       operationId: searchUniverses
       summary: What the catalogues find by a name - asked only by the user's button
       parameters:
-        - $ref: '#/components/parameters/Type'
         - name: query
           in: query
           required: true
@@ -886,13 +881,12 @@ paths:
                 items:
                   $ref: '#/components/schemas/FoundUniverse'
 
-  /api/types/{type}/universes/{catalogue}/{universe}:
+  /api/universes/{catalogue}/{universe}:
     delete:
       tags: [universes]
       operationId: removeUniverse
       summary: Takes the universe out of the dictionary, and every work's link to it
       parameters:
-        - $ref: '#/components/parameters/Type'
         - name: catalogue
           in: path
           required: true
@@ -907,13 +901,12 @@ paths:
         '204':
           description: Removed
 
-  /api/types/{type}/universes/{catalogue}/{universe}/classes:
+  /api/universes/{catalogue}/{universe}/classes:
     get:
       tags: [universes]
       operationId: listUniverseClasses
       summary: The classes the entries of a universe are of, the most entries first
       parameters:
-        - $ref: '#/components/parameters/Type'
         - $ref: '#/components/parameters/Catalogue'
         - $ref: '#/components/parameters/Universe'
       responses:
@@ -926,13 +919,12 @@ paths:
                 items:
                   $ref: '#/components/schemas/UniverseClassInfo'
 
-  /api/types/{type}/universes/{catalogue}/{universe}/classes/{class}:
+  /api/universes/{catalogue}/{universe}/classes/{class}:
     put:
       tags: [universes]
       operationId: chooseUniverseClass
       summary: The user's word on a class within the universe - its entries kept as characters, or left out
       parameters:
-        - $ref: '#/components/parameters/Type'
         - $ref: '#/components/parameters/Catalogue'
         - $ref: '#/components/parameters/Universe'
         - name: class
@@ -956,7 +948,6 @@ paths:
       operationId: resetUniverseClass
       summary: Takes the user's word on the class back - the catalogue decides again
       parameters:
-        - $ref: '#/components/parameters/Type'
         - $ref: '#/components/parameters/Catalogue'
         - $ref: '#/components/parameters/Universe'
         - name: class
@@ -970,7 +961,7 @@ paths:
         '404':
           description: No such universe
 
-  /api/types/{type}/universes/{catalogue}/{entry}/name:
+  /api/universes/{catalogue}/{entry}/name:
     put:
       tags: [universes]
       operationId: nameUniverseEntry
@@ -978,7 +969,6 @@ paths:
         The name the user gives a universe or a character of the dictionary over the catalogue's - shown everywhere in
         its place, read in the works' texts as one more name of it; none takes it back
       parameters:
-        - $ref: '#/components/parameters/Type'
         - $ref: '#/components/parameters/Catalogue'
         - name: entry
           in: path
@@ -996,13 +986,12 @@ paths:
         '204':
           description: Saved
 
-  /api/types/{type}/universes/{catalogue}/{universe}/characters/{character}:
+  /api/universes/{catalogue}/{universe}/characters/{character}:
     put:
       tags: [universes]
       operationId: chooseUniverseEntry
       summary: The user's word on one entry of the universe, over its classes - kept as a character, or left out
       parameters:
-        - $ref: '#/components/parameters/Type'
         - $ref: '#/components/parameters/Catalogue'
         - $ref: '#/components/parameters/Universe'
         - name: character
@@ -1026,7 +1015,6 @@ paths:
       operationId: resetUniverseEntry
       summary: Takes the user's word on the entry back - its classes decide again
       parameters:
-        - $ref: '#/components/parameters/Type'
         - $ref: '#/components/parameters/Catalogue'
         - $ref: '#/components/parameters/Universe'
         - name: character
@@ -1040,13 +1028,12 @@ paths:
         '404':
           description: No such universe
 
-  /api/types/{type}/universes/{catalogue}/{universe}/characters:
+  /api/universes/{catalogue}/{universe}/characters:
     get:
       tags: [universes]
       operationId: listCharacters
       summary: Every entry of a universe of the dictionary as the catalogue gave it, with whether it is kept as a character
       parameters:
-        - $ref: '#/components/parameters/Type'
         - name: catalogue
           in: path
           required: true

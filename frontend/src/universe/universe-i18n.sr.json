@@ -158,5 +158,5 @@
   "UniversesScreen.empty": "Rečnik je prazan. Pronađite univerzum u Vikipodacima iznad i dodajte ga.",
   "UniversesScreen.inDictionary": "U rečniku",
   "UniversesScreen.loadFailed": "Učitavanje rečnika nije uspelo: {{error}}",
-  "UniversesScreen.title": "Univerzumi: {{type}}"
+  "UniversesScreen.title": "Univerzumi svih sajtova"
 }

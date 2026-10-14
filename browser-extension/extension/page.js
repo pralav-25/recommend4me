@@ -701,7 +701,7 @@
     const at = v.key.indexOf(":");
     if (facet === UNIVERSE && v.corrected !== "REMOVED" && at > 0) {
       chip.appendChild(button("↻", t("universe.refresh"), () =>
-        api("POST", `/api/types/${enc(view.type)}/universes`, { catalogue: v.key.substring(0, at), universe: v.key.substring(at + 1) }), "r4m-button"));
+        api("POST", "/api/universes", { catalogue: v.key.substring(0, at), universe: v.key.substring(at + 1) }), "r4m-button"));
     }
     return withFailure(chip, about(facet, v.key));
   }

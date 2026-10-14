@@ -13,14 +13,12 @@ import { Input } from "@/components/ui/input";
  * A pencil by the name opens a field; an empty one, or ↺, gives the catalogue's name back.
  */
 export function LocalNameEdit({
-  typeId,
   catalogue,
   entry,
   localName,
   catalogueName,
   onSaved,
 }: {
-  typeId: string;
   catalogue: string;
   entry: string;
   localName?: string;
@@ -33,8 +31,8 @@ export function LocalNameEdit({
   const save = useMutation({
     mutationFn: async (value: string | null) =>
       ensureOk(
-        await api.PUT("/api/types/{type}/universes/{catalogue}/{entry}/name", {
-          params: { path: { type: typeId, catalogue, entry } },
+        await api.PUT("/api/universes/{catalogue}/{entry}/name", {
+          params: { path: { catalogue, entry } },
           body: { name: value ?? undefined },
         }),
       ),
