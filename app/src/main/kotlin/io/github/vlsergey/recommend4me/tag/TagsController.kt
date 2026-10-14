@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.tag
 
 import io.github.vlsergey.recommend4me.api.TagsApi
+import io.github.vlsergey.recommend4me.api.model.CatalogueOffer
 import io.github.vlsergey.recommend4me.api.model.FoundTagEntry
 import io.github.vlsergey.recommend4me.api.model.TagDescription
 import io.github.vlsergey.recommend4me.api.model.TagEntryInfo
@@ -103,6 +104,15 @@ class TagsController(
         }
     }
 
+    override fun refreshTagEntries(type: String, tag: String): ResponseEntity<TagInfo> {
+        val (t, facet) = of(type)
+        return try {
+            tags.refreshEntries(t, facet, tag)?.let { ResponseEntity.ok(it.toApi()) } ?: ResponseEntity.notFound().build()
+        } catch (e: NoSuchElementException) {
+            ResponseEntity.notFound().build()
+        }
+    }
+
     /** The text of the user's first language that has one. */
     private fun Map<String, String>.first(): String? = languages.firstNotNullOfOrNull { this[it] }
 
@@ -122,6 +132,7 @@ class TagsController(
         // The sites' words first, then the entries'
         descriptions = descriptions.map { d -> TagDescription(d.site.source, d.text, stats.variants[d.site]?.name) } +
             entries.mapNotNull { b -> b.entry.descriptions.first()?.let { TagDescription(b.catalogue, it, b.entry.labels.first()) } },
+        catalogueOffers = offers.map { o -> CatalogueOffer(o.catalogue, TagRef(o.tag, o.name), ApiTagRelation.valueOf(o.relation.name), o.path) },
     )
 
     private fun TagVariant.toApi() = TagVariantInfo(site.source, site.tag, name, uses.works, uses.graded, uses.liked)

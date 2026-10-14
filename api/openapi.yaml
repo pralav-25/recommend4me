@@ -1221,7 +1221,7 @@ paths:
     put:
       tags: [tags]
       operationId: bindTagEntry
-      summary: Binds the tag to an entry of a catalogue - its label names the tag unless the user named it - or, with no entry, to none
+      summary: Binds the tag to an entry of a catalogue besides the ones it is, or no more to it; the label of the one bound first names the tag unless the user named it
       parameters:
         - $ref: '#/components/parameters/Type'
       requestBody:
@@ -1239,6 +1239,28 @@ paths:
                 $ref: '#/components/schemas/TagInfo'
         '404':
           description: No such tag, catalogue or entry
+
+  /api/types/{type}/tags/entries/refresh:
+    post:
+      tags: [tags]
+      operationId: refreshTagEntries
+      summary: Reads the entries the tag is bound to of their catalogues again - names, descriptions, what they are a kind of
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - name: tag
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The tag
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagInfo'
+        '404':
+          description: No such tag or catalogue
 
   /api/types/{type}/tags/relation:
     put:
@@ -3522,7 +3544,7 @@ components:
 
     TagInfo:
       type: object
-      required: [key, name, rule, works, graded, liked, variants, names, parents, children, catalogueEntries, descriptions]
+      required: [key, name, rule, works, graded, liked, variants, names, parents, children, catalogueEntries, descriptions, catalogueOffers]
       properties:
         key:
           type: string
@@ -3576,6 +3598,29 @@ components:
             entries do; of the one tag asked alone, none in a list
           items:
             $ref: '#/components/schemas/TagDescription'
+        catalogueOffers:
+          type: array
+          description: >
+            Other tags offered above or under this one by what their entries are a kind of in a catalogue - not the
+            ones above or under it already; of the one tag asked alone, none in a list
+          items:
+            $ref: '#/components/schemas/CatalogueOffer'
+
+    CatalogueOffer:
+      type: object
+      required: [catalogue, tag, relation, path]
+      properties:
+        catalogue:
+          type: string
+        tag:
+          $ref: '#/components/schemas/TagRef'
+        relation:
+          $ref: '#/components/schemas/TagRelation'
+        path:
+          type: array
+          description: The entries of the way up, from the lower tag's to the upper's, by their labels
+          items:
+            type: string
 
     TagDescription:
       type: object

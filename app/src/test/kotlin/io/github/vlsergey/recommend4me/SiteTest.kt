@@ -119,6 +119,7 @@ class SiteTest {
             else -> emptyList()
         }
         override fun entries(ids: Collection<String>, languages: List<String>) = listOf(hull, vessel).filter { it.id in ids }
+        override fun above(ids: Collection<String>) = if ("E1" in ids) mapOf("E1" to listOf("E2")) else emptyMap()
         private fun entries(languages: List<String>) = listOf(
             UniverseEntry("U1", en("Space opera"), en("Ships and pilots"), "https://fake.example/U1", languages),
             UniverseEntry("U2", en("Fleet"), en("More ships"), "https://fake.example/U2", languages),
@@ -754,6 +755,21 @@ class SiteTest {
         val unbound = tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E2", false)).body!!
         assertEquals(emptyList(), unbound.catalogueEntries)
         assertEquals(TagNameRule.LIKED, unbound.rule)
+
+        // A hull is a kind of vessel in the catalogue: the tag of the vessel offered above the hulls, the hulls under it
+        tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1", true))
+        tagsApi.bindTagEntry("books", TagEntryRequest(cargo, "fake", "E2", true))
+        val offered = tagsApi.getTag("books", hulls).body!!.catalogueOffers.single()
+        assertEquals(Triple(cargo, TagRelation.PARENT, listOf("Корпус", "Судно")), Triple(offered.tag.key, offered.relation, offered.path))
+        assertEquals(listOf(hulls to TagRelation.CHILD), tagsApi.getTag("books", cargo).body!!.catalogueOffers.map { it.tag.key to it.relation })
+        // Read again from the card: the same entries, the same offer
+        assertEquals(listOf("E1"), tagsApi.refreshTagEntries("books", hulls).body!!.catalogueEntries.map { it.entry })
+        // Said: offered no more
+        tagsApi.relateTags("books", TagRelationRequest(hulls, cargo, TagRelation.PARENT))
+        assertEquals(emptyList(), tagsApi.getTag("books", hulls).body!!.catalogueOffers)
+        tagsApi.relateTags("books", TagRelationRequest(hulls, cargo, TagRelation.NONE))
+        tagsApi.bindTagEntry("books", TagEntryRequest(hulls, "fake", "E1", false))
+        tagsApi.bindTagEntry("books", TagEntryRequest(cargo, "fake", "E2", false))
 
         // Both site's tags merged rows of it; one taken out, to a new tag of its own; the answer stays with the tag
         fun rows() = tagsApi.listSimilarTags("books", hulls, null, 0, 50, null).body!!.tags

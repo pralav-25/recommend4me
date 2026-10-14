@@ -7,6 +7,7 @@ import io.github.vlsergey.recommend4me.database.typecorrections.tables.reference
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.NORMALIZED_TAG_PARENT
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.SITE_TAG
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_ENTRY
+import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_ENTRY_ABOVE
 import io.github.vlsergey.recommend4me.database.typecorrections.tables.references.TAG_ENTRY_TEXT
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
@@ -197,6 +198,30 @@ class TagRepository(private val db: DSLContext, private val model: DSLContext) {
         entry.labels.forEach { (language, text) -> put(language, LABEL, listOf(text)) }
         entry.aliases.forEach { (language, texts) -> put(language, ALIAS, texts) }
         entry.descriptions.forEach { (language, text) -> put(language, DESCRIPTION, listOf(text)) }
+    }
+
+    /** What every entry read is a kind of: the entry to the ones right above it. */
+    fun aboveLinks(): Map<TagEntryRef, List<TagEntryRef>> {
+        val a = TAG_ENTRY_ABOVE
+        return db.select(a.CATALOGUE, a.ENTRY, a.ABOVE).from(a).fetch()
+            .groupBy({ TagEntryRef(it.value1()!!, it.value2()!!) }, { TagEntryRef(it.value1()!!, it.value3()!!) })
+    }
+
+    /** Of [refs], the entries whose kinds were read: the walk up goes on from what is kept of them. */
+    fun aboveRead(refs: Collection<TagEntryRef>): Set<TagEntryRef> {
+        if (refs.isEmpty()) return emptySet()
+        val wanted = refs.toSet()
+        return db.select(TAG_ENTRY.CATALOGUE, TAG_ENTRY.ENTRY).from(TAG_ENTRY).where(TAG_ENTRY.ABOVE_READ_AT.isNotNull).fetch()
+            .map { TagEntryRef(it.value1()!!, it.value2()!!) }.filter { it in wanted }.toSet()
+    }
+
+    /** What the kept entry [ref] is a kind of, as its catalogue says now: [above] in place of what was kept. */
+    fun keepAbove(ref: TagEntryRef, above: List<String>, now: Instant) = db.transaction { c ->
+        val tx = DSL.using(c)
+        val a = TAG_ENTRY_ABOVE
+        tx.deleteFrom(a).where(a.CATALOGUE.eq(ref.catalogue), a.ENTRY.eq(ref.entry)).execute()
+        above.distinct().forEach { tx.insertInto(a).set(a.CATALOGUE, ref.catalogue).set(a.ENTRY, ref.entry).set(a.ABOVE, it).execute() }
+        tx.update(TAG_ENTRY).set(TAG_ENTRY.ABOVE_READ_AT, now).where(TAG_ENTRY.CATALOGUE.eq(ref.catalogue), TAG_ENTRY.ENTRY.eq(ref.entry)).execute()
     }
 
     /** The entries kept — of [refs] alone, when given — with their texts: by reference. */

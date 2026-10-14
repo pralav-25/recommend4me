@@ -238,7 +238,18 @@ tag merged into another gives it its entries.
 
 What a tag means is what its sites' tags' own pages say (`ItemStore.describeFacetValues`, kept in
 the source's `facet_value_description`: ficbook's page of a tag), then what the descriptions of its
-entries say — each shown with who says it. The names are worked out again a few seconds after the works or
+entries say — each shown with who says it.
+
+What an entry is a kind of (`TagCatalogue.above`: Wikidata's P279 "subclass of" and P1074
+"fictional analog of", never P31) is read up from every entry bound, five levels, when it is bound
+and once on start for a binding made before; kept in `tag_entry_above`, the entries met on the way
+in `tag_entry` with their names. A tag's card offers another tag above it when one of its entries
+is a kind of the other's, and under it the other way round, with the way up — "минет → половой
+акт" — unless the two are related already; only the user puts one under another. "Update from the
+catalogue" on the card reads its entries and every level above them again, what was kept shown
+meanwhile.
+
+The names are worked out again a few seconds after the works or
 their grades change and kept in the type's model database (`tag_shown_name`): made of the rest, not
 the user's word. Every source reads them from there, as the universes' names are read from their
 dictionary, never from a copy of its own.

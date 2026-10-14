@@ -32,4 +32,11 @@ interface TagCatalogue {
 
     /** The entries [ids] with their names in [languages], those the catalogue has. */
     fun entries(ids: Collection<String>, languages: List<String>): List<TagEntry>
+
+    /**
+     * The entries right above each of [ids] — what each is a kind of: "satire" is a kind of
+     * "humor"; by id, an entry with none left out. What the application offers the tags' graph
+     * from; none of a catalogue that does not say.
+     */
+    fun above(ids: Collection<String>): Map<String, List<String>> = emptyMap()
 }

@@ -65,7 +65,15 @@ class NamedTag(
     val children: List<Pair<String, String>> = emptyList(),
     val entries: List<BoundEntry> = emptyList(),
     val descriptions: List<SiteDescription> = emptyList(),
+    val offers: List<CatalogueOffer> = emptyList(),
 )
+
+/**
+ * Another tag offered above or under a tag ([relation]: PARENT, CHILD) by what the entries they are
+ * bound to are a kind of in [catalogue]: the entries of the way up, from the lower tag's to the
+ * upper's, by their labels — "satire", "humor". Only offered: the user says.
+ */
+class CatalogueOffer(val catalogue: String, val tag: String, val name: String, val relation: TagRelation, val path: List<String>)
 
 /** The entry of a catalogue a tag is bound to, as the catalogue gave it when last asked. */
 class BoundEntry(val catalogue: String, val entry: TagEntry) {
@@ -203,12 +211,13 @@ class Tags(
         fun allNames(t: TagStats): List<String> =
             t.variants.values.map { it.name } + listOfNotNull(explicitOf(t.key)) + entriesOf(t.key).flatMap { it.names }
 
-        fun named(t: TagStats, descriptions: List<SiteDescription> = emptyList()) = NamedTag(
+        fun named(t: TagStats, descriptions: List<SiteDescription> = emptyList(), offers: List<CatalogueOffer> = emptyList()) = NamedTag(
             t, nameOf(t), explicitOf(t.key),
             parents = hierarchy.parentsOf(t.key).map { it to shown(it) }.sortedBy { it.second.lowercase() },
             children = hierarchy.childrenOf(t.key).map { it to shown(it) }.sortedBy { it.second.lowercase() },
             entries = entriesOf(t.key),
             descriptions = descriptions,
+            offers = offers,
         )
     }
 
@@ -244,7 +253,93 @@ class Tags(
 
     fun one(type: TypeStore, facet: String, tag: String): NamedTag? {
         val n = naming(type, facet)
-        return n.stats[tag]?.let { n.named(it, descriptionsOf(type, facet, it)) }
+        return n.stats[tag]?.let { n.named(it, descriptionsOf(type, facet, it), offersOf(type, n, tag)) }
+    }
+
+    /**
+     * The other tags offered above and under [tag] by the catalogues: a tag bound to an entry its
+     * entries are a kind of, up to [ABOVE_LEVELS] levels — offered above it; a tag whose entries are
+     * a kind of its own — under it. Not a tag that is above or under it already, by the user's word
+     * or through others: the nearest way of each, a tag once.
+     */
+    private fun offersOf(type: TypeStore, n: Naming, tag: String): List<CatalogueOffer> {
+        val refsOf = n.entries.entries.associate { (id, list) -> TagRepository.key(id) to list.map { TagEntryRef(it.catalogue, it.entry.id) } }
+        val own = refsOf[tag].orEmpty()
+        if (refsOf.isEmpty()) return emptyList()
+        val tagsOf = HashMap<TagEntryRef, MutableList<String>>()
+        refsOf.forEach { (key, refs) -> refs.forEach { tagsOf.getOrPut(it) { ArrayList() } += key } }
+        val links = type.tags.aboveLinks()
+        /** Every entry reached up from [starts], with the way to it from one of them, the nearest. */
+        fun up(starts: List<TagEntryRef>): Map<TagEntryRef, List<TagEntryRef>> {
+            val ways = LinkedHashMap<TagEntryRef, List<TagEntryRef>>()
+            starts.forEach { ways[it] = listOf(it) }
+            var frontier = starts
+            repeat(ABOVE_LEVELS) {
+                frontier = frontier.flatMap { from -> links[from].orEmpty().filter { it !in ways }.map { to -> to.also { ways[to] = ways.getValue(from) + to } } }
+            }
+            return ways
+        }
+        val related = n.hierarchy.ancestors(tag) + n.hierarchy.descendants(tag) + tag
+        val found = LinkedHashMap<String, Pair<TagRelation, List<TagEntryRef>>>()
+        // Above it: the tags of the entries its own are a kind of
+        up(own).entries.sortedBy { it.value.size }.forEach { (ref, way) ->
+            if (way.size > 1) tagsOf[ref].orEmpty().filter { it !in related }.forEach { found.putIfAbsent(it, TagRelation.PARENT to way) }
+        }
+        // Under it: the tags whose entries are a kind of its own
+        refsOf.filterKeys { it !in related && it !in found }.forEach { (other, refs) ->
+            up(refs).filterKeys { it in own }.values.filter { it.size > 1 }.minByOrNull { it.size }?.let { found[other] = TagRelation.CHILD to it }
+        }
+        if (found.isEmpty()) return emptyList()
+        val kept = type.tags.keptEntries(found.values.flatMap { it.second }.toSet())
+        fun label(ref: TagEntryRef) = kept[ref]?.labels?.let { labels -> languages.firstNotNullOfOrNull { labels[it] } } ?: ref.entry
+        return found.map { (other, offer) ->
+            val (relation, way) = offer
+            CatalogueOffer(way.first().catalogue, other, n.shown(other), relation, way.map(::label))
+        }.sortedWith(compareBy<CatalogueOffer> { it.relation }.thenBy { it.path.size }.thenBy { it.name.lowercase() })
+    }
+
+    /**
+     * What the entries [from] of [catalogue] are a kind of, read up from them [ABOVE_LEVELS] levels
+     * and kept: of an entry read before, what was kept of it — unless [anew], every one asked again
+     * and the names of those met on the way too; the entries met on the way kept with their names.
+     */
+    private fun readAbove(type: TypeStore, catalogue: TagCatalogue, from: Collection<String>, anew: Boolean = false) {
+        val now = Instant.now()
+        fun ref(id: String) = TagEntryRef(catalogue.id, id)
+        val links = type.tags.aboveLinks()
+        val seen = HashSet(from)
+        var frontier = from.distinct()
+        var asked = 0
+        repeat(ABOVE_LEVELS) {
+            if (frontier.isEmpty()) return@repeat
+            val read = if (anew) emptySet() else type.tags.aboveRead(frontier.map(::ref))
+            val said = frontier.filter { ref(it) !in read }.takeIf { it.isNotEmpty() }?.let(catalogue::above).orEmpty()
+            asked += frontier.count { ref(it) !in read }
+            val next = LinkedHashSet<String>()
+            frontier.forEach { id ->
+                val above = if (ref(id) in read) links[ref(id)].orEmpty().map { it.entry } else said[id].orEmpty().also { type.tags.keepAbove(ref(id), it, now) }
+                above.filter(seen::add).forEach { next += it }
+            }
+            val kept = if (anew) emptySet() else type.tags.keptEntries(next.map(::ref)).keys
+            val missing = next.filter { ref(it) !in kept }
+            if (missing.isNotEmpty()) catalogue.entries(missing, languages).forEach { type.tags.keepEntry(catalogue.id, it, now) }
+            frontier = next.toList()
+        }
+        log.info("{}: what {} entries of {} are a kind of read, {} asked of it, {} met", type.id, from.size, catalogue.id, asked, seen.size)
+    }
+
+    /** What the entries bound to the tags are a kind of, of every entry never read: the bindings made before it was read. */
+    private fun readAboveOfBound(type: TypeStore) {
+        val bound = type.tags.entriesOfTags().values.flatten().toSet()
+        val read = type.tags.aboveRead(bound)
+        (bound - read).groupBy { it.catalogue }.forEach { (id, refs) ->
+            val catalogue = plugins.tagCatalogues.firstOrNull { it.id == id } ?: return@forEach
+            try {
+                readAbove(type, catalogue, refs.map { it.entry })
+            } catch (e: Exception) {
+                log.warn("{}: what the entries of {} are a kind of was not read: {}", type.id, id, e.message)
+            }
+        }
     }
 
     /**
@@ -466,7 +561,32 @@ class Tags(
             type.tags.keepEntry(catalogue, read, now)
             type.tags.bindEntry(id, TagEntryRef(catalogue, read.id), true, now)
             log.info("{}: tag {} bound to {}:{} ({})", type.id, tag, catalogue, read.id, languages.firstNotNullOfOrNull { read.labels[it] })
+            // What it is a kind of: the binding stands without it, read again from the tag's card
+            try {
+                readAbove(type, source, listOf(read.id))
+            } catch (e: Exception) {
+                log.warn("{}: what {}:{} is a kind of was not read: {}", type.id, catalogue, read.id, e.message)
+            }
         }
+        val named = one(type, facet, tag)
+        changed(type, facet, named?.stats?.items.orEmpty())
+        return named
+    }
+
+    /**
+     * The entries [tag] is bound to read of their catalogues again: their names and descriptions, and
+     * what they are a kind of, every level up asked again. What was kept stays shown till then.
+     */
+    fun refreshEntries(type: TypeStore, facet: String, tag: String): NamedTag? {
+        val id = TagRepository.idOf(tag)?.takeIf(type.tags::exists) ?: return null
+        val now = Instant.now()
+        type.tags.entriesOfTags()[id].orEmpty().groupBy { it.catalogue }.forEach { (catalogueId, refs) ->
+            val catalogue = plugins.tagCatalogues.firstOrNull { it.id == catalogueId } ?: throw NoSuchElementException("No catalogue of tags $catalogueId")
+            val ids = refs.map { it.entry }
+            catalogue.entries(ids, languages).forEach { type.tags.keepEntry(catalogueId, it, now) }
+            readAbove(type, catalogue, ids, anew = true)
+        }
+        log.info("{}: the entries of tag {} read again", type.id, tag)
         val named = one(type, facet, tag)
         changed(type, facet, named?.stats?.items.orEmpty())
         return named
@@ -516,7 +636,11 @@ class Tags(
     /** After the tags are normalized on start ([TagNormalization.start]). */
     @Order(-5)
     @EventListener(ApplicationReadyEvent::class)
-    fun start() = stores.types.forEach { schedule(it.id) }
+    fun start() = stores.types.forEach { type ->
+        schedule(type.id)
+        // The bindings made before what their entries are a kind of was read: read once, in the background
+        scheduler.execute { if (facetOf(type) != null) readAboveOfBound(type) }
+    }
 
     @PreDestroy
     fun shutdown() {
@@ -526,6 +650,12 @@ class Tags(
     companion object {
         /** The quiet after the last change before the names are worked out again: a page is sent several times as it grows. */
         private const val RENAME_DELAY_SECONDS = 10L
+
+        /**
+         * How many levels up what an entry is a kind of is read and offered from: "satire" →
+         * "humor" → "creative work" → … — the bound of the reading, not of what is shown of it.
+         */
+        const val ABOVE_LEVELS = 5
 
         /** A grade above the middle of the scale: of five, 4 and 5. */
         fun liked(grade: Int): Boolean = grade > (Grades.MIN + Grades.MAX) / 2.0

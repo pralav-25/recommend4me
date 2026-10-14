@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeftIcon, CombineIcon, ExternalLinkIcon, Link2Icon, Loader2Icon, SearchIcon, TagsIcon, XIcon } from "lucide-react";
+import { ArrowLeftIcon, CombineIcon, ExternalLinkIcon, Link2Icon, Loader2Icon, RefreshCwIcon, SearchIcon, TagsIcon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   api,
@@ -217,6 +217,7 @@ function TagDetails({ type, tag }: { type: ContentTypeInfo; tag: string }) {
           <TagName type={type} tag={found} />
           <TagEntry type={type} tag={found} />
           <Related tag={found} />
+          <CatalogueOffers type={type} tag={found} />
           <Variants tag={found} />
           <Similar type={type} tag={found} />
         </>
@@ -253,6 +254,45 @@ function Related({ tag }: { tag: TagInfo }) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Other tags the catalogues offer above or under this one — by what the entries they are bound to
+ * are a kind of, the way up shown — each said so by its own button, or left as it is.
+ */
+function CatalogueOffers({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
+  const { t } = useTranslation("tag");
+  const changed = useTagsChanged(type.id);
+  if (tag.catalogueOffers.length === 0) return null;
+  const relate = async (other: string, relation: TagRelation) => {
+    unwrap(await api.PUT("/api/types/{type}/tags/relation", { params: { path: { type: type.id } }, body: { tag: tag.key, other, relation } }));
+    await changed();
+  };
+  return (
+    <section className="flex flex-col gap-1.5 text-sm">
+      <h2 className="font-semibold">{t("Offers.title")}</h2>
+      <ul className="flex flex-col divide-y rounded-lg border">
+        {tag.catalogueOffers.map((o) => (
+          <li key={o.tag.key} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span>
+                <span className="text-muted-foreground">{t(`Relation.${o.relation as Said}.label`)} </span>
+                <a href={screenHref({ kind: "tags", tag: o.tag.key })} onClick={(e) => followLink(e, { kind: "tags", tag: o.tag.key })} className="underline-offset-2 hover:underline">
+                  {o.tag.name}
+                </a>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {sourceTitle(o.catalogue)}: {o.path.join(" → ")}
+              </span>
+            </div>
+            <AsyncButton variant="outline" size="sm" onClick={() => relate(o.tag.key, o.relation)} title={t(`Relation.${o.relation as Said}.title`)}>
+              {t(o.relation === "PARENT" ? "Offers.makeParent" : "Offers.makeChild")}
+            </AsyncButton>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -356,9 +396,21 @@ function TagEntry({ type, tag }: { type: ContentTypeInfo; tag: TagInfo }) {
     await changed();
   };
   const isBound = (f: FoundTagEntry) => tag.catalogueEntries.some((b) => b.catalogue === f.catalogue && b.entry === f.entry);
+  // Read of the catalogues again: what was kept is shown till the new comes
+  const refresh = async () => {
+    unwrap(await api.POST("/api/types/{type}/tags/entries/refresh", { params: { path: { type: type.id }, query: { tag: tag.key } } }));
+    await changed();
+  };
   return (
     <section className="flex flex-col gap-1.5 text-sm">
-      <h2 className="font-semibold">{t("Entry.title")}</h2>
+      <div className="flex items-center gap-2">
+        <h2 className="font-semibold">{t("Entry.title")}</h2>
+        {!unbound && (
+          <AsyncButton variant="ghost" size="xs" onClick={refresh} title={t("Entry.refreshTitle")} icon={<RefreshCwIcon />}>
+            {t("Entry.refresh")}
+          </AsyncButton>
+        )}
+      </div>
       {tag.catalogueEntries.map((b) => (
         <div key={`${b.catalogue}/${b.entry}`} className="flex flex-wrap items-start gap-x-3 gap-y-1">
           <div className="flex min-w-0 flex-1 flex-col">

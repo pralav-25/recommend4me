@@ -62,6 +62,28 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCa
         }
     }
 
+    /**
+     * The items right above each item: its classes (P279 "subclass of") and, of a fictional thing,
+     * what it is the fictional analog of (P1074) — "quidditch" is a fictional sport, and of "sport"
+     * only through its analog. Never its P31 "instance of": "satire" is an instance of "literary
+     * genre", which says what kind of item it is, not what it is a kind of. Deprecated statements
+     * left out.
+     */
+    override fun above(ids: Collection<String>): Map<String, List<String>> {
+        val items = ids.filter { ITEM.matches(it) }.distinct()
+        return items.chunked(ENTITIES_ASKED).flatMap { chunk ->
+            val entities = get("$API?action=wbgetentities&props=claims&format=json&ids=${chunk.joinToString("%7C")}").path("entities")
+            chunk.mapNotNull { id ->
+                val claims = entities.path(id).path("claims")
+                val parents = ABOVE.flatMap { p ->
+                    claims.path(p).filter { it.path("rank").asString("normal") != "deprecated" }
+                        .mapNotNull { it.path("mainsnak").path("datavalue").path("value").path("id").asString(null) }
+                }.distinct().filter { it != id }
+                parents.takeIf { it.isNotEmpty() }?.let { id to it }
+            }
+        }.toMap()
+    }
+
     private val http = HttpClient.newBuilder().connectTimeout(TIMEOUT).followRedirects(HttpClient.Redirect.NORMAL).build()
 
     /**
@@ -284,6 +306,9 @@ class WikidataCatalogue(private val json: JsonMapper) : UniverseCatalogue, TagCa
 
         /** Items asked for in one request: the API's limit. */
         private const val ENTITIES_ASKED = 50
+
+        /** What an item is a kind of ([above]): P279 "subclass of", P1074 "fictional analog of". */
+        private val ABOVE = listOf("P279", "P1074")
 
         /** A property of Wikidata: "P8419". */
         private val PROPERTY = Regex("P\\d+")
