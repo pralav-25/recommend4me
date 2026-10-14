@@ -366,8 +366,25 @@
     );
   }
 
+  /**
+   * Whether the site's page is dark: by its own background, the body's or the root's — not the
+   * system's, which a site with no dark skin (AO3) does not follow.
+   */
+  function pageIsDark() {
+    for (const e of [document.body, document.documentElement]) {
+      if (!e) continue;
+      const m = getComputedStyle(e).backgroundColor.match(/rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)(?:,\s*([\d.]+))?/);
+      // Transparent: the colour is of the one under it
+      if (!m || (m[4] !== undefined && Number(m[4]) === 0)) continue;
+      return 0.2126 * Number(m[1]) + 0.7152 * Number(m[2]) + 0.0722 * Number(m[3]) < 128;
+    }
+    return false;
+  }
+
   function render() {
     clear();
+    // The site's skin may change while the page is open
+    document.documentElement.setAttribute("data-r4m-theme", pageIsDark() ? "dark" : "light");
     if (!view) return;
     pendingSince = Date.now();
     cards();

@@ -4,7 +4,7 @@
  * so the site's look is touched only where the user corrected something.
  */
 
-/* The colours, light; dark when the system is — the site's page is read in the same light */
+/* The colours, light; dark on a page of a dark background — the site's own, not the system's (page.js pageIsDark) */
 :root {
   --r4m-bg: #ffffff;
   --r4m-fg: #1f2328;
@@ -21,22 +21,20 @@
   --r4m-current-bg: #ddf4ff;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --r4m-bg: #161b22;
-    --r4m-fg: #e6edf3;
-    --r4m-border: #3d444d;
-    --r4m-muted: #9198a1;
-    --r4m-subtle: #21262d;
-    --r4m-hover: #30363d;
-    --r4m-link: #4493f8;
-    --r4m-yes: #3fb950;
-    --r4m-no: #f85149;
-    --r4m-amber: #d29922;
-    --r4m-suggested-bg: #0c2d6b;
-    --r4m-mine-bg: #12361f;
-    --r4m-current-bg: #0c2d6b;
-  }
+:root[data-r4m-theme="dark"] {
+  --r4m-bg: #161b22;
+  --r4m-fg: #e6edf3;
+  --r4m-border: #3d444d;
+  --r4m-muted: #9198a1;
+  --r4m-subtle: #21262d;
+  --r4m-hover: #30363d;
+  --r4m-link: #4493f8;
+  --r4m-yes: #3fb950;
+  --r4m-no: #f85149;
+  --r4m-amber: #d29922;
+  --r4m-suggested-bg: #0c2d6b;
+  --r4m-mine-bg: #12361f;
+  --r4m-current-bg: #0c2d6b;
 }
 
 r4m-panel, r4m-head, r4m-line, r4m-why, r4m-facet, r4m-error, r4m-label {
