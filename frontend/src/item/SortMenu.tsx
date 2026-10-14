@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowDownWideNarrowIcon, CalendarPlusIcon, ChevronDownIcon, HashIcon, SearchIcon, SparklesIcon, ZapIcon } from "lucide-react";
+import { ArrowDownWideNarrowIcon, CalendarPlusIcon, ChevronDownIcon, HashIcon, LightbulbIcon, SearchIcon, SparklesIcon, StarIcon, ZapIcon } from "lucide-react";
 import type { ContentTypeInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,13 +31,16 @@ function choiceOf(value: string): SortChoice {
 /** The words and the icon of every order of its own; the keys translated at render. */
 const ORDER_WORDS = {
   SCORE: { label: "SortMenu.score", short: "SortMenu.score.short", hint: "SortMenu.score.title", icon: SparklesIcon },
+  INTEREST: { label: "SortMenu.interest", short: "SortMenu.interest.short", hint: "SortMenu.interest.title", icon: LightbulbIcon },
+  GRADE: { label: "SortMenu.grade", short: "SortMenu.grade.short", hint: "SortMenu.grade.title", icon: StarIcon },
   UPDATED: { label: "SortMenu.updated", short: "SortMenu.updated.short", hint: "SortMenu.updated.title", icon: ArrowDownWideNarrowIcon },
   ADDED: { label: "SortMenu.added", short: "SortMenu.added.short", hint: "SortMenu.added.title", icon: CalendarPlusIcon },
   SURPRISE: { label: "SortMenu.surprise", short: "SortMenu.surprise.short", hint: "SortMenu.surprise.title", icon: ZapIcon },
 } as const satisfies Record<(typeof ORDERS)[number], object>;
 
 /**
- * THE ORDER OF THE LIST, ONE CHOICE OF EVERY ORDER ALIKE: by prediction, by the date of the update,
+ * THE ORDER OF THE LIST, ONE CHOICE OF EVERY ORDER ALIKE: by the formula, by interest, by the
+ * prediction of the grade, by the date of the update,
  * by the date the application first saw the work, by surprise, then by every number the list can
  * be sorted by — the standard ones first. One button showing the order chosen — on a phone its short
  * name — opens the list. While a line is searched, the works come by relevance alone: the button

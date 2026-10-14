@@ -21,7 +21,11 @@ import kotlin.math.abs
 
 enum class ItemView { UNRATED, RATED, ALL }
 /** The orders of the list; ADDED — the newest in the application first, by when it first saw the work. */
-enum class ItemOrder { SCORE, UPDATED, ADDED, NUMBER, SURPRISE }
+/**
+ * The orders of the list: by the formula — the prediction times the chance of interest — by
+ * interest first, by the prediction of the grade first; by the dates, a number, the surprise.
+ */
+enum class ItemOrder { SCORE, INTEREST, GRADE, UPDATED, ADDED, NUMBER, SURPRISE }
 
 /**
  * What a filter facet shows: a work with a value [shown] — when given, those alone, every other
@@ -76,7 +80,10 @@ class ItemList(
      * One row of the list before its card is read; [expected] — the prediction times the chance of
      * interest — is what the list is sorted by first, [number] what it is sorted by otherwise.
      */
-    private class Row(val key: ItemKey, val updatedAt: Instant, val firstSeenAt: Instant, val graded: Boolean, val prediction: Double?, val expected: Double?, val number: Double?)
+    private class Row(
+        val key: ItemKey, val updatedAt: Instant, val firstSeenAt: Instant, val graded: Boolean,
+        val prediction: Double?, val expected: Double?, val interest: Double?, val number: Double?,
+    )
 
     fun page(
         typeId: String,
@@ -135,7 +142,7 @@ class ItemList(
                 // The score as the scale shows it — below its 0 it is 0: a chance multiplying a negative
                 // score would put the likelier interesting work lower. Equal, the prediction decides
                 val expected = p?.let { if (chance != null) it.score.coerceAtLeast(0.0) * chance else it.score }
-                rows += Row(key, k.updatedAt, k.firstSeenAt, k.id in grades, p?.score, expected, numbers[k.id] ?: surprises[k.id])
+                rows += Row(key, k.updatedAt, k.firstSeenAt, k.id in grades, p?.score, expected, chance, numbers[k.id] ?: surprises[k.id])
             }
         }
         // An item is graded by its own grade: a linked one has the work's written to it ([LinkedGrades][io.github.vlsergey.recommend4me.rating.LinkedGrades])
@@ -151,6 +158,17 @@ class ItemList(
             order == ItemOrder.SCORE -> viewed.sortedWith(
                 compareByDescending<Row> { it.expected ?: Double.NEGATIVE_INFINITY }
                     .thenByDescending { it.prediction ?: Double.NEGATIVE_INFINITY }
+                    .thenByDescending { it.updatedAt },
+            )
+            // Interest first, the prediction among the equal; the prediction first, interest among the equal
+            order == ItemOrder.INTEREST -> viewed.sortedWith(
+                compareByDescending<Row> { it.interest ?: Double.NEGATIVE_INFINITY }
+                    .thenByDescending { it.prediction ?: Double.NEGATIVE_INFINITY }
+                    .thenByDescending { it.updatedAt },
+            )
+            order == ItemOrder.GRADE -> viewed.sortedWith(
+                compareByDescending<Row> { it.prediction ?: Double.NEGATIVE_INFINITY }
+                    .thenByDescending { it.interest ?: Double.NEGATIVE_INFINITY }
                     .thenByDescending { it.updatedAt },
             )
             order == ItemOrder.NUMBER || order == ItemOrder.SURPRISE ->

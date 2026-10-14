@@ -1947,13 +1947,14 @@ components:
     ItemSort:
       type: string
       description: |
-        SCORE - by prediction times the chance of interest (ItemSummary.interestChance; the prediction
-        alone without a model of interest), then by prediction; UPDATED - newest update first; ADDED - the
+        SCORE - by the formula: the prediction times the chance of interest (ItemSummary.interestChance; the
+        prediction alone without one), then by prediction; INTEREST - by the chance of interest, then by
+        prediction; GRADE - by prediction, then by the chance of interest; UPDATED - newest update first; ADDED - the
         newest in the application first (first seen); NUMBER - by a number, the largest
         first; SURPRISE - the graded works the model that had not seen them (ItemSummary.heldOut)
         puts furthest from where the user's grade stands, first - below the lowest grade's place a
         work of it is no surprise, nor above the highest's; works without one last
-      enum: [SCORE, UPDATED, ADDED, NUMBER, SURPRISE]
+      enum: [SCORE, INTEREST, GRADE, UPDATED, ADDED, NUMBER, SURPRISE]
       default: SCORE
 
     FacetValueInfo:
