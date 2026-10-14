@@ -80,6 +80,7 @@ var R4M_WORDS = {
     "facet.confirmAll": "✓ all ({{count}})",
     "facet.confirmAllTitle": "Confirm every value you have not answered on",
     "facet.works": "works: {{count}}",
+    "facet.chooseHint": "Choose one of the list: only what the dictionary knows can be added here",
 
     "mark.plus": "{{what}}: a reason to choose the work",
     "mark.minus": "{{what}}: a reason to turn it down",
@@ -188,6 +189,7 @@ var R4M_WORDS = {
     "facet.confirmAll": "✓ все ({{count}})",
     "facet.confirmAllTitle": "Подтвердить все значения без вашего ответа",
     "facet.works": "работ: {{count}}",
+    "facet.chooseHint": "Выберите из списка: сюда можно добавить только то, что есть в словаре",
 
     "mark.plus": "{{what}}: повод выбрать работу",
     "mark.minus": "{{what}}: повод отказаться от неё",
@@ -296,6 +298,7 @@ var R4M_WORDS = {
     "facet.confirmAll": "✓ sve ({{count}})",
     "facet.confirmAllTitle": "Potvrdi sve vrednosti bez vašeg odgovora",
     "facet.works": "dela: {{count}}",
+    "facet.chooseHint": "Izaberite sa liste: ovde se može dodati samo ono što rečnik poznaje",
 
     "mark.plus": "{{what}}: razlog da se delo izabere",
     "mark.minus": "{{what}}: razlog da se od njega odustane",

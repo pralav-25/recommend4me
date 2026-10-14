@@ -45,6 +45,9 @@ enum class Refusal(val code: String, val params: List<String> = emptyList()) {
     /** A tag above or under another through others: not said of the two, of the tags between. */
     TAG_THROUGH("tagThrough"),
 
+    /** A name typed for a facet of the dictionary's entries alone — a universe, a pairing — that is no entry of it; [params] "value". */
+    NOT_IN_DICTIONARY("notInDictionary", listOf("value")),
+
     /** A tag the work has by a tag under it the user confirmed, said not to be the work's; [params] "tag" — that tag's name. */
     TAG_IMPLIED("tagImplied", listOf("tag")),
     NO_SETTING("noSetting", listOf("setting")),

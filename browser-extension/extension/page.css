@@ -426,6 +426,22 @@ form.r4m-add input {
   font: 12px system-ui, sans-serif;
 }
 
+/* A name typed where only the dictionary's entries go: the field and a line under it say so */
+form.r4m-add input[aria-invalid="true"] {
+  border-color: #cf222e;
+}
+
+r4m-add-note {
+  display: block;
+  margin-top: 2px;
+  font: 11px system-ui, sans-serif;
+  color: #cf222e;
+}
+
+r4m-add-note[hidden] {
+  display: none;
+}
+
 /* A finger: Safari zooms the page into a field of a smaller font than 16px, and a row is a finger's height */
 @media (pointer: coarse) {
   form.r4m-add input {

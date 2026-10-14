@@ -1,7 +1,10 @@
 package io.github.vlsergey.recommend4me.correction
 
+import io.github.vlsergey.recommend4me.refusal.Refusal
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.tag.TagRepository
+import io.github.vlsergey.recommend4me.universe.UniverseFacets
+import org.springframework.http.HttpStatus
 
 /**
  * A value of a facet with its name and how many items have it, the user's corrections counted;
@@ -33,7 +36,8 @@ object FacetValues {
     /**
      * The key of a value the user names: a value of the facet with that name or key, any case — or
      * a new one, its name in lower case. Of a facet of tags, a tag of that name, any case — or a
-     * new normalized tag of that name.
+     * new normalized tag of that name. Of a facet of the dictionary's entries alone ([ENTRIES_ONLY]),
+     * an entry of that name, or a refusal: a name made up is a value no dictionary knows.
      */
     fun keyOf(store: SourceStore, facet: String, name: String): String {
         val wanted = name.trim().lowercase()
@@ -41,6 +45,17 @@ object FacetValues {
             return store.names(facet).entries.firstOrNull { it.value.trim().lowercase() == wanted }?.key
                 ?: TagRepository.key(store.tags.create(name.trim()))
         }
-        return of(store, facet).firstOrNull { it.name.lowercase() == wanted || it.key.lowercase() == wanted }?.key ?: wanted
+        val known = of(store, facet).filter { facet !in ENTRIES_ONLY || ':' in it.key }
+            .firstOrNull { it.name.lowercase() == wanted || it.key.lowercase() == wanted }?.key
+        if (known == null && facet in ENTRIES_ONLY) {
+            throw Refusal.NOT_IN_DICTIONARY.refuse(HttpStatus.BAD_REQUEST, "'$name' is no entry of the dictionary for '$facet'", "value" to name.trim())
+        }
+        return known ?: wanted
     }
+
+    /**
+     * The facets whose values are entries of the dictionary alone, keyed by the catalogue — a
+     * universe ("wikidata:Q8337"), a pair of its characters: chosen, never made of a name typed.
+     */
+    private val ENTRIES_ONLY = setOf(UniverseFacets.UNIVERSE, UniverseFacets.PAIRINGS)
 }

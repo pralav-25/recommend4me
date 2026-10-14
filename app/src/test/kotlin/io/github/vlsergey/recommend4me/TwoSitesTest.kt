@@ -300,6 +300,20 @@ class TwoSitesTest {
     }
 
     @Test
+    fun `a universe or a pairing named by a name typed that the dictionary has not is refused, never made a value`() {
+        alpha("n1|Wizards|magic|A school of magic||")
+        listOf("universe", "pairings").forEach { facet ->
+            val refused = assertThrows<Refused> { corrections.correctFacet("alpha", "n1", FacetCorrection(facet = facet, added = true, name = "Harry Potter")) }
+            assertEquals(Refusal.NOT_IN_DICTIONARY, refused.refusal)
+            assertEquals(mapOf("value" to "Harry Potter"), refused.params)
+        }
+        assertTrue(stores.source("alpha")!!.corrections.facetsOf("n1").none { it.facet == "universe" || it.facet == "pairings" })
+        // A character may be named as the work names it
+        corrections.correctFacet("alpha", "n1", FacetCorrection(facet = "characters", added = true, name = "Neville"))
+        assertEquals(listOf("neville"), stores.source("alpha")!!.corrections.facetsOf("n1").filter { it.facet == "characters" }.map { it.key })
+    }
+
+    @Test
     fun `a word on two tags refused leaves what was said of them as it was`() {
         alpha("t1|Fleet|fleet|A fleet sails||")
         alpha("t2|Frigates|frigates|Frigates of the fleet||")

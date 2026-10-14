@@ -125,6 +125,13 @@
   /** The facets that say which values a work may have — its universes, their characters, the pairs of them — hinted by its candidates. */
   const CHOSEN = ["universe", "characters", "secondary-characters", "pairings"];
 
+  /**
+   * The facets whose values are entries of the dictionary alone — a universe of the catalogue, a
+   * pair of its characters: one is chosen among the hints, never made of a name typed, which would
+   * be a value no dictionary knows. A character may be named as the work names it.
+   */
+  const KEYS_ONLY = ["universe", "pairings"];
+
   /** How long a shown work is not read again for every new send of a growing page. */
   const RELOAD_AFTER = 15 * 1000;
 
@@ -944,16 +951,32 @@
     ["keyup", "keypress"].forEach((type) => input.addEventListener(type, (e) => e.stopPropagation()));
     form.addEventListener("submit", (e) => {
       e.preventDefault();
-      // The hint gone to by the keys; else a hint of just the name typed; else the name as it is
+      // The hint gone to by the keys; else a hint of just the name typed; else the name as it is —
+      // of a facet of the dictionary's entries alone, none: the list stays open to choose from
       const typed = input.value.trim();
       const h = active >= 0 ? shown[active] : hints.find((x) => folded(x.name) === folded(typed));
+      if (!h && KEYS_ONLY.includes(facet)) {
+        input.setAttribute("aria-invalid", "true");
+        note.hidden = false;
+        narrow();
+        return;
+      }
       close();
       input.value = "";
       if (h) add(h.name, h.key, h.nameKey);
       else add(typed, null);
     });
+    // Said under the field, not in a title: a finger sees no title
+    const note = el("r4m-add-note", null, t("facet.chooseHint"));
+    note.hidden = true;
+    note.setAttribute("role", "alert");
+    input.addEventListener("input", () => {
+      note.hidden = true;
+      input.removeAttribute("aria-invalid");
+    });
     form.appendChild(input);
     form.appendChild(box);
+    form.appendChild(note);
     return form;
   }
 
