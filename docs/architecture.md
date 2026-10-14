@@ -74,6 +74,9 @@ Windows, `~/.local/share/recommend4me` elsewhere; `recommend4me.data-dir`):
 
 ```
 app.mv.db                          settings
+dictionaries.mv.db                 the user's dictionaries, every content type's: the normalized
+                                   tags of every site (merged, named, linked, bound to entries,
+                                   ignored) and the universes with their characters
 sources/<source>/source.mv.db      what the site says: works, facets, numbers, texts, pictures,
                                    reviews, text parts, captured pages — and their vectors, a
                                    compressed form of the same scrape
@@ -82,13 +85,15 @@ sources/<source>/corrections.mv.db the user's corrections: tags added and remove
 sources/<source>/ratings.mv.db     the user's own data: grades, marks on pictures and reviews,
                                    words on matches, the user's own actions seen on the site
 sources/<source>/images/           picture files
-types/<type>/corrections.mv.db     duplicates merged across the sources of a type
+types/<type>/corrections.mv.db     duplicates merged across the sources of a type, the
+                                   judgments of its search
 types/<type>/model.mv.db           the trained model, the predictions, the likeness to the marks,
                                    the directions of the set embeddings, the suggested tags — all
                                    recomputable
 types/<type>/search-index/         the search index
 models/                            ONNX graphs of the encoders
-backups/                           corrections and ratings, zipped on every start
+backups/                           the settings, the dictionaries, corrections and ratings,
+                                   zipped on every start
 ```
 
 Every file has its own connection pool and its own Flyway history. H2 does not join across
@@ -194,8 +199,9 @@ which works' values changed by the model's given values of that facet alone.
 
 ## The normalized tags
 
-The application's layer of tags ("Теги") is of normalized tags, kept in the database of the type's
-corrections: a normalized tag is an id and the name the user gave it, if any (`normalized_tag`);
+The application's layer of tags ("Теги") is of normalized tags, one dictionary of every site of
+every content type — a tag of a site of games and one of a site of books may be one — kept in the
+dictionaries: a normalized tag is an id and the name the user gave it, if any (`normalized_tag`);
 every tag of every site — its source and the site's own key of it — is bound to exactly one
 (`site_tag`, keyed by the two). A work's values of the layer are the ids, written out. A site's tag
 seen first is bound to the normalized tag the sites' tags of its name are bound to, any case —
@@ -232,8 +238,7 @@ The user binds a tag to entries of a catalogue of tags (`TagCatalogue`; `catalog
 search by, and a tag bound to none is searched for by its name as it opens — what is found is only
 offered. The tag is named in the user's language, and the entries' labels and aliases of every
 language find it. A tag may be bound to several entries and an entry to several tags. The binding
-is the user's word, kept with the merges in the type's database of corrections
-(`normalized_tag_entry`); the entries' texts as the catalogue gave them when bound (`tag_entry`). A
+is the user's word, kept with the merges in the dictionaries (`normalized_tag_entry`); the entries' texts as the catalogue gave them when bound (`tag_entry`). A
 tag merged into another gives it its entries.
 
 What a tag means is what its sites' tags' own pages say (`ItemStore.describeFacetValues`, kept in
@@ -267,8 +272,8 @@ dictionary, never from a copy of its own.
 ## Universes
 
 A content type may have universes (`ContentType.universes`: books) — works may be fan fiction of
-someone else's world. The type keeps a dictionary of the universes the user agreed on, each with
-its characters, in its corrections database. A universe comes from a catalogue plugin
+someone else's world. One dictionary of the universes the user agreed on, each with its
+characters, is kept in the dictionaries for every such type. A universe comes from a catalogue plugin
 (`UniverseCatalogue`; `catalogue-wikidata`): a universe is a Wikidata item — a franchise, a series,
 a work — and its characters whatever is said to be in it or in its parts, with every name and
 alias in the user's languages (`recommend4me.languages`), the way the fans write them among them.
