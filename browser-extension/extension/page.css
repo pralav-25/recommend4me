@@ -462,9 +462,25 @@ form.r4m-add input {
   padding: 0 6px;
   border: 1px solid var(--r4m-border);
   border-radius: 12px;
-  background: var(--r4m-bg);
-  color: var(--r4m-fg);
   font: 12px system-ui, sans-serif;
+}
+
+/*
+ * EVERY FIELD OF OURS IN OUR COLOURS, whatever the site's own rules for fields say: a dark skin's
+ * colour of the text over our light field or the other way round, Safari's fill of the text that
+ * wins over the colour — hence !important, the text, its fill, the caret and the hint alike
+ */
+form.r4m-add input {
+  background: var(--r4m-bg) !important;
+  color: var(--r4m-fg) !important;
+  -webkit-text-fill-color: var(--r4m-fg) !important;
+  caret-color: var(--r4m-fg) !important;
+}
+
+form.r4m-add input::placeholder {
+  color: var(--r4m-muted) !important;
+  -webkit-text-fill-color: var(--r4m-muted) !important;
+  opacity: 1 !important;
 }
 
 /* A name typed where only the dictionary's entries go: the field and a line under it say so */
