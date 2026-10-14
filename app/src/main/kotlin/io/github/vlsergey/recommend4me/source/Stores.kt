@@ -38,6 +38,7 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 import java.nio.file.Path
+import java.util.concurrent.locks.ReentrantLock
 
 /** Everything of one source: its plugin, its folder and the repositories over its three database files. */
 class SourceStore(
@@ -72,6 +73,14 @@ class SourceStore(
     }
 
     private val dbs = databases.of(source.id)
+
+    /**
+     * One writer of what the site says at a time: a page the extension sends and a job's or a
+     * refresh's download of the same work write the same rows, and a read-then-write of each — or
+     * H2's MERGE of two at once — breaks a key. Taken by every write of the source's context, a few
+     * milliseconds each; the parsing and the downloading stay outside it.
+     */
+    val writing = ReentrantLock()
 
     val items = ItemRepository(dbs.source.dsl) { ids -> events.publishEvent(ItemsChanged(source.id, ids.toList())) }
     val pictures = PictureRepository(dbs.source.dsl)

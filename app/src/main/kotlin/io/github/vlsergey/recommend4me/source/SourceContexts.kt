@@ -9,6 +9,7 @@ import org.jooq.DSLContext
 import org.springframework.stereotype.Component
 import java.nio.file.Path
 import java.time.Instant
+import kotlin.concurrent.withLock
 
 private val log = LoggerFactory.getLogger(SourceContexts::class.java)
 
@@ -26,11 +27,14 @@ class SourceContexts(private val stores: Stores, private val settings: Settings,
         override val items: ItemStore = Items(store, events)
         override val database: DSLContext get() = store.sourceDsl
         override val settings: SourceSettings = this@SourceContexts.settings.of(store.id)
-        override val signals: SiteSignals get() = store.signals
+        override val signals: SiteSignals = object : SiteSignals {
+            override fun set(itemId: String, signal: String, value: String?) = store.writing.withLock { store.signals.set(itemId, signal, value) }
+            override fun withSignal(signal: String): Map<String, String> = store.signals.withSignal(signal)
+        }
         override val folder: Path get() = store.folder
 
         override fun keepPage(url: String, html: String, itemId: String?) =
-            store.pages.keep(url, html, itemId, Instant.now(), store.source.parserVersion)
+            store.writing.withLock { store.pages.keep(url, html, itemId, Instant.now(), store.source.parserVersion) }
 
         override fun gradedItems(): Set<String> = store.ratings.gradedItems()
 
@@ -49,19 +53,22 @@ class SourceContexts(private val stores: Stores, private val settings: Settings,
         }
     }
 
+    /** The source's writes, one at a time ([SourceStore.writing]); its reads free. */
     private class Items(private val store: SourceStore, private val events: ApplicationEventPublisher) : ItemStore {
-        override fun upsert(item: ItemHead, now: Instant): Boolean = store.items.upsert(item, now)
+        private fun <T> write(block: () -> T): T = store.writing.withLock(block)
+
+        override fun upsert(item: ItemHead, now: Instant): Boolean = write { store.items.upsert(item, now) }
         override fun find(itemId: String): StoredItem? = store.items.find(itemId)
         override fun count(): Int = store.items.count()
         override fun latestUpdate(): Instant? = store.items.latestUpdate()
-        override fun setFacet(itemId: String, facet: String, values: List<FacetValue>) = store.items.setFacet(itemId, facet, standardised(itemId, facet, values))
+        override fun setFacet(itemId: String, facet: String, values: List<FacetValue>) = write { store.items.setFacet(itemId, facet, standardised(itemId, facet, values)) }
 
-        override fun nameFacetValues(facet: String, names: Map<String, String>) {
+        override fun nameFacetValues(facet: String, names: Map<String, String>) = write {
             val standard = store.schema.facet(facet)?.standard
             store.items.nameFacetValues(facet, if (standard?.values == null) names else names.mapValues { (key, name) -> standard.value(key)?.modelName ?: name })
         }
 
-        override fun describeFacetValues(facet: String, descriptions: Map<String, String>) = store.items.describeFacetValues(facet, descriptions)
+        override fun describeFacetValues(facet: String, descriptions: Map<String, String>) = write { store.items.describeFacetValues(facet, descriptions) }
 
         /**
          * The values of a standard facet with a closed list of them ([StandardFacet][io.github.vlsergey.recommend4me.contenttype.StandardFacet])
@@ -79,18 +86,18 @@ class SourceContexts(private val stores: Stores, private val settings: Settings,
         }
         override fun facets(itemId: String): Map<String, List<String>> = store.items.facets(itemId)
         override fun forEachFacet(facet: String, action: (itemId: String, keys: List<String>) -> Unit) = store.items.forEachFacet(facet, action)
-        override fun setNumbers(itemId: String, numbers: Map<String, Double?>) = store.items.setNumbers(itemId, numbers)
-        override fun setTexts(itemId: String, texts: Map<String, String?>) = store.items.setTexts(itemId, texts)
+        override fun setNumbers(itemId: String, numbers: Map<String, Double?>) = write { store.items.setNumbers(itemId, numbers) }
+        override fun setTexts(itemId: String, texts: Map<String, String?>) = write { store.items.setTexts(itemId, texts) }
         override fun texts(itemId: String): Map<String, String> = store.items.texts(itemId)
         override fun setPictures(itemId: String, urls: List<String?>) {
-            store.files.delete(store.pictures.sync(itemId, urls))
+            write { store.files.delete(store.pictures.sync(itemId, urls)) }
             events.publishEvent(PicturesListed(store.id))
         }
-        override fun saveReviews(itemId: String, reviews: List<ReviewData>) = store.reviews.save(itemId, reviews)
+        override fun saveReviews(itemId: String, reviews: List<ReviewData>) = write { store.reviews.save(itemId, reviews) }
         override fun reviewIds(itemId: String): Set<String> = store.reviews.ids(itemId)
         override fun reviewContents(itemId: String): Map<String, String> = store.reviews.ofItem(itemId).associate { it.reviewId to it.content }
         override fun saveParts(itemId: String, parts: List<PartData>) {
-            store.parts.save(itemId, parts)
+            write { store.parts.save(itemId, parts) }
             if (parts.any { it.content != null }) events.publishEvent(PartsSaved(store.id))
         }
         override fun parts(itemId: String): Map<String, Boolean> = store.parts.ofItem(itemId).associate { it.partId to it.hasText }

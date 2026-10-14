@@ -34,6 +34,7 @@ import io.github.vlsergey.recommend4me.source.ReviewData
 import io.github.vlsergey.recommend4me.source.SettingDef
 import io.github.vlsergey.recommend4me.source.Source
 import io.github.vlsergey.recommend4me.source.SourceContext
+import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.SourceMode
 import io.github.vlsergey.recommend4me.source.SourceSchema
 import io.github.vlsergey.recommend4me.source.Stores
@@ -219,6 +220,7 @@ class TwoSitesTest {
     @Autowired lateinit var settings: Settings
     @Autowired lateinit var model: ModelController
     @Autowired lateinit var tagService: Tags
+    @Autowired lateinit var contexts: SourceContexts
 
     private fun alpha(body: String) = captures.capturePage(CaptureRequest("https://alpha.example/work/${body.substringBefore('|')}", body))
     private fun beta(body: String) = captures.capturePage(CaptureRequest("https://beta.example/work/${body.substringBefore('|')}", body))
@@ -269,6 +271,32 @@ class TwoSitesTest {
         fun answers(source: String, item: String) = stores.source(source)!!.corrections.facetsOf(item).filter { it.facet == "tags" }.map { it.key to it.added }
         assertEquals(listOf(waves to true), answers("alpha", "a3"))
         assertEquals(listOf(waves to false), answers("beta", "b3"))
+    }
+
+    @Test
+    fun `one work written at once by several writers — a page sent and a page downloaded — is written whole by each, with no key broken`() {
+        val context = contexts.of("alpha")
+        val threads = 8
+        repeat(30) { round ->
+            val id = "race$round"
+            val pool = java.util.concurrent.Executors.newFixedThreadPool(threads)
+            val start = java.util.concurrent.CountDownLatch(1)
+            val done = (1..threads).map { k ->
+                pool.submit<Unit> {
+                    start.await()
+                    context.items.upsert(ItemHead(id, "https://alpha.example/work/$id", "Race $k", version = "v$k"), Instant.now())
+                    context.items.setFacet(id, Books.TAG.key, listOf(FacetValue("tag$k", "Tag $k")))
+                    context.items.setTexts(id, mapOf("annotation" to "Written by $k"))
+                    context.items.setNumbers(id, mapOf("likes" to k.toDouble()))
+                }
+            }
+            start.countDown()
+            done.forEach { it.get() }
+            pool.shutdown()
+            val head = assertNotNull(context.items.find(id))
+            assertTrue(head.title.startsWith("Race "))
+            assertEquals(1, context.items.facets(id)[Books.TAG.key]?.size, "one writer's tags whole")
+        }
     }
 
     @Test

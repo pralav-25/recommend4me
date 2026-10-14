@@ -15,6 +15,7 @@ import org.springframework.context.event.EventListener
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 import java.time.Instant
+import kotlin.concurrent.withLock
 
 private val log = LoggerFactory.getLogger(Captures::class.java)
 
@@ -58,7 +59,7 @@ class Captures(private val stores: Stores, private val contexts: SourceContexts)
             log.warn("{}: the page {} was not read: {}", store.id, url, e.message)
             emptyList()
         }
-        store.pages.keep(url, html, items.firstOrNull(), now, store.source.parserVersion)
+        store.writing.withLock { store.pages.keep(url, html, items.firstOrNull(), now, store.source.parserVersion) }
         log.info("{}: {} gave {} items, the text of {} parts, in {} ms", store.id, url, items.size, texts.size, System.currentTimeMillis() - started)
         return Captured(store.id, items.map { ItemKey(store.id, it) }, texts)
     }

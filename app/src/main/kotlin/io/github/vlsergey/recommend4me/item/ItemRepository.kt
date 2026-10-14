@@ -25,30 +25,38 @@ class ItemRepository(
     private val changed: (Collection<String>) -> Unit,
 ) {
 
-    /** Creates or updates an item; true when it is new or its version changed. */
+    /**
+     * Creates or updates an item; true when it is new or its version changed. The head and its
+     * version in one transaction: a stop between leaves no head without its versions.
+     */
     fun upsert(item: ItemHead, now: Instant): Boolean {
-        val known = db.select(ITEM.VERSION, ITEM.TITLE, ITEM.URL, ITEM.UPDATED_AT).from(ITEM).where(ITEM.ITEM_ID.eq(item.id)).fetchOne()
-        val updatedAt = item.updatedAt ?: known?.value4() ?: now
-        if (known == null) {
-            db.insertInto(ITEM)
-                .set(ITEM.ITEM_ID, item.id).set(ITEM.URL, item.url).set(ITEM.TITLE, item.title).set(ITEM.VERSION, item.version)
-                .set(ITEM.UPDATED_AT, updatedAt).set(ITEM.FIRST_SEEN_AT, now)
-                .execute()
-        } else if (known.value1() != item.version || known.value2() != item.title || known.value3() != item.url || known.value4() != updatedAt) {
-            db.update(ITEM)
-                .set(ITEM.URL, item.url).set(ITEM.TITLE, item.title).set(ITEM.VERSION, item.version).set(ITEM.UPDATED_AT, updatedAt)
-                .where(ITEM.ITEM_ID.eq(item.id))
-                .execute()
+        val (changedVersion, retitled) = db.transactionResult { c ->
+            val tx = DSL.using(c)
+            val known = tx.select(ITEM.VERSION, ITEM.TITLE, ITEM.URL, ITEM.UPDATED_AT).from(ITEM).where(ITEM.ITEM_ID.eq(item.id)).fetchOne()
+            val updatedAt = item.updatedAt ?: known?.value4() ?: now
+            if (known == null) {
+                tx.insertInto(ITEM)
+                    .set(ITEM.ITEM_ID, item.id).set(ITEM.URL, item.url).set(ITEM.TITLE, item.title).set(ITEM.VERSION, item.version)
+                    .set(ITEM.UPDATED_AT, updatedAt).set(ITEM.FIRST_SEEN_AT, now)
+                    .execute()
+            } else if (known.value1() != item.version || known.value2() != item.title || known.value3() != item.url || known.value4() != updatedAt) {
+                tx.update(ITEM)
+                    .set(ITEM.URL, item.url).set(ITEM.TITLE, item.title).set(ITEM.VERSION, item.version).set(ITEM.UPDATED_AT, updatedAt)
+                    .where(ITEM.ITEM_ID.eq(item.id))
+                    .execute()
+            }
+            val newVersion = known?.value1() != item.version
+            if (newVersion) {
+                tx.insertInto(ITEM_VERSION)
+                    .set(ITEM_VERSION.ITEM_ID, item.id).set(ITEM_VERSION.VERSION, item.version)
+                    .set(ITEM_VERSION.UPDATED_AT, updatedAt).set(ITEM_VERSION.SEEN_AT, now)
+                    .onDuplicateKeyIgnore()
+                    .execute()
+            }
+            newVersion to (known == null || known.value2() != item.title)
         }
-        val changedVersion = known?.value1() != item.version
-        if (changedVersion) {
-            db.insertInto(ITEM_VERSION)
-                .set(ITEM_VERSION.ITEM_ID, item.id).set(ITEM_VERSION.VERSION, item.version)
-                .set(ITEM_VERSION.UPDATED_AT, updatedAt).set(ITEM_VERSION.SEEN_AT, now)
-                .onDuplicateKeyIgnore()
-                .execute()
-        }
-        if (known == null || known.value2() != item.title) changed(listOf(item.id))
+        // Told once it is kept: a reader of the change finds it
+        if (retitled) changed(listOf(item.id))
         return changedVersion
     }
 
