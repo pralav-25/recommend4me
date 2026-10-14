@@ -8,7 +8,9 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
-import java.util.stream.IntStream
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
 import kotlin.math.abs
@@ -129,33 +131,57 @@ class BilinearSuggester internal constructor(
     }
 
     /** Every penalty of [lambdas] at [rank], the folds fitted side by side — on the [card] when there is one. */
-    private fun fitRank(problem: Problem, rank: Int, lambdas: List<Double>, last: Fitted?, card: StepOnCard?, stop: () -> Boolean): List<Tried> =
-        // Every penalty side by side, its own models of the folds — they share nothing but the
-        // problem and the card: the card is kept busy while the slowest fold of one walks its last steps
-        lambdas.parallelStream().map { lambda ->
+    private fun fitRank(problem: Problem, rank: Int, lambdas: List<Double>, last: Fitted?, card: StepOnCard?, stop: () -> Boolean): List<Tried> {
+        // Every penalty its own models of the folds — they share nothing but the problem and the card
+        class Penalty(val lambda: Double) {
             val models = Array(FOLDS) { Bilinear(problem, rank, card) }
-            val held = Bilinear.Held()
-            val unseen = Bilinear.Held()
+
             // Every penalty from its own last weights carried to this task — those of the penalty
             // nearest to it when it had none — or from a fresh start: from scratch, or when the
             // last weights are all nought, where the two sides' products have no gradient and stay.
             // From scratch every penalty from a fresh start: carried from a stronger one, the
             // weights would start at nought
-            val own = last?.nearest(lambda)
             val starts = Array(FOLDS) { k ->
-                own?.let { models[k].carried(it[k], last.design) }?.takeIf { theta -> theta.any { it != 0f } } ?: models[k].start(k.toLong() + 1)
+                last?.let { l -> l.nearest(lambda)?.let { models[k].carried(it[k], l.design) } }?.takeIf { theta -> theta.any { it != 0f } }
+                    ?: models[k].start(k.toLong() + 1)
             }
-            val step = lambda.toFloat()
             val before = models.map { it.losses }
-            val begun = System.currentTimeMillis()
-            val thetas = IntStream.range(0, FOLDS).parallel()
-                .mapToObj { k -> models[k].fit(starts[k], step, k, stop = stop) }.toList()
-            thetas.forEachIndexed { k, theta -> models[k].heldOutLoss(theta, k, held, unseen) }
+        }
+        val penalties = lambdas.map { Penalty(it) }
+        // Every fold of every penalty side by side — the card kept busy while the slowest fold of one
+        // walks its last steps — on threads of the fitting's own: a step on the card waits for its
+        // lock, and a thread of the common pool waiting on a lock the pool cannot see makes it start
+        // others in its place, a hundred and more seen, the rest of the application's work starved
+        val tasks = penalties.size * FOLDS
+        val pool = Executors.newFixedThreadPool(minOf(tasks, Runtime.getRuntime().availableProcessors())) { r ->
+            Thread(r, "bilinear-fold").apply { isDaemon = true }
+        }
+        val begun = System.currentTimeMillis()
+        val folds = try {
+            penalties.map { p ->
+                List(FOLDS) { k -> pool.submit(Callable { p.models[k].fit(p.starts[k], p.lambda.toFloat(), k, stop = stop) to System.currentTimeMillis() }) }
+            }.map { futures ->
+                futures.map {
+                    try {
+                        it.get()
+                    } catch (e: ExecutionException) {
+                        throw e.cause ?: e
+                    }
+                }
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+        return penalties.zip(folds) { p, fitted ->
+            val held = Bilinear.Held()
+            val unseen = Bilinear.Held()
+            fitted.forEachIndexed { k, (theta, _) -> p.models[k].heldOutLoss(theta, k, held, unseen) }
             Tried(
-                rank, lambda, held, unseen, Fitted(problem.design, rank, lambda, thetas.mapIndexed { k, theta -> models[k].weights(theta) }),
-                models.indices.map { models[it].losses - before[it] }, System.currentTimeMillis() - begun,
+                rank, p.lambda, held, unseen, Fitted(problem.design, rank, p.lambda, fitted.mapIndexed { k, (theta, _) -> p.models[k].weights(theta) }),
+                p.models.indices.map { p.models[it].losses - p.before[it] }, fitted.maxOf { it.second } - begun,
             )
-        }.toList()
+        }
+    }
 
     override fun unpack(bytes: ByteArray, task: SuggestionTask): FittedSuggester? = runCatching {
         // Buffered: the stream is read in many small pieces — the numbers in blocks, the keys one by one
