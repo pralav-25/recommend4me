@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { typeIcon, typeTitle } from "@/contenttype/types";
 import { LanguageBarMenu, LanguageSubmenu } from "@/i18n/LanguageMenu";
 import { cn } from "@/lib/utils";
-import { ModelLabel } from "@/model/ModelDialog";
+import { ModelLabel } from "@/model/GradeModel";
 import { followLink, screenHref, type Screen } from "./screens";
 
 /**
@@ -24,7 +24,6 @@ export type MenuProps = {
   types: ContentTypeInfo[];
   type: ContentTypeInfo;
   screen: Screen;
-  onModel: () => void;
   onCapture: () => void;
 };
 
@@ -34,7 +33,7 @@ export type MenuProps = {
  * the model of the type and the browser extension, each opening its window. The language of the
  * interface follows them, in each menu as fits it.
  */
-function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFunction<"screen">): Entry[] {
+function entries({ types, type, screen, onCapture }: MenuProps, t: TFunction<"screen">): Entry[] {
   const universes = types.some((tp) => tp.universes);
   return [
     ...types.map((tp): Entry => {
@@ -88,7 +87,13 @@ function entries({ types, type, screen, onModel, onCapture }: MenuProps, t: TFun
       title: t("Menu.history.title"),
       active: screen.kind === "history",
     },
-    { key: "model", open: onModel, label: <ModelLabel type={type} />, title: t("Menu.model.title"), active: false },
+    {
+      key: "models",
+      screen: { kind: "models", type: type.id },
+      label: <ModelLabel type={type} />,
+      title: t("Menu.model.title"),
+      active: screen.kind === "models",
+    },
     {
       key: "capture",
       open: onCapture,

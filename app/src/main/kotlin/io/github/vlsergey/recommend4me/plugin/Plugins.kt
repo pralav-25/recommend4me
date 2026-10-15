@@ -95,6 +95,10 @@ class Plugins(
             ?: scorers.firstOrNull { it.id == DEFAULT_SCORER }
             ?: scorers.firstOrNull()
 
+    /** The scorer of a content type's model of interest: the one named by `scorer.<type>.interest`, else the grades' ([scorer]). */
+    fun interestScorer(typeId: String): Scorer? =
+        scorers.firstOrNull { it.id == settings.get("scorer.$typeId.interest") } ?: scorer(typeId)
+
     private fun <T> choose(all: List<T>, setting: String, id: (T) -> String, ready: (T) -> Boolean): T? {
         val named = settings.get(setting)
         return all.firstOrNull { id(it) == named && ready(it) } ?: all.firstOrNull(ready)

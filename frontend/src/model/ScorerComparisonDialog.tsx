@@ -10,7 +10,7 @@ import { formatDate, number } from "@/i18n/format";
 import { scorerTitle } from "@/i18n/label";
 import { cn } from "@/lib/utils";
 
-const comparisonKey = (type: string) => ["scorer-comparison", type];
+const comparisonKey = (type: string, interest: boolean) => ["scorer-comparison", type, interest];
 
 /** How often a comparison under way is asked for again. */
 const POLL_MS = 1000;
@@ -22,11 +22,14 @@ const POLL_MS = 1000;
  */
 export function ScorerComparisonDialog({
   type,
+  interest = false,
   current,
   onChoose,
   busy,
 }: {
   type: ContentTypeInfo;
+  /** Of the model of interest, measured on the marks of interest; of the grades otherwise. */
+  interest?: boolean;
   current: string;
   onChoose: (scorer: string) => void;
   busy: boolean;
@@ -35,18 +38,18 @@ export function ScorerComparisonDialog({
   const [open, setOpen] = useState(false);
   const queryClient = useQueryClient();
   const comparison = useQuery({
-    queryKey: comparisonKey(type.id),
+    queryKey: comparisonKey(type.id, interest),
     enabled: open,
     queryFn: async (): Promise<ScorerComparison | null> => {
-      const { data, response } = await api.GET("/api/types/{type}/model/comparison", { params: { path: { type: type.id } } });
+      const { data, response } = await api.GET("/api/types/{type}/model/comparison", { params: { path: { type: type.id }, query: { interest } } });
       if (response.status === 404) return null;
       return data ?? null;
     },
     refetchInterval: (q) => (q.state.data && !q.state.data.finishedAt ? POLL_MS : false),
   });
   const start = useMutation({
-    mutationFn: async () => unwrap(await api.POST("/api/types/{type}/model/comparison", { params: { path: { type: type.id } } })),
-    onSuccess: (data) => queryClient.setQueryData(comparisonKey(type.id), data),
+    mutationFn: async () => unwrap(await api.POST("/api/types/{type}/model/comparison", { params: { path: { type: type.id }, query: { interest } } })),
+    onSuccess: (data) => queryClient.setQueryData(comparisonKey(type.id, interest), data),
   });
   const c = comparison.data;
   const running = c ? !c.finishedAt : false;
@@ -54,7 +57,7 @@ export function ScorerComparisonDialog({
   const opened = (next: boolean) => {
     setOpen(next);
     // Opened with nothing measured yet: measured at once
-    if (next && !queryClient.getQueryData(comparisonKey(type.id))) start.mutate();
+    if (next && !queryClient.getQueryData(comparisonKey(type.id, interest))) start.mutate();
   };
 
   return (
@@ -73,7 +76,7 @@ export function ScorerComparisonDialog({
           {c && (
             <span>
               {c.grades > 0
-                ? t("ScorerComparisonDialog.grades", { count: c.grades })
+                ? t(interest ? "ScorerComparisonDialog.marks" : "ScorerComparisonDialog.grades", { count: c.grades })
                 : c.finishedAt
                   ? t("ScorerComparisonDialog.tooFew")
                   : t("ScorerComparisonDialog.reading")}

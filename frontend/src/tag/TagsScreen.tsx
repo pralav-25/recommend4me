@@ -2,19 +2,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, CombineIcon, ExternalLinkIcon, Link2Icon, Loader2Icon, RefreshCwIcon, SearchIcon, TagsIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import {
-  api,
-  unwrap,
-  type FoundTagEntry,
-  type HierarchyOffer,
-  type SimilarTag,
-  type SimilarTagPage,
-  type TagInfo,
-  type TagNameRule,
-  type TagRef,
-  type TagRelation,
-  type TagVariantInfo,
-} from "@/api/client";
+import { api, ensureOk, unwrap, type FoundTagEntry, type HierarchyOffer, type SimilarTag, type SimilarTagPage, type TagInfo, type TagNameRule, type TagRef, type TagRelation, type TagVariantInfo,  } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -320,7 +308,7 @@ function HierarchyOffers() {
   };
   /** The user's word that the entry is too general to be a tag above others — or its taking back. */
   const tooGeneral = async (o: HierarchyOffer, said: boolean) => {
-    unwrap(await api.PUT("/api/tags/too-general", { body: { catalogue: o.catalogue!, entry: o.entry!, tooGeneral: said } }));
+    ensureOk(await api.PUT("/api/tags/too-general", { body: { catalogue: o.catalogue!, entry: o.entry!, tooGeneral: said } }));
     await offers.refetch();
   };
   const rejected = (offers.data ?? []).filter((o) => o.rejected).length;

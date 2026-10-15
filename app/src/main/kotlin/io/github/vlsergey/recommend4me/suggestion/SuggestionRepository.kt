@@ -13,9 +13,17 @@ import org.jooq.impl.DSL
 import java.time.Instant
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import tools.jackson.databind.JsonNode
+import tools.jackson.databind.json.JsonMapper
 
 /** The fitted state of a facet's suggester, and the fingerprint of the whole facet it was fitted on. */
 class StoredSuggester(val suggester: String, val fittedAt: Instant, val basis: Long, val content: ByteArray)
+
+/** How a facet's suggester was fitted: what it tried and chose ([FitReport]), how long it took, how many items and values it learnt from. */
+class SuggesterFit(val report: FitReport?, val millis: Long, val items: Int, val values: Int)
+
+/** A facet's suggester as the page of the models shows it: which, when fitted, how; [fit] none of one fitted before it was kept. */
+class SuggesterStatus(val facet: String, val suggester: String, val fittedAt: Instant, val fit: SuggesterFit?)
 
 /**
  * The chance of a value of an item's facet: one the item had when worked out ([had]), or one it
@@ -45,14 +53,27 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
         db.selectFrom(FACET_SUGGESTER).where(FACET_SUGGESTER.SOURCE.eq(source), FACET_SUGGESTER.FACET.eq(facet)).fetchOne()
             ?.let { StoredSuggester(it.suggester!!, it.fittedAt!!, it.basis!!, it.content!!) }
 
-    fun saveSuggester(facet: String, suggester: String, fittedAt: Instant, basis: Long, content: ByteArray) {
-        db.insertInto(FACET_SUGGESTER)
-            .set(FACET_SUGGESTER.SOURCE, source).set(FACET_SUGGESTER.FACET, facet).set(FACET_SUGGESTER.SUGGESTER, suggester)
-            .set(FACET_SUGGESTER.FITTED_AT, fittedAt).set(FACET_SUGGESTER.BASIS, basis).set(FACET_SUGGESTER.CONTENT, content)
+    fun saveSuggester(facet: String, suggester: String, fittedAt: Instant, basis: Long, content: ByteArray, fit: SuggesterFit) {
+        val s = FACET_SUGGESTER
+        val report = fit.report?.let(FitReports::toJson)
+        db.insertInto(s)
+            .set(s.SOURCE, source).set(s.FACET, facet).set(s.SUGGESTER, suggester)
+            .set(s.FITTED_AT, fittedAt).set(s.BASIS, basis).set(s.CONTENT, content)
+            .set(s.REPORT, report).set(s.FIT_MILLIS, fit.millis).set(s.ITEMS, fit.items).set(s.VALUE_COUNT, fit.values)
             .onDuplicateKeyUpdate()
-            .set(FACET_SUGGESTER.SUGGESTER, suggester).set(FACET_SUGGESTER.FITTED_AT, fittedAt)
-            .set(FACET_SUGGESTER.BASIS, basis).set(FACET_SUGGESTER.CONTENT, content)
+            .set(s.SUGGESTER, suggester).set(s.FITTED_AT, fittedAt)
+            .set(s.BASIS, basis).set(s.CONTENT, content)
+            .set(s.REPORT, report).set(s.FIT_MILLIS, fit.millis).set(s.ITEMS, fit.items).set(s.VALUE_COUNT, fit.values)
             .execute()
+    }
+
+    /** Every facet's suggester of the source, without its weights. */
+    fun suggesters(): List<SuggesterStatus> {
+        val s = FACET_SUGGESTER
+        return db.select(s.FACET, s.SUGGESTER, s.FITTED_AT, s.REPORT, s.FIT_MILLIS, s.ITEMS, s.VALUE_COUNT).from(s).where(s.SOURCE.eq(source)).fetch { r ->
+            val fit = r.value5()?.let { millis -> SuggesterFit(r.value4()?.let(FitReports::fromJson), millis, r.value6() ?: 0, r.value7() ?: 0) }
+            SuggesterStatus(r.value1()!!, r.value2()!!, r.value3()!!, fit)
+        }
     }
 
     /** The fingerprint the chances of every item of the facet were made from. */
@@ -270,4 +291,27 @@ class ValueNameRepository(private val db: DSLContext) {
             }).execute()
         }
     }
+}
+
+/** A fitting's report ([FitReport]) as the JSON it is kept as. */
+private object FitReports {
+    private val JSON = JsonMapper.builder().build()
+
+    fun toJson(r: FitReport): String = JSON.writeValueAsString(
+        mapOf(
+            "chosen" to r.chosen, "loss" to r.loss, "lossError" to r.lossError, "fromScratch" to r.fromScratch,
+            "tried" to r.tried.map { mapOf("settings" to it.settings, "loss" to it.loss, "lossError" to it.lossError, "millis" to it.millis) },
+        ),
+    )
+
+    /** Null of a text not of this shape: a report is shown, never relied on. */
+    fun fromJson(text: String): FitReport? = runCatching {
+        val n = JSON.readTree(text)
+        fun settings(of: JsonNode) = of.properties().associate { it.key to it.value.asString() }
+        FitReport(
+            settings(n.get("chosen")), n.get("loss").asDouble(), n.get("lossError").asDouble(),
+            n.get("tried").let { t -> (0 until t.size()).map { t.get(it) } }.map { FitTry(settings(it.get("settings")), it.get("loss").asDouble(), it.get("lossError").asDouble(), it.get("millis").asLong()) },
+            n.get("fromScratch").asBoolean(),
+        )
+    }.getOrNull()
 }

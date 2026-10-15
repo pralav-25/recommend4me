@@ -104,7 +104,12 @@ class BilinearSuggester internal constructor(
         val at = grid.indices.minBy { abs(ln(grid[it] / chosen.lambda)) }
         val beside = setOfNotNull(grid.getOrNull(at - 1), grid.getOrNull(at + 1))
         val nearby = tried.filter { it.rank == chosen.rank && it.lambda in beside }.associate { it.lambda to it.fitted.folds }
-        return Fitted(design, chosen.rank, chosen.lambda, chosen.fitted.folds, nearby, slowerAt)
+        fun settings(t: Tried) = mapOf(RANK to t.rank.toString(), PENALTY to t.lambda.toString())
+        val report = FitReport(
+            settings(chosen), chosen.held.mean, chosen.held.error,
+            tried.map { FitTry(settings(it), it.held.mean, it.held.error, it.millis) }, fromScratch = last == null,
+        )
+        return Fitted(design, chosen.rank, chosen.lambda, chosen.fitted.folds, nearby, slowerAt, report)
     }
 
     /** A penalty tried: what its folds held out, the folds' weights, how many losses each took and how long. */
@@ -207,6 +212,8 @@ class BilinearSuggester internal constructor(
         val design: Design, val rank: Int, val lambda: Double, val folds: List<Weights>, val nearby: Map<Double, List<Weights>> = emptyMap(),
         /** How many groups of names the task had when a step on the card was measured slower than on the processor; null when it was not. */
         val cardSlowerAt: Int? = null,
+        /** What the fitting that made it tried and chose; none of a state unpacked. */
+        override val report: FitReport? = null,
     ) : FittedSuggester {
 
         /** The folds' weights at the penalty kept nearest to [penalty]. */
@@ -279,6 +286,10 @@ class BilinearSuggester internal constructor(
     }
 
     companion object {
+        /** The names the settings are reported by ([FitReport]): the rank of the factorisation, the penalty. */
+        private const val RANK = "r"
+        private const val PENALTY = "λ"
+
         /**
          * The version of what [pack] writes; 5: fitted in single precision, every facet fitted again;
          * 6: the weights at the penalties beside the chosen one too — a state of 5 is read as one without;

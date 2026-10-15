@@ -171,6 +171,12 @@ interface FacetSuggester {
 
 interface FittedSuggester {
     /**
+     * What the fitting that made it tried and chose, for the user to see on the page of the models;
+     * null of a state unpacked — the report is the application's to keep, not packed with the state.
+     */
+    val report: FitReport? get() = null
+
+    /**
      * Readies the scoring of the items of [task] — of the task it was fitted on, or of a later one
      * of the same facet: what all the items share is worked out once here.
      */
@@ -178,6 +184,23 @@ interface FittedSuggester {
 
     fun pack(): ByteArray
 }
+
+/**
+ * What a fitting of a suggester tried and chose: every setting tried with the quality its folds held
+ * out — a loss, the lower the better, with its standard error — the one chosen, and whether it was a
+ * search from scratch or a short walk on from the state fitted last.
+ */
+class FitReport(
+    /** The settings chosen, by their names as the suggester calls them ("r", "λ"). */
+    val chosen: Map<String, String>,
+    val loss: Double,
+    val lossError: Double,
+    val tried: List<FitTry>,
+    val fromScratch: Boolean,
+)
+
+/** One setting tried: its values by name, the loss its folds held out with its standard error, how long it took. */
+class FitTry(val settings: Map<String, String>, val loss: Double, val lossError: Double, val millis: Long)
 
 fun interface SuggestionScores {
     /**

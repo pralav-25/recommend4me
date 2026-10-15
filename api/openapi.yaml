@@ -1464,6 +1464,69 @@ paths:
         '400':
           description: No such scorer
 
+  /api/types/{type}/model/interest-scorer:
+    put:
+      tags: [model]
+      operationId: chooseInterestScorer
+      summary: Makes a scorer the one the model of interest of the content type learns with - apart from the grades' - and trains the models
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScorerChoice'
+      responses:
+        '204':
+          description: Chosen and trained
+        '400':
+          description: No such scorer
+        '404':
+          description: No such type
+
+  /api/types/{type}/models:
+    get:
+      tags: [models]
+      operationId: listModels
+      summary: >
+        Every model of the content type - of the grades, of interest, of every facet the application works out of
+        every source - with how it was last fitted: when, how long it took, with what quality, which settings
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      responses:
+        '200':
+          description: The models
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ModelState'
+        '404':
+          description: No such type
+
+  /api/types/{type}/models/facets/{source}/{facet}/search:
+    post:
+      tags: [models]
+      operationId: searchFacetModel
+      summary: >
+        Fits the model of a facet of a source again from scratch, every setting tried anew - not a short walk on
+        from the state fitted last - in the background, and works every item out again
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - $ref: '#/components/parameters/Source'
+        - name: facet
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Started
+        '404':
+          description: No such type, source, or facet the application works out
+
   /api/types/{type}/model/worth:
     post:
       tags: [model]
@@ -1519,6 +1582,13 @@ paths:
       summary: The comparison of the scorers under way or last made, every scorer's result as soon as it is measured
       parameters:
         - $ref: '#/components/parameters/Type'
+        - name: interest
+          in: query
+          required: false
+          description: Of the model of interest, measured on the marks of interest; of the grades otherwise
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: The comparison
@@ -1537,6 +1607,13 @@ paths:
         one after another; each one's result appears as soon as it is measured.
       parameters:
         - $ref: '#/components/parameters/Type'
+        - name: interest
+          in: query
+          required: false
+          description: Of the model of interest, measured on the marks of interest; of the grades otherwise
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
           description: The comparison as it stands
@@ -2945,6 +3022,109 @@ components:
       properties:
         scorer:
           type: string
+
+    ModelState:
+      type: object
+      description: A model of a content type and how it was last fitted; the fields of a model never fitted are left out
+      required: [id, kind, settings, tried, running]
+      properties:
+        id:
+          type: string
+          description: '"grade", "interest", or "facet:<source>:<facet>"'
+        kind:
+          type: string
+          enum: [GRADE, INTEREST, FACET]
+        source:
+          type: string
+          description: Of a facet's model, the source
+        facet:
+          type: string
+          description: Of a facet's model, the facet's key within its source
+        labelKey:
+          type: string
+          description: Of a facet's model, the key of the facet's label
+        method:
+          type: string
+          description: The method it learns with - a scorer, a suggester - named by its words "<method>:title"
+        methods:
+          type: array
+          description: Every method it may learn with; one chosen in place of another for this model alone
+          items:
+            type: string
+        fittedAt:
+          type: string
+          format: date-time
+        millis:
+          type: integer
+          format: int64
+          description: How long the fitting took, its search of the settings with it
+        quality:
+          $ref: '#/components/schemas/ModelQuality'
+        settings:
+          type: object
+          description: The settings chosen, by their names ("parameter"; a facet's "r", "λ")
+          additionalProperties:
+            type: string
+        items:
+          type: integer
+          description: How many works it learnt from
+        values:
+          type: integer
+          description: Of a facet's model, how many values it learnt
+        positives:
+          type: integer
+          description: Of the model of interest, the works marked interesting; the rest of items not
+        tried:
+          type: array
+          description: Every setting tried by the search that chose them, with the quality it held out
+          items:
+            $ref: '#/components/schemas/ModelTrial'
+        fromScratch:
+          type: boolean
+          description: Of a facet's model, the settings were searched anew rather than walked on to from the last
+        running:
+          type: boolean
+          description: Being fitted now
+        stale:
+          type: boolean
+          description: Learnt before the latest of what it learns from changed
+
+    ModelQuality:
+      type: object
+      description: >
+        What the model's held-out folds say of it - CONCORDANCE: of the pairs of graded works, the share put in the
+        user's order, the higher the better; AUC: of the pairs of a work marked interesting and one not, the same;
+        LOSS: the held-out loss of a facet's values, the lower the better
+      required: [measure, value]
+      properties:
+        measure:
+          type: string
+          enum: [CONCORDANCE, AUC, LOSS]
+        value:
+          type: number
+          format: double
+        error:
+          type: number
+          format: double
+          description: Its standard error over the folds
+
+    ModelTrial:
+      type: object
+      required: [settings, value]
+      properties:
+        settings:
+          type: object
+          additionalProperties:
+            type: string
+        value:
+          type: number
+          format: double
+        error:
+          type: number
+          format: double
+        millis:
+          type: integer
+          format: int64
 
     ModelMetrics:
       type: object

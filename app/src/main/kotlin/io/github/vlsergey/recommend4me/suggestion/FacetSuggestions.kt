@@ -179,6 +179,35 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         facetsOf(store).forEach { facet -> lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
     }
 
+    /**
+     * The facet's suggester fitted again FROM SCRATCH — every setting tried anew, not a short walk on
+     * from the state fitted last — and every item worked out again: the user asked for it on the page
+     * of the models. In the background; false when the source has no such facet.
+     */
+    fun searchAnew(store: SourceStore, facetKey: String): Boolean {
+        val facet = facetsOf(store).firstOrNull { it.key == facetKey } ?: return false
+        val suggester = plugins.suggester ?: return false
+        val encoder = plugins.textEncoder() ?: return false
+        val id = "${store.id}/${facet.key}"
+        searching += id
+        worker.execute {
+            try {
+                lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, anew = true) }
+            } catch (e: Exception) {
+                log.warn("{}: the suggester of {} was not fitted anew: {}", store.id, facet.key, e.message, e)
+            } finally {
+                searching -= id
+            }
+        }
+        return true
+    }
+
+    /** The facets being fitted anew now ([searchAnew]), by "source/facet": the work under way, nothing of the data. */
+    private val searching: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
+    /** Whether the facet's suggester is being fitted anew ([searchAnew]). */
+    fun searching(store: SourceStore, facetKey: String): Boolean = "${store.id}/$facetKey" in searching
+
     /** One lock a facet: a page waits only for the facet it asks of, not for a long fitting of another. */
     private fun lockOf(store: SourceStore, facet: FacetDef) = locks.computeIfAbsent("${store.id}/${facet.key}") { ReentrantLock() }
 
@@ -232,6 +261,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      */
     private fun refreshFacet(
         store: SourceStore, facet: FacetDef, suggester: FacetSuggester, encoder: TextEncoder, only: String?, stop: () -> Boolean = { false },
+        /** Fitted again from scratch, every setting tried anew, whatever it was fitted on — the user asked for it ([searchAnew]). */
+        anew: Boolean = false,
     ) {
         fun checkpoint() {
             if (stop()) throw CancellationException("${store.id}: ${facet.key} given up for newer changes")
@@ -261,14 +292,16 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             return changed(store.id, newer = false)
         }
         // Of one item's task never: what the weights were fitted on is told by the background refresh ([FacetData.load])
-        val current = only == null && kept != null && stored.basis == data.basis
+        val current = !anew && only == null && kept != null && stored.basis == data.basis
         val fitted = when {
             current || only != null -> kept ?: return
             else -> {
                 // From the state fitted last when there is one: the data moved a little since
-                val made = suggester.fit(data.task, kept, stop) ?: return nothingToGive(store, facet, data, null, now)
+                val fitStarted = System.currentTimeMillis()
+                val made = suggester.fit(data.task, if (anew) null else kept, stop) ?: return nothingToGive(store, facet, data, null, now)
                 checkpoint()
-                store.suggestions.saveSuggester(facet.key, suggester.id, now, data.basis, made.pack())
+                val fit = SuggesterFit(made.report, System.currentTimeMillis() - fitStarted, data.ids.size, data.values.size)
+                store.suggestions.saveSuggester(facet.key, suggester.id, now, data.basis, made.pack(), fit)
                 log.info("{}: the suggester of {} fitted on {} items, {} values in {} ms, {} of them reading", store.id, facet.key, data.ids.size, data.values.size, System.currentTimeMillis() - started, read)
                 made
             }

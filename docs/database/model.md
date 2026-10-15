@@ -11,7 +11,7 @@
 | `mark_likeness` | how every work is alike what the user marked |
 | `mark_likeness_strength` | every work's strength of likeness to every mark |
 | `mark_likeness_axes` | a work's four axes of likeness to the marks |
-| `facet_suggester` | the fitted state of the suggester of a facet |
+| `facet_suggester` | the fitted state of the suggester of a facet, and how it was fitted: the report of what it tried and chose, how long it took, how many works and values it learnt from |
 | `facet_suggestion_basis` | what a work's chances were made of, as a hash |
 | `facet_suggestion` | the chance of a value of a facet for a work |
 | `layer_draft` | a value a source drafts of a work from its own values through the dictionary of universes |
@@ -30,6 +30,10 @@ erDiagram
         TIMESTAMPTZ fitted_at
         BLOB content
         BIGINT basis
+        CLOB report "null"
+        BIGINT fit_millis "null"
+        INTEGER items "null"
+        INTEGER value_count "null"
     }
     facet_suggestion {
         VARCHAR source PK

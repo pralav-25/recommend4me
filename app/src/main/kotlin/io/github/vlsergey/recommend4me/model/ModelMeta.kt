@@ -56,6 +56,8 @@ data class ModelMeta(
     val topNegative: List<Contribution>,
     val textEncoder: String?,
     val imageEncoder: String?,
+    /** How long the training took, the measuring of its parameter's candidates with it; none of a model trained before it was kept. */
+    val trainMillis: Long? = null,
 ) {
     fun scale() = Scale(scoreMean, scoreSd, ladder)
 
@@ -87,6 +89,10 @@ data class InterestMeta(
     val notInteresting: Int,
     /** Out-of-fold; the concordance of two kinds is the ROC AUC. */
     val metrics: RankingMetrics?,
+    /** Every value of the scorer's parameter measured, as of the grade model ([ModelMeta.candidates]); none of a model trained before they were kept. */
+    val candidates: List<RankingResult> = emptyList(),
+    /** How long the training took; none of a model trained before it was kept. */
+    val trainMillis: Long? = null,
 ) {
     fun layout() = FeatureLayout(
         categorical,

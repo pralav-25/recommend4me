@@ -50,15 +50,22 @@ class ModelController(
         return ResponseEntity.ok(summary.toApi(type))
     }
 
-    override fun getScorerComparison(type: String): ResponseEntity<ApiScorerComparison> {
+    override fun getScorerComparison(type: String, interest: Boolean): ResponseEntity<ApiScorerComparison> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        val comparison = comparisons.of(type) ?: return ResponseEntity.notFound().build()
+        val comparison = comparisons.of(type, interest) ?: return ResponseEntity.notFound().build()
         return ResponseEntity.ok(comparison.toApi())
     }
 
-    override fun startScorerComparison(type: String): ResponseEntity<ApiScorerComparison> {
+    override fun startScorerComparison(type: String, interest: Boolean): ResponseEntity<ApiScorerComparison> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        return ResponseEntity.ok(comparisons.start(type).toApi())
+        return ResponseEntity.ok(comparisons.start(type, interest).toApi())
+    }
+
+    override fun chooseInterestScorer(type: String, scorerChoice: ScorerChoice): ResponseEntity<Unit> {
+        if (stores.type(type) == null) return ResponseEntity.notFound().build()
+        recommendations.chooseInterestScorer(type, scorerChoice.scorer)
+            ?: throw Refusal.NO_SCORER.refuse(HttpStatus.BAD_REQUEST, "There is no scorer '${scorerChoice.scorer}'", "scorer" to scorerChoice.scorer)
+        return ResponseEntity.noContent().build()
     }
 
     private fun ScorerComparison.toApi() = ApiScorerComparison(

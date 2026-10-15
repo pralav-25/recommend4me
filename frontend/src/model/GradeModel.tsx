@@ -4,8 +4,7 @@ import { BrainCircuitIcon, Loader2Icon, RefreshCwIcon, StarIcon, TriangleAlertIc
 import { useTranslation } from "react-i18next";
 import { api, unwrap, type ContentTypeInfo, type Grade, type GradeOnScale, type ModelCandidate, type ModelInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ALL_GRADES, gradeLabel, typeTitle } from "@/contenttype/types";
+import { ALL_GRADES, gradeLabel } from "@/contenttype/types";
 import { formatDate, number, percent, score } from "@/i18n/format";
 import { scorerTitle } from "@/i18n/label";
 import { usePluginNamespaces } from "@/i18n/usePluginNamespaces";
@@ -36,17 +35,6 @@ export function ModelLabel({ type }: { type: ContentTypeInfo }) {
       {m?.stale && !m.training && <span className="size-2 rounded-full bg-maybe" title={t("ModelLabel.stale")} />}
       {warn && <TriangleAlertIcon className="text-maybe" />}
     </>
-  );
-}
-
-/** The details of the model of the type, opened from the menu. */
-export function ModelDialog({ type, open, onOpenChange }: { type: ContentTypeInfo; open: boolean; onOpenChange: (open: boolean) => void }) {
-  const model = useModel(type.id);
-  const m = model.data;
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-y-auto">{m && <ModelDetails type={type} m={m} />}</DialogContent>
-    </Dialog>
   );
 }
 
@@ -180,7 +168,8 @@ function Candidates({ candidates, chosen }: { candidates: ModelCandidate[]; chos
   );
 }
 
-function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
+/** The details of the model of the grades, unfolded on its card of the page of the models: the grades, the ladder, the quality, what raises and lowers a work. */
+export function GradeModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
   const { t } = useTranslation("model");
   const queryClient = useQueryClient();
   const trained = (data: ModelInfo) => {
@@ -203,12 +192,7 @@ function ModelDetails({ type, m }: { type: ContentTypeInfo; m: ModelInfo }) {
 
   return (
     <>
-      <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <BrainCircuitIcon className="size-5" /> {t("ModelDetails.title", { type: typeTitle(type.id).toLowerCase() })}
-        </DialogTitle>
-        <DialogDescription>{t("ModelDetails.description")}</DialogDescription>
-      </DialogHeader>
+      <p className="text-sm text-muted-foreground">{t("ModelDetails.description")}</p>
 
       {!m.textEncoderReady && <Warning>{t("ModelDetails.noTextEncoder")}</Warning>}
       {!m.imageEncoderReady && <Warning>{t("ModelDetails.noImageEncoder")}</Warning>}

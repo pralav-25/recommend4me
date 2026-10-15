@@ -319,6 +319,7 @@ class Recommendations(
     }
 
     private fun retrain(catalogue: Catalogue): TrainedModel? {
+        val began = System.currentTimeMillis()
         val type = catalogue.type
         val scorer = plugins.scorer(type.id) ?: run {
             log.warn("{}: no scorer plugin: the works are not ranked", type.id)
@@ -354,6 +355,7 @@ class Recommendations(
         val meta = provisional.copy(
             topPositive = importance.filter { it.contribution > 0 }.take(TOP_FEATURES),
             topNegative = importance.filter { it.contribution < 0 }.reversed().take(TOP_FEATURES),
+            trainMillis = System.currentTimeMillis() - began,
         )
         type.models.save(scorer.id, Instant.ofEpochMilli(meta.trainedAtMillis), json.writeValueAsString(meta), fitted.pack())
         type.models.replaceHeldOut(heldOutScores(p, chosen, scale))
@@ -377,12 +379,12 @@ class Recommendations(
      * chance. None — and no chances — while there are too few works of either kind for folds.
      */
     private fun retrainInterest(catalogue: Catalogue): TrainedInterest? {
+        val began = System.currentTimeMillis()
         val type = catalogue.type
-        val scorer = plugins.scorer(type.id) ?: return null
-        val previous = CatalogueReader.previousGradesOfCurrentVersions(catalogue.ratings, catalogue::versionOf)
-        val p = prepare(catalogue, interestRows(catalogue), "interest marks") { previous[it.key] }
-        val chosen = p?.takeIf { it.perItem.size >= CrossValidation.MIN_WORKS }
-            ?.let { CrossValidation.choose(CrossValidation.measureAll(it.task, scorer, it.xFor)) }
+        val scorer = plugins.interestScorer(type.id) ?: return null
+        val p = prepareInterest(catalogue)
+        val measured = p?.takeIf { it.perItem.size >= CrossValidation.MIN_WORKS }?.let { CrossValidation.measureAll(it.task, scorer, it.xFor) }.orEmpty()
+        val chosen = CrossValidation.choose(measured)
         val positive = p?.let { BooleanArray(it.grades.size) { i -> it.grades[i] == INTERESTING } }
         val calibration = chosen?.let { Calibration.fit(it.scores, positive!!) }
         if (p == null || chosen == null || calibration == null) {
@@ -398,6 +400,7 @@ class Recommendations(
             numbers = p.numbers, scoreMean = mean, scoreSd = sd, calibration = calibration,
             trainedAtMillis = System.currentTimeMillis(),
             interesting = positive!!.count { it }, notInteresting = positive.count { !it }, metrics = chosen.metrics,
+            candidates = measured.map { it.result() }, trainMillis = System.currentTimeMillis() - began,
         )
         log.info(
             "{}: the model of interest learnt {} interesting and {} not, out-of-fold AUC {}, parameter {}",
@@ -767,13 +770,31 @@ class Recommendations(
         )
     }
 
+    /** The rows of the model of interest: the user's marks of interest, the grades of earlier versions read as with the grades. */
+    private fun prepareInterest(catalogue: Catalogue): Prepared? {
+        val previous = CatalogueReader.previousGradesOfCurrentVersions(catalogue.ratings, catalogue::versionOf)
+        return prepare(catalogue, interestRows(catalogue), "interest marks") { previous[it.key] }
+    }
+
     /**
-     * What every scorer is measured on: the rows of the current grades, read under the type's lock;
-     * the measuring itself needs no lock — it reads nothing more. Null when there are too few grades.
+     * What every scorer is measured on: the rows of the current grades — of the marks of interest,
+     * of the model of [interest] — read under the type's lock; the measuring itself needs no lock —
+     * it reads nothing more. Null when there are too few.
      */
-    fun measuringInput(typeId: String): MeasuringInput? = lock(typeId).withLock {
-        val p = prepare(reader.read(type(typeId))) ?: return@withLock null
+    fun measuringInput(typeId: String, interest: Boolean = false): MeasuringInput? = lock(typeId).withLock {
+        val catalogue = reader.read(type(typeId))
+        val p = (if (interest) prepareInterest(catalogue) else prepare(catalogue)) ?: return@withLock null
         MeasuringInput(p.task, p.xFor, p.grades.size)
+    }
+
+    /** The model of interest as kept: what the page of the models shows of it; null while there is none. */
+    fun interestMeta(typeId: String): InterestMeta? = loadInterest(type(typeId))?.meta
+
+    /** Makes [scorerId] the scorer of the type's model of interest and trains the models. */
+    fun chooseInterestScorer(typeId: String, scorerId: String): ModelSummary? {
+        if (plugins.scorers.none { it.id == scorerId }) return null
+        settings.set("scorer.$typeId.interest", scorerId)
+        return retrainAndScore(typeId)
     }
 
     /**

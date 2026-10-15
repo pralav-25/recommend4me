@@ -17,7 +17,9 @@ export type Screen =
     }
   | { kind: "universes"; catalogue?: string; universe?: string }
   | { kind: "tags"; tag?: string }
-  | { kind: "history" };
+  | { kind: "history" }
+  /** The models of a content type ("/models/<type>"); of the one shown last at "/models". */
+  | { kind: "models"; type?: string };
 
 export function parseScreen(path: string): Screen {
   const parts = path.split("/").filter((p) => p.length > 0).map((p) => {
@@ -30,6 +32,7 @@ export function parseScreen(path: string): Screen {
   if (parts[0] === "universes") return { kind: "universes", catalogue: parts[1], universe: parts[2] };
   if (parts[0] === "tags") return { kind: "tags", tag: parts.length > 1 ? parts.slice(1).join("/") : undefined };
   if (parts[0] === "history") return { kind: "history" };
+  if (parts[0] === "models") return { kind: "models", type: parts[1] };
   return { kind: "works", type: parts[0] };
 }
 
@@ -44,6 +47,8 @@ export function screenHref(screen: Screen): string {
       return screen.tag ? `/tags/${screen.tag.split("/").map(encodeURIComponent).join("/")}` : "/tags";
     case "history":
       return "/history";
+    case "models":
+      return screen.type ? `/models/${encodeURIComponent(screen.type)}` : "/models";
   }
 }
 

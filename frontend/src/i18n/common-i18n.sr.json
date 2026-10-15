@@ -1,10 +1,11 @@
 {
   "App.failed.filters": "Filteri ne mogu da se prikažu",
+  "App.failed.history": "Istorija ne može da se prikaže",
   "App.failed.jobs": "Zadaci ne mogu da se prikažu",
   "App.failed.list": "Spisak dela nije iscrtan",
   "App.failed.menu": "Meni",
+  "App.failed.models": "Modeli se ne prikazuju",
   "App.failed.progress": "Napredak ne može da se prikaže",
-  "App.failed.history": "Istorija ne može da se prikaže",
   "App.failed.tags": "Tagovi ne mogu da se prikažu",
   "App.failed.universes": "Univerzumi ne mogu da se prikažu",
   "App.hotkey.choose": "izbor dela",

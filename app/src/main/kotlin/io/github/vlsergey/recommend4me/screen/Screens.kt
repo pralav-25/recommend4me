@@ -15,7 +15,7 @@ import org.springframework.web.server.ResponseStatusException
  */
 @Controller
 class Screens(private val stores: Stores) {
-    @GetMapping("/universes", "/universes/**", "/tags", "/tags/**", "/history")
+    @GetMapping("/universes", "/universes/**", "/tags", "/tags/**", "/history", "/models", "/models/**")
     fun screen(): String = PAGE
 
     /** The works of a type: of a known one only — "/favicon.ico" and the like are files. */

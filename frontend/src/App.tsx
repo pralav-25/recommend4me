@@ -21,7 +21,7 @@ import { SortMenu } from "@/item/SortMenu";
 import { JobControl } from "@/job/JobControl";
 import { useJobs } from "@/job/useJobs";
 import { usePref } from "@/lib/usePref";
-import { ModelDialog } from "@/model/ModelDialog";
+import { ModelsScreen } from "@/model/ModelsScreen";
 import { useModel } from "@/model/useModel";
 import { SettingsDialog } from "@/settings/SettingsDialog";
 import { SearchQualityDialog } from "@/search/SearchQualityDialog";
@@ -56,7 +56,7 @@ export function App() {
   const screen = useScreen();
   const [remembered, setRemembered] = usePref<string>("type", "");
   const list = types.data ?? [];
-  const named = screen.kind === "works" ? list.find((t) => t.id === screen.type) : undefined;
+  const named = screen.kind === "works" || screen.kind === "models" ? list.find((t) => t.id === screen.type) : undefined;
   const type = named ?? list.find((t) => t.id === remembered) ?? list[0];
   useEffect(() => {
     if (!type || screen.kind !== "works") return;
@@ -108,9 +108,8 @@ function TypeScreen({ type, types, screen }: { type: ContentTypeInfo; types: Con
   const jobs = useJobs();
   // The dictionary of universes, of the type that has one
   const universes = types.find((tp) => tp.universes);
-  const [modelOpen, setModelOpen] = useState(false);
   const [captureOpen, setCaptureOpen] = useState(false);
-  const menu = { types, type, screen, onModel: () => setModelOpen(true), onCapture: () => setCaptureOpen(true) };
+  const menu = { types, type, screen, onCapture: () => setCaptureOpen(true) };
 
   // The list asks for the shown sources by name, and for none when all are shown
   const sources = useMemo(() => {
@@ -197,6 +196,11 @@ function TypeScreen({ type, types, screen }: { type: ContentTypeInfo; types: Con
       {screen.kind === "universes" && universes && (
         <ErrorBoundary title={t("App.failed.universes")}>
           <UniversesScreen type={universes} selected={screen.catalogue && screen.universe ? { catalogue: screen.catalogue, universe: screen.universe } : undefined} />
+        </ErrorBoundary>
+      )}
+      {screen.kind === "models" && (
+        <ErrorBoundary resetKey={type.id} title={t("App.failed.models")}>
+          <ModelsScreen type={type} />
         </ErrorBoundary>
       )}
       {screen.kind === "history" && (
@@ -306,7 +310,6 @@ function TypeScreen({ type, types, screen }: { type: ContentTypeInfo; types: Con
       )}
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-      <ModelDialog type={type} open={modelOpen} onOpenChange={setModelOpen} />
       <CaptureDialog open={captureOpen} onOpenChange={setCaptureOpen} />
       <HashItemDialog />
     </div>

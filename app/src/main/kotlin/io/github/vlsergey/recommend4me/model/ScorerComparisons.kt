@@ -22,7 +22,7 @@ class ScorerMeasure(val scorer: String) {
     @Volatile var millis: Long? = null
 }
 
-/** A comparison of every scorer of a type on its grades: under way until [finishedAt]. */
+/** A comparison of every scorer of a type on its grades — or its marks of interest: under way until [finishedAt]. */
 class ScorerComparison(val startedAt: Instant, val scorers: List<ScorerMeasure>) {
     @Volatile var grades = 0
     @Volatile var finishedAt: Instant? = null
@@ -40,16 +40,19 @@ class ScorerComparisons(private val recommendations: Recommendations, private va
     private val comparisons = ConcurrentHashMap<String, ScorerComparison>()
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "scorer-comparison").apply { isDaemon = true } }
 
-    fun of(typeId: String): ScorerComparison? = comparisons[typeId]
+    /** The comparison last started of the type's model of grades — of its model of [interest]. */
+    fun of(typeId: String, interest: Boolean = false): ScorerComparison? = comparisons[keyOf(typeId, interest)]
 
-    fun start(typeId: String): ScorerComparison = comparisons.compute(typeId) { _, running ->
+    fun start(typeId: String, interest: Boolean = false): ScorerComparison = comparisons.compute(keyOf(typeId, interest)) { _, running ->
         if (running != null && running.finishedAt == null) return@compute running
-        ScorerComparison(Instant.now(), plugins.scorers.map { ScorerMeasure(it.id) }).also { c -> executor.submit { run(typeId, c) } }
+        ScorerComparison(Instant.now(), plugins.scorers.map { ScorerMeasure(it.id) }).also { c -> executor.submit { run(typeId, interest, c) } }
     }!!
 
-    private fun run(typeId: String, comparison: ScorerComparison) {
+    private fun keyOf(typeId: String, interest: Boolean) = if (interest) "$typeId/interest" else typeId
+
+    private fun run(typeId: String, interest: Boolean, comparison: ScorerComparison) {
         try {
-            val input = recommendations.measuringInput(typeId)
+            val input = recommendations.measuringInput(typeId, interest)
             if (input == null) {
                 comparison.scorers.forEach { it.state = MeasuringState.DONE }
                 return
