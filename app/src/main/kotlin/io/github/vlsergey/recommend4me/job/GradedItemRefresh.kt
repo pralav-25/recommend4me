@@ -36,7 +36,7 @@ class GradedItemRefresh(
             try {
                 if (store.source.refresh(event.itemId, context)) {
                     textVectors.refresh(store, only = listOf(event.itemId))
-                    recommendations.scheduleRetrain(store.type, byUser = false)
+                    recommendations.scheduleRetrain(store.type, "gradedPage", byUser = false)
                 }
             } catch (e: Exception) {
                 log.warn("{}: the page of the graded item {} was not loaded: {}", store.id, event.itemId, e.message)

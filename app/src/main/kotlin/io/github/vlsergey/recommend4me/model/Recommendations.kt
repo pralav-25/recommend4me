@@ -28,6 +28,7 @@ import io.github.vlsergey.recommend4me.correction.FacetAnswered
 import io.github.vlsergey.recommend4me.suggestion.FacetChancesChanged
 import io.github.vlsergey.recommend4me.tag.TagsChanged
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
+import io.github.vlsergey.recommend4me.workload.Work
 import io.github.vlsergey.recommend4me.workload.Workload
 import io.github.vlsergey.recommend4me.vector.Vectors
 import jakarta.annotation.PreDestroy
@@ -101,16 +102,21 @@ class Recommendations(
      * — the suggester's chances of every facet of every source, the reranker's likeness chunk after
      * chunk, the pictures — comes in long streams: learnt after a minute of quiet, or twice the last
      * training, never later than [MAX_WAIT_MS] after the first of the stream; a training the user
-     * waits for is never put off by it.
+     * waits for is never put off by it. The [reason] — a key the interface words — is told in the
+     * queue of the works ([Workload.plan]) till the training begins.
      */
-    fun scheduleRetrain(type: String, byUser: Boolean = true) {
+    fun scheduleRetrain(type: String, reason: String, byUser: Boolean = true) {
         val now = System.currentTimeMillis()
         pending.compute(type) { _, old ->
             val waiting = old?.takeIf { !it.future.isDone }
-            if (!byUser && waiting?.byUser == true) return@compute waiting
+            if (!byUser && waiting?.byUser == true) {
+                workload.plan(trainingWork(type), Instant.ofEpochMilli(waiting.due), reason)
+                return@compute waiting
+            }
             waiting?.future?.cancel(false)
             val first = waiting?.firstAt ?: now
             val due = if (byUser) now + USER_QUIET_MS else minOf(now + maxOf(MACHINE_QUIET_MS, 2 * (lastTraining[type] ?: 0L)), first + MAX_WAIT_MS)
+            workload.plan(trainingWork(type), Instant.ofEpochMilli(due), reason)
             val future = scheduler.schedule({
                 try {
                     retrainAndScore(type)
@@ -118,56 +124,58 @@ class Recommendations(
                     log.error("{}: background training failed", type, e)
                 }
             }, (due - now).coerceAtLeast(0), TimeUnit.MILLISECONDS)
-            PendingTraining(future, first, byUser)
+            PendingTraining(future, first, due, byUser)
         }
     }
 
-    /** A training scheduled: since the first change it waits on, and whether the user waits for it. */
-    private class PendingTraining(val future: ScheduledFuture<*>, val firstAt: Long, val byUser: Boolean)
+    /** A training scheduled: since the first change it waits on, when it is due, and whether the user waits for it. */
+    private class PendingTraining(val future: ScheduledFuture<*>, val firstAt: Long, val due: Long, val byUser: Boolean)
+
+    private fun trainingWork(typeId: String) = Work("train", type = typeId)
 
     @EventListener
     fun gradesChanged(event: GradesChanged) {
         settings.set("model.${event.type}.gradesChangedAt", System.currentTimeMillis().toString())
-        scheduleRetrain(event.type)
+        scheduleRetrain(event.type, "grade")
     }
 
     @EventListener
-    fun marksChanged(event: MarksChanged) = scheduleRetrain(event.type)
+    fun marksChanged(event: MarksChanged) = scheduleRetrain(event.type, "mark")
 
     @EventListener
-    fun interestChanged(event: InterestChanged) = scheduleRetrain(event.type)
+    fun interestChanged(event: InterestChanged) = scheduleRetrain(event.type, "interest")
 
     /** Tags merged, or put above and under others: the works' tags, features of the works, changed. */
     @EventListener
-    fun tagsChanged(event: TagsChanged) = scheduleRetrain(event.type)
+    fun tagsChanged(event: TagsChanged) = scheduleRetrain(event.type, "tags")
 
     /** The reranker read more works against the graded ones: features of the works. */
     @EventListener
-    fun workLikenessChanged(event: WorkLikenessChanged) = scheduleRetrain(event.type, byUser = false)
+    fun workLikenessChanged(event: WorkLikenessChanged) = scheduleRetrain(event.type, "likeness", byUser = false)
 
     /** The user said what a work has or has not: its features, the user's word over the model's. */
     @EventListener
-    fun answered(event: FacetAnswered) = scheduleRetrain(event.type)
+    fun answered(event: FacetAnswered) = scheduleRetrain(event.type, "answer")
 
     /** The model gave works other pairings, characters: features of the works. */
     @EventListener
-    fun chancesChanged(event: FacetChancesChanged) = scheduleRetrain(stores.typeOf(event.source).id, byUser = false)
+    fun chancesChanged(event: FacetChancesChanged) = scheduleRetrain(stores.typeOf(event.source).id, "chances", byUser = false)
 
     @EventListener
     fun setVectorsChanged(event: SetVectorsChanged) {
         log.info("{}: {} items have new set vectors: retraining", event.type, event.items)
-        scheduleRetrain(event.type, byUser = false)
+        scheduleRetrain(event.type, "setVectors", byUser = false)
     }
 
     /** A model that could not be read, or none, is trained on start where there are grades. */
     @EventListener(ApplicationReadyEvent::class)
     fun trainIfMissing() {
         stores.types.forEach { t ->
-            if (load(t) == null && t.sources.any { it.ratings.count() > 0 }) scheduleRetrain(t.id)
+            if (load(t) == null && t.sources.any { it.ratings.count() > 0 }) scheduleRetrain(t.id, "noModel")
         }
     }
 
-    fun retrainAndScore(typeId: String): ModelSummary = workload.run("$typeId: the models trained") {
+    fun retrainAndScore(typeId: String): ModelSummary = workload.run(trainingWork(typeId)) {
         val type = type(typeId)
         trainingNow += typeId
         try {
@@ -191,7 +199,7 @@ class Recommendations(
     }
 
     /** Re-scores every item of the type with its current model. */
-    fun scoreAll(typeId: String) = workload.run("$typeId: every work scored") {
+    fun scoreAll(typeId: String) = workload.run(Work("score", type = typeId)) {
         val type = type(typeId)
         val model = load(type) ?: return@run
         scoreAll(reader.read(type, withLikeness = false), model, loadInterest(type))
@@ -429,7 +437,7 @@ class Recommendations(
      * annotation, its cover); this one has not. The score is the one the list sorts the surprises
      * by. Null for a work the user has not graded, or when there are too few works for folds.
      */
-    fun heldOut(key: ItemKey): HeldOut? = workload.run("${key.source}/${key.id}: the model that had not seen it") { fitHeldOut(key) }
+    fun heldOut(key: ItemKey): HeldOut? = workload.run(Work("heldOut", source = key.source, item = key.id), mapOf("page" to 1)) { fitHeldOut(key) }
 
     private fun fitHeldOut(key: ItemKey): HeldOut? {
         val type = stores.typeOf(key.source)
@@ -783,7 +791,7 @@ class Recommendations(
      * of the model of [interest] — read under the type's lock; the measuring itself needs no lock —
      * it reads nothing more. Null when there are too few.
      */
-    fun measuringInput(typeId: String, interest: Boolean = false): MeasuringInput? = workload.run("$typeId: the scorers' input read") {
+    fun measuringInput(typeId: String, interest: Boolean = false): MeasuringInput? = workload.run(Work("scorersInput", type = typeId), mapOf("asked" to 1)) {
         val catalogue = reader.read(type(typeId))
         val p = (if (interest) prepareInterest(catalogue) else prepare(catalogue)) ?: return@run null
         MeasuringInput(p.task, p.xFor, p.grades.size)
@@ -806,7 +814,7 @@ class Recommendations(
      * everything, by the same cross-validation and the same choice of the parameter. A part whose
      * removal costs nothing, or improves the quality, adds nothing the grades confirm. Nothing is kept.
      */
-    fun worth(typeId: String): ModelWorth? = workload.run("$typeId: the worth of the parts measured") {
+    fun worth(typeId: String): ModelWorth? = workload.run(Work("worth", type = typeId), mapOf("asked" to 1)) {
         val type = type(typeId)
         val scorer = plugins.scorer(typeId) ?: return@run null
         val p = prepare(reader.read(type)) ?: return@run null
@@ -846,7 +854,7 @@ class Recommendations(
      * way — and the weights chosen on every grade. The rows are read under the type's lock, the
      * trainings — hundreds of them — run without it. Nothing is kept. [cautious]: [GroupWeights.tune].
      */
-    fun weighing(typeId: String, cautious: Boolean = true): Weighing? = workload.run("$typeId: the weights of the parts measured") { weighed(typeId, cautious) }
+    fun weighing(typeId: String, cautious: Boolean = true): Weighing? = workload.run(Work("weighing", type = typeId), mapOf("asked" to 1)) { weighed(typeId, cautious) }
 
     private fun weighed(typeId: String, cautious: Boolean): Weighing? {
         val type = type(typeId)

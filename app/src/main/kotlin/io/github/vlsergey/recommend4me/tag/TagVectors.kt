@@ -4,11 +4,14 @@ import io.github.vlsergey.recommend4me.encoder.TextEncoder
 import io.github.vlsergey.recommend4me.item.ItemsChanged
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
+import io.github.vlsergey.recommend4me.workload.Work
+import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
+import java.time.Instant
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -29,24 +32,32 @@ private val log = LoggerFactory.getLogger(TagVectors::class.java)
  * vectors kept; a tag without one yet is alike nothing for a while.
  */
 @Component
-class TagVectors(private val normalization: TagNormalization, private val plugins: Plugins, private val phrases: PhraseVectors) {
+class TagVectors(
+    private val normalization: TagNormalization,
+    private val plugins: Plugins,
+    private val phrases: PhraseVectors,
+    private val workload: Workload,
+) {
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "tag-vectors").apply { isDaemon = true } }
     private val pending = AtomicReference<ScheduledFuture<*>?>()
 
     @EventListener(ApplicationReadyEvent::class)
-    fun start() = schedule(START_DELAY_SECONDS)
+    fun start() = schedule(START_DELAY_SECONDS, "start")
 
     @EventListener
-    fun tagsChanged(event: TagsChanged) = schedule(QUIET_SECONDS)
+    fun tagsChanged(event: TagsChanged) = schedule(QUIET_SECONDS, "tags")
 
     /** Works came or changed: their sites' tags bound to tags ([TagNormalization]), maybe new ones. */
     @EventListener
-    fun itemsChanged(event: ItemsChanged) = schedule(QUIET_SECONDS)
+    fun itemsChanged(event: ItemsChanged) = schedule(QUIET_SECONDS, "items")
 
-    private fun schedule(delaySeconds: Long) {
+    /** The vectors made after the quiet; the [reason], a key the interface words, told in the queue of the works. */
+    private fun schedule(delaySeconds: Long, reason: String) {
+        workload.plan(VECTORS, Instant.now().plusSeconds(delaySeconds), reason)
         val next = scheduler.schedule({
             try {
-                fill()
+                // Outside the queue of the heavy works: the names of the tags, no catalogue held
+                workload.alongside(VECTORS) { fill() }
             } catch (e: Exception) {
                 log.warn("The vectors of the tags were not made: {}", e.message, e)
             }
@@ -107,6 +118,9 @@ class TagVectors(private val normalization: TagNormalization, private val plugin
 
         /** Tags written, and names encoded, at once. */
         private const val KEEP = 500
+
+        /** The making of the vectors, as the queue of the works tells it. */
+        private val VECTORS = Work("tagVectors")
 
         /** [v] of unit length; null of a vector of nought. */
         fun unit(v: FloatArray): FloatArray? {

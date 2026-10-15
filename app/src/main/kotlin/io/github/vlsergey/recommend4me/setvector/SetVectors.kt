@@ -8,6 +8,7 @@ import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import io.github.vlsergey.recommend4me.vector.Vectors
+import io.github.vlsergey.recommend4me.workload.Work
 import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
@@ -133,20 +134,23 @@ class SetVectors(
                 val todo = contexts.of(s.id).itemsInOrder().filter { it in todoSet }
                 totalNow += todo.size
                 log.info("{}: making {} vectors of {} items", s.id, kind.key, todo.size)
-                for (ids in todo.chunked(CHUNK)) {
-                    if (stopping) return made
-                    val sets = members(s, kind, encoder, ids)
-                    ids.forEach { id -> embedding.embedding.of(sets[id].orEmpty())?.let { s.setVectors.save(id, kind, embedding.id, have.getValue(id), it) } }
-                    made += ids.size
-                    doneNow += ids.size
-                    unannounced += ids.size
-                    // The model learns the new vectors as they come, not once at the end of hours
-                    if (unannounced >= ANNOUNCE_EVERY || System.currentTimeMillis() - announcedAt >= ANNOUNCE_AFTER.toMillis()) {
-                        events.publishEvent(SetVectorsChanged(type.id, unannounced))
-                        unannounced = 0
-                        announcedAt = System.currentTimeMillis()
+                workload.alongside(Work("setVectors", source = s.id, facet = kind.key), mapOf("setsGrew" to todo.size)) {
+                    for (ids in todo.chunked(CHUNK)) {
+                        if (stopping) break
+                        val sets = members(s, kind, encoder, ids)
+                        ids.forEach { id -> embedding.embedding.of(sets[id].orEmpty())?.let { s.setVectors.save(id, kind, embedding.id, have.getValue(id), it) } }
+                        made += ids.size
+                        doneNow += ids.size
+                        unannounced += ids.size
+                        // The model learns the new vectors as they come, not once at the end of hours
+                        if (unannounced >= ANNOUNCE_EVERY || System.currentTimeMillis() - announcedAt >= ANNOUNCE_AFTER.toMillis()) {
+                            events.publishEvent(SetVectorsChanged(type.id, unannounced))
+                            unannounced = 0
+                            announcedAt = System.currentTimeMillis()
+                        }
                     }
                 }
+                if (stopping) return made
             }
         }
         if (unannounced > 0) events.publishEvent(SetVectorsChanged(type.id, unannounced))
@@ -172,7 +176,7 @@ class SetVectors(
         // Every source gives its share of the sample, all it has while the catalogue is within it
         val sample = have.filterValues { it > 0 }.flatMap { (s, n) -> sample(s, kind, encoder, if (total <= SAMPLE) n else (SAMPLE.toLong() * n / total).toInt()) }
         if (sample.size < 2) return stored
-        val embedding = workload.run("${type.id}: the directions of ${kind.key} fitted") { SetEmbedding.fit(sample, minOf(SetEmbedding.DIRECTIONS, sample.size - 1)) }
+        val embedding = workload.run(Work("setDirections", type = type.id, facet = kind.key), mapOf("catalogueGrew" to 1)) { SetEmbedding.fit(sample, minOf(SetEmbedding.DIRECTIONS, sample.size - 1)) }
         val id = Vectors.keyOf("${type.id}:${kind.name}:$encoder:${System.nanoTime()}")
         type.embeddings.save(kind, id, encoder, embedding, members, Instant.now())
         log.info("{}: {} directions of {} fitted on {} members", type.id, embedding.directions.size, kind.key, sample.size)

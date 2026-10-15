@@ -56,6 +56,9 @@ import tagSr from "../tag/tag-i18n.sr.json";
 import universeEn from "../universe/universe-i18n.en.json";
 import universeRu from "../universe/universe-i18n.ru.json";
 import universeSr from "../universe/universe-i18n.sr.json";
+import workloadEn from "../workload/workload-i18n.en.json";
+import workloadRu from "../workload/workload-i18n.ru.json";
+import workloadSr from "../workload/workload-i18n.sr.json";
 import commonEn from "./common-i18n.en.json";
 import commonRu from "./common-i18n.ru.json";
 import commonSr from "./common-i18n.sr.json";
@@ -115,6 +118,7 @@ const NAMESPACES = {
   suggestion: namespace(suggestionEn, suggestionRu, suggestionSr),
   tag: namespace(tagEn, tagRu, tagSr),
   universe: namespace(universeEn, universeRu, universeSr),
+  workload: namespace(workloadEn, workloadRu, workloadSr),
 };
 
 export type Namespace = keyof typeof NAMESPACES;
@@ -148,4 +152,5 @@ export type Resources = {
   suggestion: typeof suggestionEn;
   tag: typeof tagEn;
   universe: typeof universeEn;
+  workload: typeof workloadEn;
 };

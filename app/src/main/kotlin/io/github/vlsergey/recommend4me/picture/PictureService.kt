@@ -194,7 +194,7 @@ class PictureService(
             }
             if (inFlight.isEmpty()) {
                 running = false
-                sinceRetrain.filterValues { it > 0 }.keys.forEach { recommendations.scheduleRetrain(it, byUser = false) }
+                sinceRetrain.filterValues { it > 0 }.keys.forEach { recommendations.scheduleRetrain(it, "pictures", byUser = false) }
                 sinceRetrain.clear()
                 synchronized(wake) { wake.wait(IDLE_MILLIS) }
                 continue
@@ -214,7 +214,7 @@ class PictureService(
             batch.forEach { inFlight -= it.job.store.id to (it.job.picture.itemId to it.job.picture.position) }
             // The model learns from the pictures as they come, not once at the end of days
             sinceRetrain.filterValues { it >= RETRAIN_EVERY }.keys.forEach {
-                recommendations.scheduleRetrain(it, byUser = false)
+                recommendations.scheduleRetrain(it, "pictures", byUser = false)
                 sinceRetrain[it] = 0
             }
         }

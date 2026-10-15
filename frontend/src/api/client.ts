@@ -84,6 +84,7 @@ export type FoundTagEntry = Schemas["FoundTagEntry"];
 export type HierarchyOffer = Schemas["HierarchyOffer"];
 export type ModelState = Schemas["ModelState"];
 export type ModelTrial = Schemas["ModelTrial"];
+export type QueuedWork = Schemas["QueuedWork"];
 export type FacetComparison = Schemas["FacetComparison"];
 export type MethodQuality = Schemas["MethodQuality"];
 

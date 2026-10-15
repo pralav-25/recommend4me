@@ -24,6 +24,7 @@ tags:
   - name: suggestions
   - name: universes
   - name: tags
+  - name: workload
 
 paths:
   /api/types:
@@ -1505,6 +1506,23 @@ paths:
                   $ref: '#/components/schemas/ModelState'
         '404':
           description: No such type
+
+  /api/workload:
+    get:
+      tags: [workload]
+      operationId: listWorkload
+      summary: >
+        The queue of the background works of every content type: the heavy work running, the works running beside
+        the queue, those waiting their turn, and those planned after the changes that asked for them - each with why
+      responses:
+        '200':
+          description: The works, running first, then beside, waiting in their order, planned by when they are due
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QueuedWork'
 
   /api/types/{type}/models/facets/{source}/{facet}/search:
     post:
@@ -3143,6 +3161,60 @@ components:
           description: The settings it chose
           additionalProperties:
             type: string
+
+    QueuedWork:
+      type: object
+      description: A background work running, waiting or planned
+      required: [what, state, since, reasons]
+      properties:
+        what:
+          type: string
+          description: What it does, a key the interface words as "workload.<what>"
+        state:
+          type: string
+          enum: [RUNNING, BESIDE, WAITING, PLANNED]
+          description: >
+            RUNNING - the one heavy work at a time; BESIDE - running outside the queue, holding no catalogue;
+            WAITING - its turn after the heavy works asked before it; PLANNED - after the quiet that follows its changes
+        type:
+          type: string
+          description: The content type it is of
+        source:
+          type: string
+          description: The source it is of
+        facet:
+          type: string
+          description: The facet, or the kind of sets, it is of
+        labelKey:
+          type: string
+          description: The key of the facet's label, when it is a facet of the source
+        item:
+          type: string
+          description: The work it is of, within the source
+        since:
+          type: string
+          format: date-time
+          description: Since when it runs, waits, or is planned
+        due:
+          type: string
+          format: date-time
+          description: Of a planned work, when it is due; put off by newer changes
+        reasons:
+          type: array
+          description: The changes that asked for it, each with how many times it came
+          items:
+            $ref: '#/components/schemas/WorkReason'
+
+    WorkReason:
+      type: object
+      required: [key, count]
+      properties:
+        key:
+          type: string
+          description: A key the interface words as "workload.reason.<key>"
+        count:
+          type: integer
+          format: int32
 
     ModelState:
       type: object

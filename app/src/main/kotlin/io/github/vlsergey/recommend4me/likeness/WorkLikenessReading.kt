@@ -9,12 +9,15 @@ import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TextRole
 import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.vector.Vectors
+import io.github.vlsergey.recommend4me.workload.Work
+import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Component
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -39,7 +42,12 @@ data class WorkLikenessChanged(val type: String)
  * pass has read is kept chunk by chunk: a pass cut short goes on from there the next time.
  */
 @Component
-class WorkLikenessReading(private val stores: Stores, private val plugins: Plugins, private val events: ApplicationEventPublisher) {
+class WorkLikenessReading(
+    private val stores: Stores,
+    private val plugins: Plugins,
+    private val events: ApplicationEventPublisher,
+    private val workload: Workload,
+) {
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "work-likeness").apply { isDaemon = true } }
     private val pending = ConcurrentHashMap<String, ScheduledFuture<*>>()
 
@@ -48,21 +56,25 @@ class WorkLikenessReading(private val stores: Stores, private val plugins: Plugi
 
     /** The smallest catalogue first: its pairs are read in minutes, a large one's may take hours. */
     @EventListener(ApplicationReadyEvent::class)
-    fun readOnStart() = stores.types.sortedBy { t -> t.sources.sumOf { it.items.count().toLong() * it.ratings.count() } }.forEach { schedule(it.id) }
+    fun readOnStart() = stores.types.sortedBy { t -> t.sources.sumOf { it.items.count().toLong() * it.ratings.count() } }.forEach { schedule(it.id, "start") }
 
     @EventListener
-    fun gradesChanged(event: GradesChanged) = schedule(event.type)
+    fun gradesChanged(event: GradesChanged) = schedule(event.type, "grade")
 
     @EventListener
-    fun itemsChanged(event: ItemsChanged) = schedule(stores.typeOf(event.source).id)
+    fun itemsChanged(event: ItemsChanged) = schedule(stores.typeOf(event.source).id, "items")
 
-    private fun schedule(typeId: String) {
+    /** The pass planned after the quiet; the [reason], a key the interface words, told in the queue of the works. */
+    private fun schedule(typeId: String, reason: String) {
         pending.compute(typeId) { _, before ->
             before?.cancel(false)
+            workload.plan(Work("likeness", type = typeId), Instant.now().plusSeconds(DELAY_SECONDS), reason)
             scheduler.schedule({
                 pending.remove(typeId)
                 try {
-                    read(stores.type(typeId) ?: return@schedule)
+                    val type = stores.type(typeId) ?: return@schedule
+                    // Outside the queue of the heavy works: the reranker reads pairs on the card for hours, no catalogue held
+                    workload.alongside(Work("likeness", type = typeId)) { read(type) }
                 } catch (e: Exception) {
                     log.warn("{}: the works could not be read by the reranker", typeId, e)
                 }

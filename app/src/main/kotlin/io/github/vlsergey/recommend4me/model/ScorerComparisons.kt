@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.model
 
 import io.github.vlsergey.recommend4me.plugin.Plugins
+import io.github.vlsergey.recommend4me.workload.Work
 import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
@@ -47,7 +48,7 @@ class ScorerComparisons(private val recommendations: Recommendations, private va
     fun start(typeId: String, interest: Boolean = false): ScorerComparison = comparisons.compute(keyOf(typeId, interest)) { _, running ->
         if (running != null && running.finishedAt == null) return@compute running
         ScorerComparison(Instant.now(), plugins.scorers.map { ScorerMeasure(it.id) }).also { c ->
-            executor.submit { workload.run("$typeId: the scorers compared") { run(typeId, interest, c) } }
+            executor.submit { workload.run(Work(if (interest) "interestScorersCompared" else "scorersCompared", type = typeId), mapOf("asked" to 1)) { run(typeId, interest, c) } }
         }
     }!!
 

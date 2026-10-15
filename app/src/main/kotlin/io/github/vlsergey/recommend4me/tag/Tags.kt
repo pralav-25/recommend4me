@@ -8,6 +8,7 @@ import io.github.vlsergey.recommend4me.rating.Grades
 import io.github.vlsergey.recommend4me.rating.GradesChanged
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
+import io.github.vlsergey.recommend4me.workload.Work
 import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.springframework.beans.factory.annotation.Value
@@ -213,7 +214,7 @@ class Tags(
      * over every work of every source — seconds of a catalogue of games. What the screen of the tags
      * shows is kept of it ([rename]); read now only where the works themselves are wanted.
      */
-    fun countAll(scope: TagScope, facet: String): Map<String, TagStats> = workload.run("tags: every work counted") { counted(scope, facet) }
+    fun countAll(scope: TagScope, facet: String): Map<String, TagStats> = workload.run(Work("tagsCounted")) { counted(scope, facet) }
 
     private fun counted(scope: TagScope, facet: String): Map<String, TagStats> {
         val bindings = scope.tags.bindings()
@@ -468,7 +469,7 @@ class Tags(
      *   A tag in one such offer alone, the nearest: one sharing a tag with a nearer one is not offered
      *   till the nearer is said — then it is offered above the new tag.
      */
-    fun hierarchyOffers(scope: TagScope, facet: String): List<HierarchyOffer> = workload.run("tags: the offers of the graph") { offers(scope, facet) }
+    fun hierarchyOffers(scope: TagScope, facet: String): List<HierarchyOffer> = workload.run(Work("tagOffers"), mapOf("page" to 1)) { offers(scope, facet) }
 
     private fun offers(scope: TagScope, facet: String): List<HierarchyOffer> {
         val started = System.currentTimeMillis()
@@ -944,7 +945,7 @@ class Tags(
      * worked out, the works of every tag and of every site's tag, the sources of its sites' tags.
      * The screen of the tags reads them ([stats]), not the works.
      */
-    fun rename(scope: TagScope, facet: String) = workload.run("tags: named and counted") { renamed(scope, facet) }
+    fun rename(scope: TagScope, facet: String) = workload.run(NAMING) { renamed(scope, facet) }
 
     private fun renamed(scope: TagScope, facet: String) {
         val started = System.currentTimeMillis()
@@ -960,14 +961,16 @@ class Tags(
     }
 
     /** The sites' new tags bound, and the names worked out again, shortly after the last of a quick series of changes. */
-    private fun schedule() {
+    private fun schedule(reason: String) {
         pending.compute(RENAMING) { _, old ->
             old?.cancel(false)
+            workload.plan(NAMING, Instant.now().plusSeconds(RENAME_DELAY_SECONDS), reason)
             scheduler.schedule({
                 try {
                     val scope = scope() ?: return@schedule
+                    val reasons = workload.take(NAMING)
                     normalization.bindNew()
-                    rename(scope, scope.facet)
+                    workload.run(NAMING, reasons) { renamed(scope, scope.facet) }
                 } catch (e: Exception) {
                     log.warn("The tags were not bound and named: {}", e.message, e)
                 }
@@ -976,10 +979,10 @@ class Tags(
     }
 
     @EventListener
-    fun gradesChanged(event: GradesChanged) = schedule()
+    fun gradesChanged(event: GradesChanged) = schedule("grade")
 
     @EventListener
-    fun itemsChanged(event: ItemsChanged) = schedule()
+    fun itemsChanged(event: ItemsChanged) = schedule("items")
 
     /** After the tags are normalized on start ([TagNormalization.start]). */
     @Order(-5)
@@ -988,7 +991,7 @@ class Tags(
         val scope = scope() ?: return
         // The answers of a merge a stop or a failure left unmoved: moved before anything reads them
         moveMergedAnswers(scope, scope.facet)
-        schedule()
+        schedule("start")
         // The bindings made before what their entries are a kind of was read: read once, in the background
         scheduler.execute { readAboveOfBound(scope) }
     }
@@ -1001,6 +1004,9 @@ class Tags(
     companion object {
         /** The one renaming waited for, of every type's tags. */
         private const val RENAMING = "tags"
+
+        /** The names of the tags worked out and their works counted, as the queue of the works tells it. */
+        private val NAMING = Work("tagsNamed")
 
         /** The quiet after the last change before the names are worked out again: a page is sent several times as it grows. */
         private const val RENAME_DELAY_SECONDS = 10L

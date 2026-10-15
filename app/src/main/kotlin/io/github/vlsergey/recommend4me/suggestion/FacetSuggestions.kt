@@ -29,6 +29,7 @@ import io.github.vlsergey.recommend4me.universe.everyName
 import io.github.vlsergey.recommend4me.universe.workPassages
 import io.github.vlsergey.recommend4me.universe.workTexts
 import io.github.vlsergey.recommend4me.vector.Vectors
+import io.github.vlsergey.recommend4me.workload.Work
 import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
@@ -114,26 +115,32 @@ class FacetSuggestions(
     fun facetsOf(store: SourceStore): List<FacetDef> = store.schema.facets.filter { it.suggest || it.infer }.sortedBy { !it.infer }
 
     @EventListener
-    fun itemsChanged(event: ItemsChanged) = changed(event.source)
+    fun itemsChanged(event: ItemsChanged) = changed(event.source, "items")
 
     @EventListener
-    fun textVectorsChanged(event: TextVectorsChanged) = changed(event.source)
+    fun textVectorsChanged(event: TextVectorsChanged) = changed(event.source, "texts")
 
     @EventListener
-    fun partsSaved(event: PartsSaved) = changed(event.source)
+    fun partsSaved(event: PartsSaved) = changed(event.source, "parts")
 
     /**
-     * Something the source's chances are made of changed: the source is refreshed after the quiet
-     * that follows. A refresh under way is given up ([newer]): it works on what it read before the
-     * change, and the one after the quiet works on all of it.
+     * Something the source's chances are made of changed — the [reason], a key the interface words,
+     * told in the queue of the works till the refresh begins: the source is refreshed after the
+     * quiet that follows. A refresh under way is given up ([newer]): it works on what it read before
+     * the change, and the one after the quiet works on all of it.
      */
-    private fun changed(source: String, newer: Boolean = true) {
+    private fun changed(source: String, reason: String, newer: Boolean = true) {
         val store = stores.source(source) ?: return
         if (facetsOf(store).isEmpty()) return
         if (newer) generationOf(source).incrementAndGet()
         waiting += source
-        if (scheduled.compareAndSet(false, true)) worker.schedule(::drain, DELAY_SECONDS, TimeUnit.SECONDS)
+        val scheduling = scheduled.compareAndSet(false, true)
+        workload.plan(refreshing(source), if (scheduling) Instant.now().plusSeconds(DELAY_SECONDS) else null, reason)
+        if (scheduling) worker.schedule(::drain, DELAY_SECONDS, TimeUnit.SECONDS)
     }
+
+    /** The refresh of every facet of the source, as the queue of the works tells it planned. */
+    private fun refreshing(source: String) = Work("suggesters", source = source)
 
     /** How many changes the source has had: a refresh begun before the last one is of stale data. */
     private fun generationOf(source: String): AtomicLong = generations.computeIfAbsent(source) { AtomicLong() }
@@ -144,7 +151,7 @@ class FacetSuggestions(
             waiting -= source
             val store = stores.source(source) ?: return@forEach
             try {
-                refresh(store, givenUp = true)
+                refresh(store, givenUp = true, workload.take(refreshing(source)))
             } catch (e: CancellationException) {
                 log.info("{}: chances given up for newer changes, made again after the quiet", source)
             } catch (e: Exception) {
@@ -161,7 +168,7 @@ class FacetSuggestions(
         worker.execute {
             stores.sources.filter { facetsOf(it).isNotEmpty() }.forEach { s ->
                 try {
-                    refresh(s, givenUp = true)
+                    refresh(s, givenUp = true, mapOf("start" to 1))
                 } catch (e: CancellationException) {
                     log.info("{}: chances given up on start for newer changes, made again after the quiet", s.id)
                 } catch (e: Exception) {
@@ -176,16 +183,19 @@ class FacetSuggestions(
      * works out every item whose fingerprint changed — every item after a fitting. For a caller that
      * waits for it: carried through whatever changes meanwhile; those are refreshed after their quiet.
      */
-    fun refresh(store: SourceStore) = refresh(store, givenUp = false)
+    fun refresh(store: SourceStore) = refresh(store, givenUp = false, mapOf("asked" to 1))
 
-    /** [refresh]; [givenUp] — with a [CancellationException] once the source changes again ([changed]): the background's. */
-    private fun refresh(store: SourceStore, givenUp: Boolean) {
+    /**
+     * [refresh]; [givenUp] — with a [CancellationException] once the source changes again
+     * ([changed]): the background's; [reasons] — what it is made for, told in the queue of the works.
+     */
+    private fun refresh(store: SourceStore, givenUp: Boolean, reasons: Map<String, Int>) {
         val encoder = plugins.textEncoder() ?: return
         val generation = generationOf(store.id).get()
         val stop = if (givenUp) ({ generationOf(store.id).get() != generation }) else ({ false })
         facetsOf(store).forEach { facet ->
             val suggester = plugins.suggester(store.id, facet.key) ?: return@forEach
-            workload.run("${store.id}: the suggester of ${facet.key}") { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
+            workload.run(Work("suggester", source = store.id, facet = facet.key), reasons) { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
         }
     }
 
@@ -204,7 +214,7 @@ class FacetSuggestions(
             try {
                 // The suggester named when it runs: one chosen meanwhile is the one fitted
                 val suggester = plugins.suggester(store.id, facet.key) ?: return@execute
-                workload.run("${store.id}: the suggester of ${facet.key} anew") { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, anew = true) } }
+                workload.run(Work("suggesterAnew", source = store.id, facet = facet.key), mapOf("asked" to 1)) { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, anew = true) } }
             } catch (e: Exception) {
                 log.warn("{}: the suggester of {} was not fitted anew: {}", store.id, facet.key, e.message, e)
             } finally {
@@ -321,7 +331,7 @@ class FacetSuggestions(
             // does not ask again (the characters are offered without chances meanwhile). Not a newer
             // change: a fitting under way goes on
             if (store.suggestions.fingerprint(only, facet.key) == null) nothingToGive(store, facet, data, only, now)
-            return changed(store.id, newer = false)
+            return changed(store.id, "notFitted", newer = false)
         }
         // Of one item's task never: what the weights were fitted on is told by the background refresh ([FacetData.load])
         val current = !anew && only == null && kept != null && stored.basis == data.basis
@@ -340,7 +350,7 @@ class FacetSuggestions(
         }
         // Fitted on other data: the whole facet is fitted again and worked out in the background —
         // after the change that made it other, which was a newer one itself
-        if (!current && only != null) changed(store.id, newer = false)
+        if (!current && only != null) changed(store.id, "stale", newer = false)
         val refitted = !current && only == null
         // The fingerprints the chances were made of, read before the scoring: of the whole facet, what the writing compares with
         val fingerprintsRead = if (only == null) store.suggestions.fingerprints(facet.key) else null
@@ -853,7 +863,7 @@ class FacetSuggestions(
      */
     private fun makeCurrent(store: SourceStore, itemId: String, key: String, work: Answering) {
         try {
-            makeCurrentRounds(store, itemId, key, work)
+            workload.alongside(Work("workChances", source = store.id, item = itemId), mapOf("answer" to 1)) { makeCurrentRounds(store, itemId, key, work) }
         } catch (e: Throwable) {
             log.error("{}: chances of {} were not made", store.id, itemId, e)
             synchronized(answering) {
@@ -939,7 +949,7 @@ class FacetSuggestions(
         if (stale.isEmpty()) return
         if (now || stale.any { known[it] == null }) refreshNow(store, itemId, stale, stop)
         // The change that made them stale was told already: a refresh under way is not given up for it
-        else changed(store.id, newer = false)
+        else changed(store.id, "stale", newer = false)
     }
 
     @PreDestroy

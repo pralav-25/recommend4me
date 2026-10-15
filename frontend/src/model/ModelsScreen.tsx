@@ -9,6 +9,7 @@ import { label, scorerTitle, sourceTitle } from "@/i18n/label";
 import { usePluginNamespaces } from "@/i18n/usePluginNamespaces";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
+import { WorkQueue } from "@/workload/WorkQueue";
 import { FacetComparisonDialog } from "./FacetComparisonDialog";
 import { GradeModelDetails } from "./GradeModel";
 import { ScorerComparisonDialog } from "./ScorerComparisonDialog";
@@ -51,6 +52,7 @@ export function ModelsScreen({ type }: { type: ContentTypeInfo }) {
       </header>
       {models.isLoading && <Loader2Icon className="size-5 animate-spin text-muted-foreground" />}
       {models.isError && <p className="text-sm text-destructive">{t("ModelsScreen.loadError", { error: models.error.message })}</p>}
+      <WorkQueue />
       {grade && <GradeCard type={type} m={grade} />}
       {interest && <InterestCard type={type} m={interest} />}
       {sources.map((source) => (

@@ -49,7 +49,7 @@ class ItemRemoval(private val stores: Stores, private val recommendations: Recom
         log.info("{}: {} removed from the library, with everything of it", key.source, key.id)
         events.publishEvent(ItemsChanged(key.source, listOf(key.id)))
         if (graded) events.publishEvent(GradesChanged(type.id, key.source, key.id))
-        recommendations.scheduleRetrain(type.id)
+        recommendations.scheduleRetrain(type.id, "removal")
         return true
     }
 }
