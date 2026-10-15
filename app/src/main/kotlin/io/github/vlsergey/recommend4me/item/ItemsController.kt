@@ -175,7 +175,7 @@ class ItemsController(
             throw Refusal.SITE_SILENT.refuse(HttpStatus.BAD_GATEWAY, "The site did not answer: ${e.message}", "error" to (e.message ?: e.javaClass.simpleName))
         }
         if (!refreshed) throw Refusal.REFRESH_FAILED.refuse(HttpStatus.CONFLICT, "The source $source could not download the page of $item")
-        textVectors.refresh(store, only = listOf(item))
+        textVectors.refresh(store, "pageRead", only = listOf(item))
         recommendations.scoreItem(ItemKey(source, item))
         return getItem(source, item)
     }

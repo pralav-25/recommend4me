@@ -27,6 +27,12 @@ export function formatDay(iso: string | undefined): string {
   return new Date(iso).toLocaleDateString(intlTag(), { day: "2-digit", month: "2-digit", year: "numeric" });
 }
 
+/** The time of day to the second: 20:41:05, 8:41:05 PM. */
+export function formatTime(iso: string | undefined): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleTimeString(intlTag(), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
 /** How long ago something happened: "3 hours ago", "yesterday". */
 export function ago(iso: string): string {
   const relative = new Intl.RelativeTimeFormat(intlTag(), { numeric: "auto" });

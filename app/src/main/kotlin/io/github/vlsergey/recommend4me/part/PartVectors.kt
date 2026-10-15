@@ -3,6 +3,8 @@ package io.github.vlsergey.recommend4me.part
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
+import io.github.vlsergey.recommend4me.workload.Work
+import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.springframework.context.ApplicationEventPublisher
 import org.slf4j.LoggerFactory
@@ -21,7 +23,12 @@ private val log = LoggerFactory.getLogger(PartVectors::class.java)
  * not averaged away. A part read again with another text is encoded again.
  */
 @Service
-class PartVectors(private val stores: Stores, private val plugins: Plugins, private val events: ApplicationEventPublisher) {
+class PartVectors(
+    private val stores: Stores,
+    private val plugins: Plugins,
+    private val events: ApplicationEventPublisher,
+    private val workload: Workload,
+) {
 
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "part-vectors").apply { isDaemon = true } }
     private val wake = Object()
@@ -42,19 +49,21 @@ class PartVectors(private val stores: Stores, private val plugins: Plugins, priv
     fun start() {
         worker.execute {
             while (!stopping) {
-                val did = try {
-                    encodeSome()
-                } catch (e: Exception) {
-                    log.error("parts were not encoded", e)
-                    0
-                }
-                if (did == 0) {
-                    busy = false
+                if (pending() > 0) {
                     try {
-                        synchronized(wake) { wake.wait(TimeUnit.MINUTES.toMillis(10)) }
-                    } catch (_: InterruptedException) {
-                        return@execute
+                        // Every part waiting encoded in one work of the queue of the computations, not a batch apart
+                        workload.run(Work("partVectors"), mapOf("parts" to 1)) {
+                            while (!stopping && encodeSome() > 0) continue
+                        }
+                    } catch (e: Exception) {
+                        log.error("parts were not encoded", e)
                     }
+                }
+                busy = false
+                try {
+                    synchronized(wake) { wake.wait(TimeUnit.MINUTES.toMillis(10)) }
+                } catch (_: InterruptedException) {
+                    return@execute
                 }
             }
         }

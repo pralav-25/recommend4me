@@ -1512,11 +1512,14 @@ paths:
       tags: [workload]
       operationId: listWorkload
       summary: >
-        The queue of the background works of every content type: the heavy work running, the works running beside
-        the queue, those waiting their turn, and those planned after the changes that asked for them - each with why
+        The queue of the computations of every content type, one at a time: the last works done, the work running,
+        those waiting their turn, and those planned after the changes that asked for them - each with why, and how
+        long it took or is expected to take
       responses:
         '200':
-          description: The works, running first, then beside, waiting in their order, planned by when they are due
+          description: >
+            The works as a timeline: done, the oldest first; then running, waiting in their order, planned by when
+            they are due
           content:
             application/json:
               schema:
@@ -3172,10 +3175,10 @@ components:
           description: What it does, a key the interface words as "workload.<what>"
         state:
           type: string
-          enum: [RUNNING, BESIDE, WAITING, PLANNED]
+          enum: [FINISHED, RUNNING, WAITING, PLANNED]
           description: >
-            RUNNING - the one heavy work at a time; BESIDE - running outside the queue, holding no catalogue;
-            WAITING - its turn after the heavy works asked before it; PLANNED - after the quiet that follows its changes
+            FINISHED - done, one of the last; RUNNING - the one computation at a time; WAITING - its turn after the
+            computations asked before it; PLANNED - after the quiet that follows its changes
         type:
           type: string
           description: The content type it is of
@@ -3199,6 +3202,19 @@ components:
           type: string
           format: date-time
           description: Of a planned work, when it is due; put off by newer changes
+        ended:
+          type: string
+          format: date-time
+          description: Of a work done, when it ended; it began at "since"
+        failed:
+          type: boolean
+          description: Of a work done, whether it ended with an error
+        expectedMillis:
+          type: integer
+          format: int64
+          description: >
+            Of a work not done, how long it is expected to take: as long as the last run of its kind took (of any
+            work alike but for the item); left out when none ran since the application started
         reasons:
           type: array
           description: The changes that asked for it, each with how many times it came

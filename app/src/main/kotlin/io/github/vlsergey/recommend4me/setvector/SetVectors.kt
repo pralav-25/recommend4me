@@ -134,7 +134,7 @@ class SetVectors(
                 val todo = contexts.of(s.id).itemsInOrder().filter { it in todoSet }
                 totalNow += todo.size
                 log.info("{}: making {} vectors of {} items", s.id, kind.key, todo.size)
-                workload.alongside(Work("setVectors", source = s.id, facet = kind.key), mapOf("setsGrew" to todo.size)) {
+                workload.run(Work("setVectors", source = s.id, facet = kind.key), mapOf("setsGrew" to todo.size)) {
                     for (ids in todo.chunked(CHUNK)) {
                         if (stopping) break
                         val sets = members(s, kind, encoder, ids)

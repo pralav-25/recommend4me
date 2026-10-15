@@ -35,7 +35,7 @@ class GradedItemRefresh(
         executor.execute {
             try {
                 if (store.source.refresh(event.itemId, context)) {
-                    textVectors.refresh(store, only = listOf(event.itemId))
+                    textVectors.refresh(store, "gradedPage", only = listOf(event.itemId))
                     recommendations.scheduleRetrain(store.type, "gradedPage", byUser = false)
                 }
             } catch (e: Exception) {

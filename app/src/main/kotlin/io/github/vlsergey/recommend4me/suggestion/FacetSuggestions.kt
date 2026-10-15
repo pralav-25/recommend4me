@@ -135,12 +135,13 @@ class FacetSuggestions(
         if (newer) generationOf(source).incrementAndGet()
         waiting += source
         val scheduling = scheduled.compareAndSet(false, true)
-        workload.plan(refreshing(source), if (scheduling) Instant.now().plusSeconds(DELAY_SECONDS) else null, reason)
+        val due = if (scheduling) Instant.now().plusSeconds(DELAY_SECONDS) else null
+        facetsOf(store).forEach { workload.plan(refreshing(source, it), due, reason) }
         if (scheduling) worker.schedule(::drain, DELAY_SECONDS, TimeUnit.SECONDS)
     }
 
-    /** The refresh of every facet of the source, as the queue of the works tells it planned. */
-    private fun refreshing(source: String) = Work("suggesters", source = source)
+    /** The refresh of a facet of the source, as the queue of the works tells it planned and running. */
+    private fun refreshing(source: String, facet: FacetDef) = Work("suggester", source = source, facet = facet.key)
 
     /** How many changes the source has had: a refresh begun before the last one is of stale data. */
     private fun generationOf(source: String): AtomicLong = generations.computeIfAbsent(source) { AtomicLong() }
@@ -151,7 +152,7 @@ class FacetSuggestions(
             waiting -= source
             val store = stores.source(source) ?: return@forEach
             try {
-                refresh(store, givenUp = true, workload.take(refreshing(source)))
+                refresh(store, givenUp = true, null)
             } catch (e: CancellationException) {
                 log.info("{}: chances given up for newer changes, made again after the quiet", source)
             } catch (e: Exception) {
@@ -187,15 +188,18 @@ class FacetSuggestions(
 
     /**
      * [refresh]; [givenUp] — with a [CancellationException] once the source changes again
-     * ([changed]): the background's; [reasons] — what it is made for, told in the queue of the works.
+     * ([changed]): the background's; [reasons] — what it is made for, told in the queue of the works
+     * beside those every facet was planned for ([changed]); null — those alone.
      */
-    private fun refresh(store: SourceStore, givenUp: Boolean, reasons: Map<String, Int>) {
+    private fun refresh(store: SourceStore, givenUp: Boolean, reasons: Map<String, Int>?) {
         val encoder = plugins.textEncoder() ?: return
         val generation = generationOf(store.id).get()
         val stop = if (givenUp) ({ generationOf(store.id).get() != generation }) else ({ false })
         facetsOf(store).forEach { facet ->
             val suggester = plugins.suggester(store.id, facet.key) ?: return@forEach
-            workload.run(Work("suggester", source = store.id, facet = facet.key), reasons) { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
+            val work = refreshing(store.id, facet)
+            val planned = workload.take(work)
+            workload.run(work, reasons.orEmpty().toMutableMap().apply { planned.forEach { (k, n) -> merge(k, n, Int::plus) } }) { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
         }
     }
 
@@ -863,7 +867,7 @@ class FacetSuggestions(
      */
     private fun makeCurrent(store: SourceStore, itemId: String, key: String, work: Answering) {
         try {
-            workload.alongside(Work("workChances", source = store.id, item = itemId), mapOf("answer" to 1)) { makeCurrentRounds(store, itemId, key, work) }
+            workload.run(Work("workChances", source = store.id, item = itemId), mapOf("answer" to 1)) { makeCurrentRounds(store, itemId, key, work) }
         } catch (e: Throwable) {
             log.error("{}: chances of {} were not made", store.id, itemId, e)
             synchronized(answering) {

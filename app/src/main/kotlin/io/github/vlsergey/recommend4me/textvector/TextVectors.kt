@@ -8,6 +8,8 @@ import io.github.vlsergey.recommend4me.source.SourceSchema
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.vector.Vectors
+import io.github.vlsergey.recommend4me.workload.Work
+import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -33,14 +35,15 @@ data class TextVectorsChanged(val source: String, val ids: List<String>)
  * On start every source is gone through; afterwards the items whose texts were written are encoded
  * a few seconds after the last write — the queue of their ids is the only thing kept here.
  *
- * NO LOCK OVER AN ENCODING: re-encoding a catalogue after a change of encoder takes an hour; only
- * one WHOLE refresh of a source runs at a time, while refreshes of single items always run.
+ * IN THE QUEUE OF THE COMPUTATIONS ([Workload]), each encoding whole, one at a time with every
+ * other computation of the application.
  */
 @Service
 class TextVectors(
     private val stores: Stores,
     private val plugins: Plugins,
     private val events: ApplicationEventPublisher,
+    private val workload: Workload,
 ) {
     private val whole = ConcurrentHashMap<String, AtomicBoolean>()
     private val queued = ConcurrentHashMap<String, MutableSet<String>>()
@@ -66,7 +69,7 @@ class TextVectors(
             ids.removeAll(batch.toSet())
             val store = stores.source(source) ?: return@forEach
             try {
-                refresh(store, only = batch)
+                refresh(store, "items", only = batch)
             } catch (e: Exception) {
                 log.warn("{}: texts of {} items were not encoded: {}", source, batch.size, e.message)
             }
@@ -79,7 +82,7 @@ class TextVectors(
         worker.execute {
             stores.sources.forEach { s ->
                 try {
-                    refresh(s)
+                    refresh(s, "start")
                     fillWindows(s)
                 } catch (e: Exception) {
                     log.error("{}: text vectors were not refreshed on start", s.id, e)
@@ -90,14 +93,20 @@ class TextVectors(
 
     /**
      * Encodes every text of the source whose text is new or changed, and drops the vectors of texts
-     * that are gone; with [only], of those items. Returns how many texts were encoded.
+     * that are gone; with [only], of those items. Returns how many texts were encoded. In the queue of
+     * the computations, for the [reason] — a key the interface words.
      */
     fun refresh(
         store: SourceStore,
+        reason: String,
         only: Collection<String>? = null,
         progress: (done: Int, total: Int) -> Unit = { _, _ -> },
         cancelled: () -> Boolean = { false },
-    ): Int {
+    ): Int = workload.run(Work("textVectors", source = store.id, item = only?.singleOrNull()), mapOf(reason to (only?.size ?: 1))) {
+        refreshed(store, only, progress, cancelled)
+    }
+
+    private fun refreshed(store: SourceStore, only: Collection<String>?, progress: (done: Int, total: Int) -> Unit, cancelled: () -> Boolean): Int {
         val encoder = plugins.textEncoder() ?: return 0
         val flag = whole.computeIfAbsent(store.id) { AtomicBoolean(false) }
         if (only == null && !flag.compareAndSet(false, true)) return 0
@@ -178,7 +187,11 @@ class TextVectors(
      * of the texts as they are now — a text changed since is encoded again by [refresh], its windows
      * with it. Answers how many texts were gone through.
      */
-    fun fillWindows(store: SourceStore, cancelled: () -> Boolean = { false }): Int {
+    fun fillWindows(store: SourceStore, cancelled: () -> Boolean = { false }): Int = workload.run(Work("textWindows", source = store.id), mapOf("start" to 1)) {
+        windowsFilled(store, cancelled)
+    }
+
+    private fun windowsFilled(store: SourceStore, cancelled: () -> Boolean): Int {
         val encoder = plugins.textEncoder() ?: return 0
         val keys = store.schema.texts.filter { it.block != null || it.searchByMeaning }.map { it.key }
         var done = 0

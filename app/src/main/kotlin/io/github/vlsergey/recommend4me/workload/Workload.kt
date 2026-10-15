@@ -27,23 +27,32 @@ class HeavyWork(val work: Work, val since: Instant, val reasons: Map<String, Int
 /** A work planned for later: when it is due (it may be put off by newer changes), since when it is planned, and why. */
 class PlannedWork(val work: Work, val due: Instant, val since: Instant, val reasons: Map<String, Int>)
 
+/** A work done: when it began and ended, why it ran, whether it failed. */
+class FinishedWork(val work: Work, val began: Instant, val ended: Instant, val reasons: Map<String, Int>, val failed: Boolean)
+
 /**
- * THE HEAVY WORKS, ONE AT A TIME, IN THE ORDER ASKED: every computation that holds a whole catalogue
- * or fits a model — the training of the grades and of interest, a model that had not seen a graded
- * work, the suggesters of the facets, the comparisons of methods, the counting of the tags, the
- * directions of the sets, the index of the search. Each read 27 718 games with their vectors, a
- * gigabyte and more; eight at once — a training in the background, the held-out models of the pages
- * opened meanwhile — ran the heap out (2026-10-15). Whoever asks — a background thread, a request —
- * waits its turn here: the memory holds one of them, whatever their number.
+ * EVERY COMPUTATION OF THE BACKGROUND, ONE AT A TIME, IN THE ORDER ASKED, EACH WHOLE: the training
+ * of the grades and of interest, a model that had not seen a graded work, the suggesters of the
+ * facets and the chances after the user's answers, the comparisons of methods, the counting and the
+ * vectors of the tags, the reranker reading pairs, the vectors of texts, chapters, pictures and sets,
+ * the index of the search. The heavy ones read 27 718 games with their vectors, a gigabyte and
+ * more; eight at once — a training in the background, the held-out models of the pages opened
+ * meanwhile — ran the heap out (2026-10-15); and the user wants no computation beside another
+ * (2026-10-15). Whoever asks — a background thread, a request — waits its turn here. Only what is
+ * not a computation goes outside it: reading pages and pictures from the sites, compacting files.
  *
- * Reentrant: a heavy work asking for another inside it goes on. Taken before any lock of its own —
- * a lock held while waiting here would hold up whoever runs.
+ * Reentrant: a work asking for another inside it goes on. Taken before any lock of its own — a
+ * lock held while waiting here would hold up whoever runs.
  *
  * AND WHAT IS PLANNED, AND WHY: the background works scheduled after the changes that ask for them
  * ([plan]) — a grade, an answer, a tag — are told here with their reasons, which go with them once
- * they begin ([take]). The works of the background that do not hold a catalogue — the reranker
- * reading pairs, the vectors of the tags — run [alongside] the queue and are told too. Of the works
- * nothing is kept but what they are, their times and their reasons, and nothing outlives the process.
+ * they begin ([take]). Of the works nothing is kept but what they are, their times and their
+ * reasons, and nothing outlives the process.
+ *
+ * AND WHAT IS DONE: the last [FINISHED] works, with how long each took, and of every kind of work
+ * — a work of any item alike ([kind]) — how long its last run took: what a work to come is
+ * expected to take ([expected]). In memory, by the user's word (2026-10-15): a few dozen numbers,
+ * forgotten on a restart — till a kind runs again, it has no estimate.
  */
 @Component
 class Workload {
@@ -51,14 +60,19 @@ class Workload {
     private val lock = ReentrantLock(true)
     private val waiting = ConcurrentLinkedQueue<HeavyWork>()
     private val planned = ConcurrentHashMap<Work, PlannedWork>()
-    private val besides = ConcurrentLinkedQueue<HeavyWork>()
+
+    /** The last works done, the oldest first; guarded by itself. */
+    private val finished = ArrayDeque<FinishedWork>()
+
+    /** How long the last run of every kind of work took. */
+    private val lastMillis = ConcurrentHashMap<Work, Long>()
 
     @Volatile
     private var current: HeavyWork? = null
 
     /**
-     * Runs [body] once every heavy work asked for before it is done; answers what it answers. The
-     * reasons of the work planned alike, if any, go with it.
+     * Runs [body] once every work asked for before it is done; answers what it answers. The reasons
+     * of the work planned alike, if any, go with it.
      */
     fun <T> run(work: Work, reasons: Map<String, Int> = take(work), body: () -> T): T {
         if (lock.isHeldByCurrentThread) return body()
@@ -71,25 +85,39 @@ class Workload {
         }
         try {
             val waited = Duration.between(entry.since, Instant.now())
-            if (waited > NOTED) log.info("{} waited {} s for the heavy works before it", work, waited.toSeconds())
-            current = HeavyWork(work, Instant.now(), reasons)
-            return body()
+            if (waited > NOTED) log.info("{} waited {} s for the works before it", work, waited.toSeconds())
+            val running = HeavyWork(work, Instant.now(), reasons)
+            current = running
+            var failed = true
+            try {
+                return body().also { failed = false }
+            } finally {
+                done(running, failed)
+            }
         } finally {
             current = null
             lock.unlock()
         }
     }
 
-    /** Runs [body] now, outside the queue — it holds no catalogue — told as running beside it. */
-    fun <T> alongside(work: Work, reasons: Map<String, Int> = take(work), body: () -> T): T {
-        val entry = HeavyWork(work, Instant.now(), reasons)
-        besides += entry
-        try {
-            return body()
-        } finally {
-            besides -= entry
+    /** The work [entry] ended: kept among the works done, with how long it took. */
+    private fun done(entry: HeavyWork, failed: Boolean) {
+        val ended = Instant.now()
+        lastMillis[kind(entry.work)] = Duration.between(entry.since, ended).toMillis()
+        synchronized(finished) {
+            finished.addLast(FinishedWork(entry.work, entry.since, ended, entry.reasons, failed))
+            while (finished.size > FINISHED) finished.removeFirst()
         }
     }
+
+    /** The kind of a work: alike for every item — what the work of another item took, this one is expected to take. */
+    private fun kind(work: Work) = work.copy(item = null)
+
+    /** How long the [work] is expected to take: as long as the last run of its kind; null when none ran since the start. */
+    fun expected(work: Work): Long? = lastMillis[kind(work)]
+
+    /** The last works done, the oldest first. */
+    fun finished(): List<FinishedWork> = synchronized(finished) { finished.toList() }
 
     /**
      * The [work] planned for [due] — later than planned before, if put off; when null, as planned
@@ -105,14 +133,11 @@ class Workload {
     /** The work begins: no longer planned; the reasons it was planned for, none if it was not. */
     fun take(work: Work): Map<String, Int> = planned.remove(work)?.reasons.orEmpty()
 
-    /** The heavy work running now, none when idle. */
+    /** The work running now, none when idle. */
     fun running(): HeavyWork? = current
 
-    /** The heavy works waiting their turn, the longest waiting first. */
+    /** The works waiting their turn, the longest waiting first. */
     fun waiting(): List<HeavyWork> = waiting.toList().sortedBy { it.since }
-
-    /** The works running outside the queue ([alongside]). */
-    fun besides(): List<HeavyWork> = besides.toList().sortedBy { it.since }
 
     /** The works planned, the soonest due first. */
     fun planned(): List<PlannedWork> = planned.values.sortedBy { it.due }
@@ -120,5 +145,8 @@ class Workload {
     private companion object {
         /** A wait worth telling in the log. */
         val NOTED: Duration = Duration.ofSeconds(2)
+
+        /** How many works done are told. */
+        const val FINISHED = 5
     }
 }

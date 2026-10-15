@@ -248,7 +248,7 @@ class SiteTest {
      * counted and kept ([Tags.rename]), their vectors ([TagVectors]) — the screen of the tags reads them.
      */
     private fun refresh(store: SourceStore) {
-        textVectors.refresh(store)
+        textVectors.refresh(store, "asked")
         tagService.scope()?.let { tagService.rename(it, it.facet) }
         tagVectors.fill()
     }

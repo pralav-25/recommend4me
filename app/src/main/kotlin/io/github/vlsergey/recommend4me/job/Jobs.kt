@@ -97,7 +97,7 @@ class Jobs(
         override fun checkpoint() {
             try {
                 val store = stores.source(sourceId) ?: return
-                textVectors.refresh(store, cancelled = { cancelRequested })
+                textVectors.refresh(store, "crawl", cancelled = { cancelRequested })
                 recommendations.retrainAndScore(store.type)
             } catch (e: Exception) {
                 log.warn("{}: checkpoint failed: {}", sourceId, e.message)
@@ -144,7 +144,7 @@ class Jobs(
             store.source.scrape(run.mode, contexts.of(store.id), run)
             run.checkCancelled()
             run.phase("vectors")
-            textVectors.refresh(store, progress = { done, total -> run.progress(done, total) }, cancelled = { run.cancelRequested })
+            textVectors.refresh(store, "crawl", progress ={ done, total -> run.progress(done, total) }, cancelled = { run.cancelRequested })
             run.checkCancelled()
             run.phase("scoring")
             recommendations.retrainAndScore(store.type)

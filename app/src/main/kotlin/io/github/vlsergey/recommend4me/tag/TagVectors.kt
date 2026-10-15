@@ -56,8 +56,7 @@ class TagVectors(
         workload.plan(VECTORS, Instant.now().plusSeconds(delaySeconds), reason)
         val next = scheduler.schedule({
             try {
-                // Outside the queue of the heavy works: the names of the tags, no catalogue held
-                workload.alongside(VECTORS) { fill() }
+                workload.run(VECTORS) { fill() }
             } catch (e: Exception) {
                 log.warn("The vectors of the tags were not made: {}", e.message, e)
             }

@@ -73,8 +73,7 @@ class WorkLikenessReading(
                 pending.remove(typeId)
                 try {
                     val type = stores.type(typeId) ?: return@schedule
-                    // Outside the queue of the heavy works: the reranker reads pairs on the card for hours, no catalogue held
-                    workload.alongside(Work("likeness", type = typeId)) { read(type) }
+                    workload.run(Work("likeness", type = typeId)) { read(type) }
                 } catch (e: Exception) {
                     log.warn("{}: the works could not be read by the reranker", typeId, e)
                 }

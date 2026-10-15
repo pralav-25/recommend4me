@@ -15,6 +15,8 @@ import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
+import io.github.vlsergey.recommend4me.workload.Work
+import io.github.vlsergey.recommend4me.workload.Workload
 import io.github.vlsergey.recommend4me.vector.Vectors
 import io.github.vlsergey.recommend4me.work.TextPlace
 import jakarta.annotation.PreDestroy
@@ -42,6 +44,7 @@ class Search(
     private val plugins: Plugins,
     private val textVectors: TextVectors,
     private val phrases: PhraseVectors,
+    private val workload: Workload,
 ) {
     private val pending = ConcurrentHashMap<String, MutableSet<ItemKey>>()
     private val built = ConcurrentHashMap<String, CountDownLatch>()
@@ -74,7 +77,7 @@ class Search(
         worker.execute {
             stores.types.forEach { type ->
                 try {
-                    provider.rebuild(type.id, documentsOf(type))
+                    workload.run(Work("searchIndex", type = type.id), mapOf("start" to 1)) { provider.rebuild(type.id, documentsOf(type)) }
                 } catch (e: Exception) {
                     log.error("{}: the search index was not made", type.id, e)
                 } finally {
@@ -170,11 +173,13 @@ class Search(
         built[type.id]?.let { if (it.count > 0) return }
         val keys = pending[type.id]?.let { set -> set.toList().also { set.removeAll(it.toSet()) } }.orEmpty()
         if (keys.isEmpty()) return
-        val docs = HashMap<ItemKey, SearchDocument>()
-        keys.groupBy { it.source }.forEach { (source, list) ->
-            stores.source(source)?.let { docs += documents(it, list.map { k -> k.id }) }
+        workload.run(Work("searchUpdate", type = type.id), mapOf("items" to keys.size)) {
+            val docs = HashMap<ItemKey, SearchDocument>()
+            keys.groupBy { it.source }.forEach { (source, list) ->
+                stores.source(source)?.let { docs += documents(it, list.map { k -> k.id }) }
+            }
+            provider.update(type.id, docs.values.toList(), keys.filter { it !in docs })
         }
-        provider.update(type.id, docs.values.toList(), keys.filter { it !in docs })
     }
 
     private fun context(type: TypeStore) = object : SearchContext {

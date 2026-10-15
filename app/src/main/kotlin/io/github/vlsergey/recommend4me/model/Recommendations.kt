@@ -93,8 +93,11 @@ class Recommendations(
 
     private fun type(id: String): TypeStore = stores.type(id) ?: error("No such content type: $id")
 
-    /** Training is running or scheduled after a recent change. */
-    fun training(type: String): Boolean = type in trainingNow || pending[type]?.future?.isDone == false
+    /**
+     * Training is running now. One planned after a change, or waiting its turn in the queue of the
+     * computations, is not: the queue tells it ([Workload]), and the model shows no spinner meanwhile.
+     */
+    fun training(type: String): Boolean = type in trainingNow
 
     /**
      * Retrains after a change. A change of the user's ([byUser]: a grade, a mark, a tag, an answer)
