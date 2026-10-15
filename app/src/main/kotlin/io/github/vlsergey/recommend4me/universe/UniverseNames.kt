@@ -25,6 +25,10 @@ class UniverseNames(private val dictionary: UniverseRepository) {
         return (if (unnamed.isEmpty()) emptyMap() else own(unnamed)) + found
     }
 
+    /** What the catalogue says of [keys] of [facet] — a universe, a character: key to description; none of another facet. */
+    fun descriptions(facet: String, keys: Collection<String>): Map<String, String> =
+        if (facet == UniverseFacet.KEY || facet in UniverseFacet.CHARACTER_FACETS) dictionary.descriptions(keys) else emptyMap()
+
     /** "A / B" of the two characters — a man before a woman — with the sign of their sexes when the dictionary tells both. */
     private fun pairings(keys: Collection<String>?): Map<String, String> {
         val pairs = keys?.mapNotNull { p -> UniverseFacet.members(p)?.let { p to it } } ?: return emptyMap()

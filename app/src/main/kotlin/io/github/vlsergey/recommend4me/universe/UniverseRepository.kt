@@ -277,6 +277,30 @@ class UniverseRepository(
     }
 
     /** The ids of [values] ("<catalogue>:<id>") by catalogue; a value of no catalogue left out. */
+    /**
+     * What the catalogue says of [values] — universes and characters of the dictionary — in the first
+     * of the user's languages that has it: value to description; one read of each table.
+     */
+    fun descriptions(values: Collection<String>): Map<String, String> {
+        val wanted = byCatalogue(values).ifEmpty { return emptyMap() }
+        val u = UNIVERSE
+        val c = UNIVERSE_CHARACTER
+        val out = HashMap<String, String>()
+        db.select(u.CATALOGUE, u.UNIVERSE_ID, u.LABELS, u.DESCRIPTIONS, u.DESCRIPTION).from(u)
+            .where(DSL.or(wanted.map { (catalogue, ids) -> u.CATALOGUE.eq(catalogue).and(u.UNIVERSE_ID.`in`(ids)) })).fetch().forEach { r ->
+                // Of a universe saved before the texts were kept by language, the one shown then
+                val text = if (r.value3() != null) shown(r.value4()) else r.value5()
+                text?.takeIf { it.isNotBlank() }?.let { out[UniverseFacet.valueOf(r.value1()!!, r.value2()!!)] = it }
+            }
+        // A character of several universes is one entry: its description the same in each
+        db.select(c.CATALOGUE, c.CHARACTER_ID, c.LABELS, c.DESCRIPTIONS, c.DESCRIPTION).from(c)
+            .where(DSL.or(wanted.map { (catalogue, ids) -> c.CATALOGUE.eq(catalogue).and(c.CHARACTER_ID.`in`(ids)) })).fetch().forEach { r ->
+                val text = if (r.value3() != null) shown(r.value4()) else r.value5()
+                text?.takeIf { it.isNotBlank() }?.let { out.putIfAbsent(UniverseFacet.valueOf(r.value1()!!, r.value2()!!), it) }
+            }
+        return out
+    }
+
     private fun byCatalogue(values: Collection<String>): Map<String, List<String>> =
         values.mapNotNull(UniverseFacet::parse).groupBy({ it.first }, { it.second }).mapValues { it.value.distinct() }
 

@@ -762,6 +762,8 @@
     if (saving.has(about(facet, v.key))) chip.classList.add("r4m-saving");
     if (mine) chip.appendChild(Object.assign(el("r4m-check", null, "✓"), { title: t("value.mine") }));
     chip.appendChild(el("span", null, nameOf(v)));
+    // What the catalogue says of a universe or a character: the name alone may be of several
+    if (v.description) chip.title = v.description;
     if (editable) answers(item, facet, v).forEach((e) => chip.appendChild(e));
     const at = v.key.indexOf(":");
     let refreshed = null;
@@ -785,7 +787,7 @@
   /** A suggested value: a dashed chip with its chance, ✓ to add it and ✕ to say the work has it not. */
   function suggestedChip(item, facet, v) {
     const chip = el("r4m-chip", "r4m-suggested");
-    chip.title = t("value.suggested");
+    chip.title = [v.description, t("value.suggested")].filter(Boolean).join("\n");
     chip.appendChild(el("span", null, nameOf(v)));
     chip.appendChild(el("r4m-chance", null, percent(v.chance)));
     const on = about(facet, v.key);
@@ -817,7 +819,7 @@
     rest.slice(0, asked).forEach((c) => {
       const chip = suggestedChip(item, facet, c);
       const named = mentionsText(c.mentions);
-      if (named) chip.title = t("candidate.title", { mentions: named });
+      chip.title = [c.description, named ? t("candidate.title", { mentions: named }) : t("value.suggested")].filter(Boolean).join("\n");
       line.appendChild(chip);
     });
     if (all && rest.length <= asked) return;
@@ -923,7 +925,7 @@
     const chosen = CHOSEN.includes(facet);
 
     /**
-     * Every hint known: { name — as shown, key, nameKey?, note }; and those the typing leaves, drawn
+     * Every hint known: { name — as shown, key, nameKey?, description?, note }; and those the typing leaves, drawn
      * up to [drawn], the one gone to by the keys [active].
      */
     let hints = [];
@@ -955,6 +957,8 @@
       const r = el("r4m-option", i === active ? "r4m-active" : null);
       r.setAttribute("role", "option");
       r.appendChild(el("r4m-option-name", null, h.name));
+      // What the catalogue says of it: two of one name told apart
+      if (h.description) r.appendChild(el("r4m-option-note", null, h.description));
       if (h.note) r.appendChild(el("r4m-option-note", null, h.note));
       // A mouse's press keeps the focus in the field; a finger's is the start of a scroll as often as of a tap
       r.addEventListener("pointerdown", (e) => {
@@ -1024,6 +1028,7 @@
                 name: nameOf(c),
                 key: c.key,
                 nameKey: c.nameKey,
+                description: c.description,
                 note: [c.chance !== undefined && c.chance !== null ? percent(c.chance) : "", mentionsText(c.mentions)].filter(Boolean).join(" · "),
               }));
             },

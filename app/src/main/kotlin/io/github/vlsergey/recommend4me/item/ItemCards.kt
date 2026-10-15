@@ -114,6 +114,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val unnamed = offered.filter { names[def.key]?.containsKey(it) != true }
             val more = if (unnamed.isEmpty()) emptyMap() else store.names(def.key, unnamed)
             fun name(key: String) = names[def.key]?.get(key) ?: more[key] ?: added[key] ?: key
+            // What the catalogue says of a universe or a character shown: one read of the facet's
+            val described = store.descriptions(def.key, keys + offered + removed)
             fun info(key: String, corrected: FacetValueInfo.Corrected?, offer: Boolean = false): FacetValueInfo {
                 // Drafted, unanswered: the site's value it was drafted from, not the model's word
                 val draftedFrom = chances?.get(def.key)?.get(key)?.draftedFrom?.takeIf { corrected == null && !offer }
@@ -127,6 +129,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     draftedFrom = draftedFrom,
                     offered = offer.takeIf { it },
                     implied = (key in implied).takeIf { it },
+                    description = described[key],
                 )
             }
             ItemFacet(

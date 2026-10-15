@@ -186,7 +186,7 @@ export function FanficSummary({ source, details: d, onMark }: { source: SourceIn
         <div className="text-xs text-muted-foreground">{label}</div>
         <div className="flex flex-wrap gap-1">
           {values.map((v) => (
-            <Badge key={v.key} variant="secondary" className={cn("font-normal", v.corrected && "border-yes/50 bg-yes/15")} title={v.corrected ? undefined : t("FanficSummary.notAnswered")}>
+            <Badge key={v.key} variant="secondary" className={cn("font-normal", v.corrected && "border-yes/50 bg-yes/15")} title={[v.description, v.corrected ? undefined : t("FanficSummary.notAnswered")].filter(Boolean).join("\n") || undefined}>
               {v.corrected && <CheckIcon className="size-3 text-yes" />}
               {valueName(v)}
             </Badge>

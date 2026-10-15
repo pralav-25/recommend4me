@@ -17,7 +17,9 @@ import org.springframework.web.bind.annotation.RestController
 fun ItemFacetSuggestions.toApi(store: SourceStore) = ApiFacetSuggestions(
     facet = facet.key,
     labelKey = I18nKeys.facetLabel(store.id, facet),
-    suggested = suggested.map { SuggestedValue(it.key, names[it.key] ?: it.key, it.chance, store.nameKey(facet.key, it.key)) },
+    suggested = store.descriptions(facet.key, suggested.map { it.key }).let { described ->
+        suggested.map { SuggestedValue(it.key, names[it.key] ?: it.key, it.chance, store.nameKey(facet.key, it.key), described[it.key]) }
+    },
 )
 
 @RestController
@@ -42,11 +44,13 @@ class SuggestionsController(private val stores: Stores, private val suggestions:
         // A universe and a character are entries of a catalogue: their pages there, as the dictionary keeps them
         val type = stores.typeOf(source)
         val pages = if (type.type.universes && facet in PAGED) UniverseFacet.pages(type.universes) else emptyMap()
+        // And what it says of them: told apart by it when the names are alike
+        val described = store.descriptions(facet, found.candidates.map { it.key })
         return ResponseEntity.ok(
             found.candidates.map {
                 Candidate(
                     key = it.key, name = found.names[it.key] ?: it.key, nameKey = store.nameKey(facet, it.key),
-                    chance = it.chance, mentions = it.mentions, url = pages[it.key],
+                    chance = it.chance, mentions = it.mentions, url = pages[it.key], description = described[it.key],
                 )
             },
         )

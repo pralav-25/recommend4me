@@ -124,6 +124,10 @@ class SourceStore(
         return dictionaryNames?.of(facet, keys) { items.facetNames(facet, it!!) } ?: items.facetNames(facet, keys)
     }
 
+    /** What the catalogue says of the values [keys] of a facet of universes or characters: key to description; none of any other. */
+    fun descriptions(facet: String, keys: Collection<String>): Map<String, String> =
+        if (keys.isEmpty()) emptyMap() else dictionaryNames?.descriptions(facet, keys).orEmpty()
+
     /** The name of every value of a facet the source or the dictionary names. */
     fun names(facet: String): Map<String, String> {
         // The normalized tags alone: the source's names of the facet are of the sites' keys it had before them

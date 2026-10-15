@@ -48,7 +48,11 @@ export function SuggestedChip({ facet, value, corrections, tagLink }: { facet: s
   // The contract gives every suggestion a chance; a null one is still not shown as "0%"
   const chance = value.chance == null ? undefined : value.chance;
   return (
-    <Badge variant="outline" className={cn("border-dashed pr-0.5 font-normal", CHIP_TOUCH)} title={chance !== undefined ? t("SuggestedChip.chance", { chance: percent(chance) }) : undefined}>
+    <Badge
+      variant="outline"
+      className={cn("border-dashed pr-0.5 font-normal", CHIP_TOUCH)}
+      title={[value.description, chance !== undefined ? t("SuggestedChip.chance", { chance: percent(chance) }) : undefined].filter(Boolean).join("\n") || undefined}
+    >
       {tagLink ? <TagNameLink tag={value.key}>{valueName(value)}</TagNameLink> : valueName(value)}
       {chance !== undefined && <span className="text-[10px] text-muted-foreground tabular-nums">{percent(chance)}</span>}
       <FacetAnswers facet={facet} value={{ key: value.key }} corrections={corrections} />

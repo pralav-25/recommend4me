@@ -239,7 +239,12 @@ export function FacetValue({
         open && value.offered && "border-dashed",
         !corrections && "bg-muted/40",
       )}
-      title={value.corrected ? t(CORRECTED_TITLE[value.corrected]) : value.implied ? t("FacetValue.implied") : undefined}
+      // What the catalogue says of a universe or a character first: the name alone may be of several
+      title={
+        [value.description, value.corrected ? t(CORRECTED_TITLE[value.corrected]) : value.implied ? t("FacetValue.implied") : undefined]
+          .filter(Boolean)
+          .join("\n") || undefined
+      }
     >
       {mine && <CheckIcon className="size-3 text-yes" aria-label={t("FacetValue.yourAnswerYes")} />}
       {/* Given by a tag under it: marked as such, not by a chance of its own */}

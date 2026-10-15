@@ -2040,6 +2040,9 @@ components:
         implied:
           type: boolean
           description: The work's only as a tag above a tag of it (TagInfo.parents); not answered on by itself
+        description:
+          type: string
+          description: What the catalogue says of a universe or a character, in the first of the user's languages that has it - shown beside its name
 
     ItemFacet:
       type: object
@@ -3338,6 +3341,9 @@ components:
           type: number
           format: double
           description: The chance the work has the value, 0..1
+        description:
+          type: string
+          description: What the catalogue says of a universe or a character, in the first of the user's languages that has it - shown beside its name
 
     FacetSuggestions:
       type: object
@@ -3537,6 +3543,9 @@ components:
           type: string
           nullable: true
           description: Its page in the catalogue of universes (Wikidata), as the dictionary keeps it; none for a value of no catalogue
+        description:
+          type: string
+          description: What the catalogue says of a universe or a character, in the first of the user's languages that has it - shown beside its name
 
     MentionQuote:
       type: object
