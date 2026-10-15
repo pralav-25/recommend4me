@@ -21,7 +21,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
-import kotlin.math.sqrt
 
 private val log = LoggerFactory.getLogger(Tags::class.java)
 
@@ -48,6 +47,12 @@ class TagStats(val key: String) {
     val graded = HashSet<ItemKey>()
     val liked = HashSet<ItemKey>()
     val rejected = HashSet<ItemKey>()
+
+    /** How many works have it, graded and liked among them: of the sets when counted, as kept when read ([Tags.stats]). */
+    var counts = Counts(0, 0, 0)
+
+    /** The sources whose site's tags are bound to it. */
+    var sources: List<String> = emptyList()
 
     val id: Long get() = TagRepository.idOf(key)!!
 
@@ -180,8 +185,31 @@ class Tags(
 
     // --- Reading ---
 
-    /** Every normalized tag with its sites' tags and its works, of every type: one pass over every source. */
+    /**
+     * Every normalized tag as kept in the dictionaries: its sites' tags with their names and works,
+     * its works and its sources as last counted ([countAll], in the background) — no work read now,
+     * no sets of works.
+     */
     fun stats(scope: TagScope, facet: String): Map<String, TagStats> {
+        val out = HashMap<String, TagStats>()
+        scope.tags.siteTags().forEach { r ->
+            val t = out.getOrPut(TagRepository.key(r.normalized)) { TagStats(TagRepository.key(r.normalized)) }
+            // A site's tag no work has now is no variant of the tag, as of the counting
+            if (r.name != null) t.variants[r.site] = TagVariant(r.site, r.name, Uses().apply { works = r.counts.works; graded = r.counts.graded; liked = r.counts.liked })
+        }
+        scope.tags.counts().forEach { (id, c) ->
+            out.getOrPut(TagRepository.key(id)) { TagStats(TagRepository.key(id)) }.apply { counts = c.counts; sources = c.sources }
+        }
+        scope.tags.ids().forEach { id -> out.getOrPut(TagRepository.key(id)) { TagStats(TagRepository.key(id)) } }
+        return out
+    }
+
+    /**
+     * Every normalized tag with its sites' tags and its works, of every type, counted now: one pass
+     * over every work of every source — seconds of a catalogue of games. What the screen of the tags
+     * shows is kept of it ([rename]); read now only where the works themselves are wanted.
+     */
+    fun countAll(scope: TagScope, facet: String): Map<String, TagStats> {
         val bindings = scope.tags.bindings()
         val out = HashMap<String, TagStats>()
         val rejections = HashMap<String, MutableSet<ItemKey>>()
@@ -227,7 +255,25 @@ class Tags(
         // A tag of no work yet — one the user made above others — is a tag all the same
         scope.tags.ids().forEach { id -> out.getOrPut(TagRepository.key(id)) { TagStats(TagRepository.key(id)) } }
         rejections.forEach { (key, items) -> out[key]?.rejected?.addAll(items) }
+        val sourcesOf = bindings.entries.groupBy({ TagRepository.key(it.value) }, { it.key.source })
+        out.values.forEach { t ->
+            t.counts = Counts(t.items.size, t.graded.size, t.liked.size)
+            t.sources = sourcesOf[t.key].orEmpty().distinct().sorted()
+        }
         return out
+    }
+
+    /** The works of the tags [keys]: by a site's tag bound to them, or by the user's word — a read of those alone. */
+    private fun itemsOf(scope: TagScope, facet: String, keys: Collection<String>): Set<ItemKey> {
+        val ids = keys.mapNotNull(TagRepository::idOf).toSet()
+        if (ids.isEmpty()) return emptySet()
+        val wanted = keys.toSet()
+        val sites = scope.tags.bindings().filterValues { it in ids }.keys.groupBy({ it.source }, { it.tag })
+        return scope.sources.flatMap { s ->
+            val bySite = normalization.siteFacetOf(s, facet)?.let { f -> sites[s.id]?.let { s.items.itemsWith(f, it).values.flatten() } }.orEmpty()
+            val byUser = s.corrections.allFacets().filter { it.facet == facet && it.added && it.key in wanted }.map { it.itemId }
+            (bySite + byUser).map { ItemKey(s.id, it) }
+        }.toSet()
     }
 
     /**
@@ -304,10 +350,10 @@ class Tags(
             .filter { t ->
                 if (ignored != null && t.ignored != ignored) return@filter false
                 if (with.isEmpty() && without.isEmpty()) return@filter true
-                val from = t.stats.variants.keys.map { it.source }.toSet() + t.entries.map { it.catalogue }
+                val from = t.stats.sources.toSet() + t.entries.map { it.catalogue }
                 from.containsAll(with) && from.none { it in without }
             }
-            .sortedWith(compareByDescending<NamedTag> { it.stats.items.size }.thenBy { it.name.name.lowercase() })
+            .sortedWith(compareByDescending<NamedTag> { it.stats.counts.works }.thenBy { it.name.name.lowercase() })
     }
 
     /** What a tag may come from: the sites of every type that have the free tags, then the catalogues tags are bound to entries of. */
@@ -418,7 +464,8 @@ class Tags(
      */
     fun hierarchyOffers(scope: TagScope, facet: String): List<HierarchyOffer> {
         val started = System.currentTimeMillis()
-        val n = naming(scope, facet)
+        // The graded works of every tag are wanted: counted now
+        val n = naming(scope, facet, countAll(scope, facet))
         val graph = CatalogueGraph(scope, n)
         fun graded(key: String) = n.stats[key]?.graded.orEmpty()
         fun rejected(key: String) = n.stats[key]?.rejected.orEmpty()
@@ -445,7 +492,7 @@ class Tags(
                     sorted.drop(i + 1).forEach { b ->
                         val ids = TagRepository.pair(TagRepository.idOf(a)!!, TagRepository.idOf(b)!!)
                         // The tag of more works first: the one the other is merged into
-                        val two = listOf(a, b).sortedByDescending { n.stats[it]?.items?.size ?: 0 }
+                        val two = listOf(a, b).sortedByDescending { n.stats[it]?.counts?.works ?: 0 }
                         if (ids !in distinct) out += HierarchyOffer(HierarchyKind.MERGE, ref.catalogue, two, ref, listOf(ref), minOf(graded(a).size, graded(b).size), 0)
                     }
                 }
@@ -490,7 +537,7 @@ class Tags(
             val roots = all.filter { t -> n.hierarchy.ancestors(t).none { it in all } }
             // Its labels alone: an alias is too loose — "action" is one of "activity", and no "Экшн" stands for it
             val names = texts[ref]?.labels?.values.orEmpty().map { it.trim().lowercase() }
-            val named = names.flatMap { byName[it].orEmpty() }.distinct().filter { it !in all }.maxByOrNull { n.stats[it]?.items?.size ?: 0 }
+            val named = names.flatMap { byName[it].orEmpty() }.distinct().filter { it !in all }.maxByOrNull { n.stats[it]?.counts?.works ?: 0 }
             if (named != null) {
                 val related = n.hierarchy.ancestors(named) + n.hierarchy.descendants(named)
                 val tags = roots.filter { it !in related }.sortedByDescending { graded(it).size }
@@ -527,7 +574,7 @@ class Tags(
         val above = existing?.let { TagRepository.idOf(it)?.takeIf(scope.tags::exists) ?: return null }
         val source = plugins.tagCatalogues.firstOrNull { it.id == catalogue } ?: throw NoSuchElementException("No catalogue of tags $catalogue")
         val read = source.entries(listOf(entry), languages).firstOrNull() ?: throw NoSuchElementException("$catalogue has no $entry")
-        val before = stats(scope, facet)
+        val before = itemsOf(scope, facet, children + listOfNotNull(existing))
         val now = Instant.now()
         // The tag, its entry and its place above the children, all or nothing; the catalogue asked before
         val id = scope.tags.transaction { t ->
@@ -538,7 +585,7 @@ class Tags(
             made
         }
         log.info("{}: tag {} {} {}:{} above {}", scope.id, id, if (above == null) "made of" else "bound to", catalogue, read.id, children)
-        changed(scope, facet, children.flatMap { before[it]?.items.orEmpty() } + before[TagRepository.key(id)]?.items.orEmpty())
+        changed(scope, facet, before)
         return one(scope, facet, TagRepository.key(id))
     }
 
@@ -602,10 +649,10 @@ class Tags(
         val own = stats[tag] ?: return null
         val n = naming(scope, facet, stats)
         val distinct = scope.tags.distinct()
-        val meaning = Meaning(scope, stats, n)
+        val meaning = Meaning(scope, stats)
         val asked = query?.trim()?.takeIf { it.isNotEmpty() }
-        val target = if (asked == null) meaning.direction(own.variants.keys, own.key) else meaning.ofText(asked)
-        fun likeness(sites: Collection<SiteTagRef>, key: String? = null): Double = meaning.likeness(target, sites, key)
+        // The tag's own direction; till it is made, of its sites' tags' names the sources keep
+        val target = if (asked == null) meaning.names(own.key).ifEmpty { meaning.names(null, own.variants.keys) } else meaning.ofText(asked)
         val descendants = n.hierarchy.descendants(tag)
         val ancestors = n.hierarchy.ancestors(tag)
         fun relation(key: String): TagRelation {
@@ -621,9 +668,9 @@ class Tags(
         }
         /** A row before it is named — a tag, or a site's tag bound to this one — named only on the page asked for. */
         class Row(val tag: TagStats, val similarity: Double, val relation: TagRelation, val site: TagVariant?, val key: String)
-        val others = stats.values.filter { it.key != tag }.map { t -> Row(t, likeness(t.variants.keys, t.key), relation(t.key), null, t.key) }
+        val others = stats.values.filter { it.key != tag }.map { t -> Row(t, meaning.likeness(target, t.key), relation(t.key), null, t.key) }
         // Every site's tag bound to this one: a row of its own, merged — taken out by the user, a tag of its own
-        val bound = own.variants.values.map { v -> Row(own, likeness(listOf(v.site)), TagRelation.MERGED, v, "site:${v.site.source}/${v.site.tag}") }
+        val bound = own.variants.values.map { v -> Row(own, meaning.likeness(target, null, listOf(v.site)), TagRelation.MERGED, v, "site:${v.site.source}/${v.site.tag}") }
         val rows = (others + bound).filter { it.relation !in hidden && (ignored == null || (it.tag.key in n.ignored) == ignored) }
             .sortedWith(compareByDescending<Row> { it.similarity }.thenBy { it.key })
         val page = rows.drop(offset.coerceAtLeast(0)).take(limit)
@@ -631,56 +678,36 @@ class Tags(
     }
 
     /**
-     * THE MEANING OF THE TAGS' NAMES of one reading ([stats]): every name of the sites' tags and of
-     * the entries of the catalogues the tags are bound to — their labels and aliases — encoded as the
-     * search encodes short texts; a tag's direction the mean of its names', alike by the cosine. Read
-     * for one operation, kept nowhere.
+     * THE MEANING OF THE TAGS' NAMES of one reading ([stats]): every name of a tag — its sites' tags'
+     * and its entries' — a vector, made in the background and kept in the dictionaries ([TagVectors]);
+     * a site's tag alone by its name's vector the source keeps. Alike by the best cosine of their
+     * names: a synonym added finds more and blurs nothing. A tag of no vectors yet is alike nothing.
+     * Read for one operation, kept nowhere.
      */
-    private inner class Meaning(scope: TagScope, stats: Map<String, TagStats>, n: Naming) {
-        private val vectors = HashMap<SiteTagRef, FloatArray>()
+    private inner class Meaning(private val scope: TagScope, stats: Map<String, TagStats>) {
+        private val encoder = phrases.encoder()
 
-        /** The directions of the names of the entries every tag is bound to, by its key. */
-        private val ofEntries = HashMap<String, List<FloatArray>>()
+        /** The vectors of every tag's names by the encoder in use, by key: those kept. */
+        private val ofTags: Map<String, List<FloatArray>> = encoder?.let { scope.tags.vectors(plugins.pluginOf(it), it.id) }.orEmpty()
 
-        init {
-            scope.sources.forEach { s ->
-                val names = stats.values.flatMap { t -> t.variants.values.filter { it.site.source == s.id } }.associate { it.site to it.name }
-                if (names.isEmpty()) return@forEach
-                val encoded = phrases.of(s, names.values.distinct())
-                names.forEach { (site, name) -> encoded[name]?.let { vectors[site] = it } }
-            }
-            // The entries' names are no site's: encoded here, at once, and kept nowhere
-            val entryNames = stats.keys.associateWith { key -> n.entriesOf(key).flatMap { it.names }.distinct() }.filterValues { it.isNotEmpty() }
-            val distinct = entryNames.values.flatten().distinct()
-            val encoder = if (distinct.isEmpty()) null else phrases.encoder()
-            if (encoder != null) {
-                val encoded = distinct.zip(encoder.encode(distinct)).toMap()
-                entryNames.forEach { (key, names) -> ofEntries[key] = names.mapNotNull { encoded[it] } }
-            }
-        }
+        private val siteNames: Map<SiteTagRef, String> = stats.values.flatMap { t -> t.variants.values }.associate { it.site to it.name }
 
-        /** The mean direction of the names of the sites' tags [sites] and of the entries the tag [key] is bound to; null when none is encoded. */
-        fun direction(sites: Collection<SiteTagRef>, key: String? = null): FloatArray? {
-            val list = sites.mapNotNull { vectors[it] } + key?.let { ofEntries[it] }.orEmpty()
-            if (list.isEmpty()) return null
-            val sum = FloatArray(list.first().size)
-            list.forEach { v ->
-                val norm = norm(v).takeIf { it > 0 } ?: return@forEach
-                for (i in sum.indices) sum[i] += v[i] / norm
+        /** The vectors of the names of [sites] the sources keep: a site's tag alone, not its whole tag. */
+        private fun ofSites(sites: Collection<SiteTagRef>): List<FloatArray> =
+            sites.groupBy { it.source }.flatMap { (source, refs) ->
+                val s = scope.source(source) ?: return@flatMap emptyList()
+                phrases.cached(s, refs.mapNotNull { siteNames[it] }).values.mapNotNull(TagVectors::unit)
             }
-            val total = norm(sum).takeIf { it > 0 } ?: return null
-            return FloatArray(sum.size) { sum[it] / total }
-        }
+
+        /** The vectors of the names of the tag [key]; of [sites] alone when given — a site's tag of it. */
+        fun names(key: String?, sites: Collection<SiteTagRef>? = null): List<FloatArray> =
+            if (sites != null) ofSites(sites) else key?.let { ofTags[it] }.orEmpty()
 
         /** A text typed, encoded as the names are and kept nowhere: it is not a name of the sites. */
-        fun ofText(text: String): FloatArray? = phrases.encoder()?.encode(listOf(text))?.firstOrNull()?.let { v ->
-            val norm = norm(v).takeIf { it > 0 } ?: return@let null
-            FloatArray(v.size) { v[it] / norm }
-        }
+        fun ofText(text: String): List<FloatArray> = encoder?.encode(listOf(text))?.firstOrNull()?.let(TagVectors::unit)?.let { listOf(it) }.orEmpty()
 
-        /** How alike the sites' tags [sites] — with the entries of the tag [key] — are to [target]: the cosine; nought when either is not known. */
-        fun likeness(target: FloatArray?, sites: Collection<SiteTagRef>, key: String? = null): Double =
-            target?.let { tv -> direction(sites, key)?.let { d -> d.indices.sumOf { (d[it] * tv[it]).toDouble() } } } ?: 0.0
+        /** How alike the tag [key] — or its sites' tags [sites] alone — is to the names [target]: the best cosine; nought when either is not known. */
+        fun likeness(target: List<FloatArray>, key: String?, sites: Collection<SiteTagRef>? = null): Double = TagVectors.likeness(target, names(key, sites))
     }
 
     /**
@@ -708,17 +735,17 @@ class Tags(
                         else -> null
                     }?.let { t to it }
                 }
-                .sortedWith(compareBy<Pair<TagStats, Int>> { it.second }.thenByDescending { it.first.items.size }.thenBy { it.first.key })
+                .sortedWith(compareBy<Pair<TagStats, Int>> { it.second }.thenByDescending { it.first.counts.works }.thenBy { it.first.key })
                 .forEach { found.putIfAbsent(it.first.key, it.first) }
         }
         step { t -> t.variants.values.filter { it.site.source == source }.map { it.name } }
         step { t -> n.allNames(t) + n.shown(t.key) }
         if (found.size < limit && wanted.isNotEmpty()) {
-            val meaning = Meaning(scope, stats, n)
+            val meaning = Meaning(scope, stats)
             val target = meaning.ofText(query.trim())
-            if (target != null) {
+            if (target.isNotEmpty()) {
                 stats.values.filter { it.key !in found && (it.variants.isNotEmpty() || n.entriesOf(it.key).isNotEmpty()) }
-                    .map { it to meaning.likeness(target, it.variants.keys, it.key) }
+                    .map { it to meaning.likeness(target, it.key) }
                     .sortedWith(compareByDescending<Pair<TagStats, Double>> { it.second }.thenBy { it.first.key })
                     .take(limit - found.size)
                     .forEach { found[it.first.key] = it.first }
@@ -743,7 +770,7 @@ class Tags(
         }
         val a = TagRepository.idOf(tag)?.takeIf(scope.tags::exists) ?: return null
         val b = TagRepository.idOf(other)?.takeIf(scope.tags::exists) ?: return null
-        val before = stats(scope, facet)
+        val before = itemsOf(scope, facet, listOf(tag, other))
         val now = Instant.now()
         // What was said of the two taken back and the new word said, all or nothing: a refusal leaves them as they were
         scope.tags.transaction { t ->
@@ -771,7 +798,7 @@ class Tags(
         }
         if (relation == TagRelation.MERGED) moveMergedAnswers(scope, facet)
         log.info("{}: tag {} is {} to {}", scope.id, other, relation, tag)
-        changed(scope, facet, before[tag]?.items.orEmpty() + before[other]?.items.orEmpty())
+        changed(scope, facet, before)
         return one(scope, facet, tag)
     }
 
@@ -798,13 +825,13 @@ class Tags(
      * Returns the tag it is bound to now.
      */
     fun bind(scope: TagScope, facet: String, site: SiteTagRef, tag: String?): NamedTag? {
-        val before = stats(scope, facet)
         val was = scope.tags.bindings()[site] ?: return null
+        val before = itemsOf(scope, facet, listOfNotNull(TagRepository.key(was), tag))
         val known = tag?.let { TagRepository.idOf(it)?.takeIf(scope.tags::exists) ?: return null }
         // A new tag of its own and the site's tag bound to it, both or neither
         val to = scope.tags.transaction { t -> (known ?: t.create()).also { t.bind(site, it, Instant.now()) } }
         log.info("{}: {} of {} bound to tag {}, was {}", scope.id, site.tag, site.source, to, was)
-        changed(scope, facet, before[TagRepository.key(was)]?.items.orEmpty() + before[TagRepository.key(to)]?.items.orEmpty())
+        changed(scope, facet, before)
         return one(scope, facet, TagRepository.key(to))
     }
 
@@ -812,9 +839,8 @@ class Tags(
     fun name(scope: TagScope, facet: String, tag: String, name: String?): NamedTag? {
         val id = TagRepository.idOf(tag)?.takeIf(scope.tags::exists) ?: return null
         scope.tags.name(id, name?.trim()?.takeIf { it.isNotEmpty() })
-        val named = one(scope, facet, tag)
-        changed(scope, facet, named?.stats?.items.orEmpty())
-        return named
+        changed(scope, facet, itemsOf(scope, facet, listOf(tag)))
+        return one(scope, facet, tag)
     }
 
     /**
@@ -869,9 +895,8 @@ class Tags(
                 log.warn("{}: what {}:{} is a kind of was not read: {}", scope.id, catalogue, read.id, e.message)
             }
         }
-        val named = one(scope, facet, tag)
-        changed(scope, facet, named?.stats?.items.orEmpty())
-        return named
+        changed(scope, facet, itemsOf(scope, facet, listOf(tag)))
+        return one(scope, facet, tag)
     }
 
     /**
@@ -888,9 +913,8 @@ class Tags(
             readAbove(scope, catalogue, ids, anew = true)
         }
         log.info("{}: the entries of tag {} read again", scope.id, tag)
-        val named = one(scope, facet, tag)
-        changed(scope, facet, named?.stats?.items.orEmpty())
-        return named
+        changed(scope, facet, itemsOf(scope, facet, listOf(tag)))
+        return one(scope, facet, tag)
     }
 
     /** The tags changed: their names worked out again now, their works read again — their chances, their search — and the model of the grades trained again. */
@@ -902,13 +926,21 @@ class Tags(
 
     // --- The names worked out ---
 
-    /** The names of every tag worked out now and kept. */
+    /**
+     * Every tag counted now — every work of every source — and what is shown of it kept: the names
+     * worked out, the works of every tag and of every site's tag, the sources of its sites' tags.
+     * The screen of the tags reads them ([stats]), not the works.
+     */
     fun rename(scope: TagScope, facet: String) {
         val started = System.currentTimeMillis()
-        val n = naming(scope, facet)
+        val n = naming(scope, facet, countAll(scope, facet))
         val stats = n.stats
         scope.tags.replaceShown(stats.values.associate { t -> t.id to n.nameOf(t) })
-        log.info("{}: names of {} tags worked out in {} ms", scope.id, stats.size, System.currentTimeMillis() - started)
+        scope.tags.keepStats(
+            sites = stats.values.flatMap { t -> t.variants.values }.associate { v -> v.site to (v.name to Counts(v.uses.works, v.uses.graded, v.uses.liked)) },
+            tags = stats.values.associate { t -> t.id to TagCount(t.counts, t.sources) },
+        )
+        log.info("{}: names and works of {} tags counted and kept in {} ms", scope.id, stats.size, System.currentTimeMillis() - started)
     }
 
     /** The sites' new tags bound, and the names worked out again, shortly after the last of a quick series of changes. */
@@ -965,8 +997,6 @@ class Tags(
 
         /** A grade above the middle of the scale: of five, 4 and 5. */
         fun liked(grade: Int): Boolean = grade > (Grades.MIN + Grades.MAX) / 2.0
-
-        private fun norm(v: FloatArray): Float = sqrt(v.sumOf { (it * it).toDouble() }).toFloat()
     }
 }
 

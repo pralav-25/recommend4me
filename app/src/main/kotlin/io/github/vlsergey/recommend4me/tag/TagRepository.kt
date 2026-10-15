@@ -1,6 +1,8 @@
 package io.github.vlsergey.recommend4me.tag
 
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_SHOWN_NAME
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_STAT
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_VECTOR
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG_DISTINCT
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG_ENTRY
@@ -10,6 +12,7 @@ import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.S
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_ABOVE
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_TEXT
+import io.github.vlsergey.recommend4me.vector.Vectors
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import java.time.Instant
@@ -25,6 +28,15 @@ data class ShownName(val name: String, val rule: NameRule)
 
 /** A tag of a site: its source and the site's own key of it. */
 data class SiteTagRef(val source: String, val tag: String)
+
+/** How many works have a tag, graded and liked among them. */
+data class Counts(val works: Int, val graded: Int, val liked: Int)
+
+/** A site's tag bound to the tag [normalized]: its name on the site and its works as last counted; no name — no work has it now. */
+data class SiteTagCount(val site: SiteTagRef, val normalized: Long, val name: String?, val counts: Counts)
+
+/** A tag's works as last counted, and the sources whose site's tags are bound to it. */
+data class TagCount(val counts: Counts, val sources: List<String>)
 
 /**
  * THE NORMALIZED TAGS OF EVERY CONTENT TYPE, in the user's dictionaries ([db]): every normalized
@@ -66,6 +78,9 @@ class TagRepository(private val db: DSLContext) {
 
     /** [site] bound to the normalized tag [id], whatever it was bound to before. */
     fun bind(site: SiteTagRef, id: Long, now: Instant) {
+        // The names of the tag it leaves and of the one it joins are others now: their vectors made anew
+        val was = db.select(SITE_TAG.NORMALIZED).from(SITE_TAG).where(SITE_TAG.SOURCE.eq(site.source), SITE_TAG.TAG.eq(site.tag.take(500))).fetchOne()?.value1()
+        forgetVectors(listOfNotNull(was, id))
         db.insertInto(SITE_TAG).set(SITE_TAG.SOURCE, site.source).set(SITE_TAG.TAG, site.tag.take(500)).set(SITE_TAG.NORMALIZED, id).set(SITE_TAG.BOUND_AT, now)
             .onDuplicateKeyUpdate().set(SITE_TAG.NORMALIZED, id).set(SITE_TAG.BOUND_AT, now)
             .execute()
@@ -84,6 +99,8 @@ class TagRepository(private val db: DSLContext) {
         tx.insertInto(m).set(m.FROM_TAG, from).set(m.INTO_TAG, into).set(m.MERGED_AT, now)
             .onDuplicateKeyUpdate().set(m.INTO_TAG, into).set(m.MERGED_AT, now).execute()
         tx.update(SITE_TAG).set(SITE_TAG.NORMALIZED, into).set(SITE_TAG.BOUND_AT, now).where(SITE_TAG.NORMALIZED.eq(from)).execute()
+        // [into] has the names of both now
+        tx.deleteFrom(TAG_VECTOR).where(TAG_VECTOR.TAG.eq(into)).execute()
         val p = NORMALIZED_TAG_PARENT
         val links = tx.selectFrom(p).where(p.CHILD.eq(from).or(p.PARENT.eq(from))).fetch()
             .map { (if (it.child == from) into else it.child!!) to (if (it.parent == from) into else it.parent!!) }
@@ -214,6 +231,8 @@ class TagRepository(private val db: DSLContext) {
     /** The tag [id] bound to the entry [ref] besides the ones it is — or, [bound] false, no more to it. */
     fun bindEntry(id: Long, ref: TagEntryRef, bound: Boolean, now: Instant) {
         val e = NORMALIZED_TAG_ENTRY
+        // The entry's names are the tag's, or no more
+        forgetVectors(listOf(id))
         if (bound) {
             db.insertInto(e).set(e.TAG, id).set(e.CATALOGUE, ref.catalogue).set(e.ENTRY, ref.entry).set(e.BOUND_AT, now).onDuplicateKeyIgnore().execute()
         } else {
@@ -236,6 +255,81 @@ class TagRepository(private val db: DSLContext) {
         entry.labels.forEach { (language, text) -> put(language, LABEL, listOf(text)) }
         entry.aliases.forEach { (language, texts) -> put(language, ALIAS, texts) }
         entry.descriptions.forEach { (language, text) -> put(language, DESCRIPTION, listOf(text)) }
+        // The names of the tags bound to it may be others now
+        val e = NORMALIZED_TAG_ENTRY
+        tx.deleteFrom(TAG_VECTOR).where(TAG_VECTOR.TAG.`in`(DSL.select(e.TAG).from(e).where(e.CATALOGUE.eq(catalogue), e.ENTRY.eq(entry.id)))).execute()
+    }
+
+    // --- The statistics of the tags ---
+
+    /** Every site's tag bound to a tag, with its name and its works as last counted ([keepStats]). */
+    fun siteTags(): List<SiteTagCount> =
+        db.select(SITE_TAG.SOURCE, SITE_TAG.TAG, SITE_TAG.NORMALIZED, SITE_TAG.NAME, SITE_TAG.WORKS, SITE_TAG.GRADED, SITE_TAG.LIKED).from(SITE_TAG)
+            .fetch { SiteTagCount(SiteTagRef(it.value1()!!, it.value2()!!), it.value3()!!, it.value4(), Counts(it.value5()!!, it.value6()!!, it.value7()!!)) }
+
+    /** Every tag's works and the sources of its sites' tags, as last counted ([keepStats]). */
+    fun counts(): Map<Long, TagCount> =
+        db.select(TAG_STAT.TAG, TAG_STAT.WORKS, TAG_STAT.GRADED, TAG_STAT.LIKED, TAG_STAT.SOURCES).from(TAG_STAT)
+            .fetchMap({ it.value1()!! }, { TagCount(Counts(it.value2()!!, it.value3()!!, it.value4()!!), it.value5()!!.filterNotNull()) })
+
+    /**
+     * The statistics counted now in place of those kept, the rows that changed alone: of every
+     * site's tag counted its name and works — of one not counted, no name and none — and of every tag
+     * its works and the sources of its sites' tags.
+     */
+    fun keepStats(sites: Map<SiteTagRef, Pair<String, Counts>>, tags: Map<Long, TagCount>) = db.transaction { c ->
+        val tx = DSL.using(c)
+        val st = SITE_TAG
+        tx.select(st.SOURCE, st.TAG, st.NAME, st.WORKS, st.GRADED, st.LIKED).from(st).fetch().forEach { r ->
+            val site = SiteTagRef(r.value1()!!, r.value2()!!)
+            val (name, counts) = sites[site] ?: (null to Counts(0, 0, 0))
+            if (r.value3() == name && Counts(r.value4()!!, r.value5()!!, r.value6()!!) == counts) return@forEach
+            tx.update(st).set(st.NAME, name?.take(500)).set(st.WORKS, counts.works).set(st.GRADED, counts.graded).set(st.LIKED, counts.liked)
+                .where(st.SOURCE.eq(site.source), st.TAG.eq(site.tag)).execute()
+        }
+        val kept = TagRepository(tx).counts()
+        val ts = TAG_STAT
+        tags.forEach { (tag, count) ->
+            if (kept[tag] == count) return@forEach
+            val sources = count.sources.toTypedArray<String?>()
+            tx.insertInto(ts).set(ts.TAG, tag).set(ts.WORKS, count.counts.works).set(ts.GRADED, count.counts.graded).set(ts.LIKED, count.counts.liked).set(ts.SOURCES, sources)
+                .onDuplicateKeyUpdate().set(ts.WORKS, count.counts.works).set(ts.GRADED, count.counts.graded).set(ts.LIKED, count.counts.liked).set(ts.SOURCES, sources)
+                .execute()
+        }
+    }
+
+    // --- The vectors of the tags ---
+
+    /** The vectors of the tags [ids] dropped: their names changed, they are made anew in the background. */
+    fun forgetVectors(ids: Collection<Long>) {
+        if (ids.isNotEmpty()) db.deleteFrom(TAG_VECTOR).where(TAG_VECTOR.TAG.`in`(ids)).execute()
+    }
+
+    /** The tags that have no vector by [plugin]'s [model]: a join, not a read of every tag. */
+    fun withoutVectors(plugin: String, model: String): List<Long> {
+        val v = TAG_VECTOR
+        return db.select(NORMALIZED_TAG.ID).from(NORMALIZED_TAG)
+            .leftJoin(v).on(v.TAG.eq(NORMALIZED_TAG.ID), v.PLUGIN.eq(plugin), v.MODEL.eq(model))
+            .where(v.TAG.isNull).fetch { it.value1()!! }
+    }
+
+    /** Keeps the vectors of the tags, one of every name of each; none: a tag of no name to encode. */
+    fun keepVectors(plugin: String, model: String, vectors: Map<Long, List<FloatArray>>) = db.transaction { c ->
+        val tx = DSL.using(c)
+        val v = TAG_VECTOR
+        vectors.forEach { (tag, list) ->
+            val packed = list.map(Vectors::half).toTypedArray<ByteArray?>()
+            tx.insertInto(v).set(v.TAG, tag).set(v.PLUGIN, plugin).set(v.MODEL, model).set(v.VECTORS, packed)
+                .onDuplicateKeyUpdate().set(v.VECTORS, packed).execute()
+        }
+    }
+
+    /** The vectors of every tag's names by [plugin]'s [model], by key: the tags of no name left out. */
+    fun vectors(plugin: String, model: String): Map<String, List<FloatArray>> {
+        val v = TAG_VECTOR
+        return db.select(v.TAG, v.VECTORS).from(v).where(v.PLUGIN.eq(plugin), v.MODEL.eq(model)).fetch()
+            .mapNotNull { r -> r.value2()!!.mapNotNull { it?.let(Vectors::fromHalf) }.takeIf { it.isNotEmpty() }?.let { key(r.value1()!!) to it } }
+            .toMap()
     }
 
     /** What every entry read is a kind of: the entry to the ones right above it. */

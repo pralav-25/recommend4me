@@ -114,7 +114,7 @@ class ItemsController(
             val scope = tags.scope() ?: return ResponseEntity.notFound().build()
             // A tag the user ignores is not offered to add
             val found = if (piece.isEmpty()) tags.list(scope, facet, null, ignored = false).take(wanted) else tags.find(scope, facet, store.id, piece, wanted)
-            return ResponseEntity.ok(found.map { FacetValueUse(it.stats.key, it.name.name, it.stats.items.size, null) })
+            return ResponseEntity.ok(found.map { FacetValueUse(it.stats.key, it.name.name, it.stats.counts.works, null) })
         }
         return ResponseEntity.ok(
             FacetValues.of(store, facet).asSequence()

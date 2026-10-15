@@ -14,6 +14,7 @@ import io.github.vlsergey.recommend4me.universe.UniverseCatalogue
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.ObjectProvider
 import org.springframework.stereotype.Component
+import java.nio.file.Path
 
 private val log = LoggerFactory.getLogger(Plugins::class.java)
 
@@ -71,6 +72,17 @@ class Plugins(
 
     /** The text encoder in use: the one named by the setting `encoder.text`, or the first that is ready. */
     fun textEncoder(): TextEncoder? = choose(textEncoders, "encoder.text", { it.id }, { it.ready() })
+
+    /**
+     * The plugin [component] is of: the name of its plugin's folder ("encoder-bge-m3") — the folder
+     * its jar was loaded from — or, run from a build, the name of the jar or the folder of its classes.
+     */
+    fun pluginOf(component: Any): String {
+        val location = component.javaClass.protectionDomain?.codeSource?.location ?: return component.javaClass.name
+        val path = runCatching { Path.of(location.toURI()) }.getOrNull() ?: return component.javaClass.name
+        val name = path.fileName?.toString().orEmpty()
+        return if (name.endsWith(".jar")) path.parent?.fileName?.toString() ?: name else name
+    }
 
     fun imageEncoder(): ImageEncoder? = choose(imageEncoders, "encoder.image", { it.id }, { it.ready() })
 

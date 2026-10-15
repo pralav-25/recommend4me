@@ -31,6 +31,7 @@ import io.github.vlsergey.recommend4me.source.Source
 import io.github.vlsergey.recommend4me.source.SourceContext
 import io.github.vlsergey.recommend4me.source.SourceMode
 import io.github.vlsergey.recommend4me.source.SourceSchema
+import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TextDef
 import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
@@ -48,6 +49,8 @@ import io.github.vlsergey.recommend4me.api.model.TagRelation
 import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
 import io.github.vlsergey.recommend4me.tag.SiteTagRef
 import io.github.vlsergey.recommend4me.tag.TagRepository
+import io.github.vlsergey.recommend4me.tag.TagVectors
+import io.github.vlsergey.recommend4me.tag.Tags
 import io.github.vlsergey.recommend4me.tag.TagsController
 import io.github.vlsergey.recommend4me.api.model.TagEntryRequest
 import io.github.vlsergey.recommend4me.api.model.HierarchyOfferKind
@@ -234,8 +237,20 @@ class SiteTest {
     @Autowired lateinit var comparisons: ScorerComparisons
     @Autowired lateinit var tagsApi: TagsController
     @Autowired lateinit var catalogueReader: CatalogueReader
+    @Autowired lateinit var tagService: Tags
+    @Autowired lateinit var tagVectors: TagVectors
 
     private fun capture(body: String) = captures.capturePage(CaptureRequest("https://site.example/work/${body.substringBefore('|')}", body))
+
+    /**
+     * The texts' vectors made, and what the background makes of the tags made now: their works
+     * counted and kept ([Tags.rename]), their vectors ([TagVectors]) — the screen of the tags reads them.
+     */
+    private fun refresh(store: SourceStore) {
+        textVectors.refresh(store)
+        tagService.scope()?.let { tagService.rename(it, it.facet) }
+        tagVectors.fill()
+    }
 
     /**
      * Forty works of two kinds, one of the first kind the site gave a dragons' tag by mistake, and
@@ -270,7 +285,7 @@ class SiteTest {
             listOf("dragons", "magic").forEach { corrections.correctFacet("site", "d$k", FacetCorrection(facet = "tags", added = true, key = tag(it))) }
         }
         val store = stores.source("site")!!
-        textVectors.refresh(store)
+        refresh(store)
         suggestions.refresh(store)
     }
 
@@ -306,11 +321,14 @@ class SiteTest {
         assertTrue(more.none { c -> given.any { it.key == c.key && it.offered != true } }, "none the work is given: $more")
         assertTrue(more.zipWithNext().all { (a, b) -> a.chance!! >= b.chance!! }, "the likeliest first: $more")
 
-        // The pairing of its kind is given to it at once, marked as the model's
-        val pairing = item.facets.single { it.facet == "pairing" }.propertyValues.single()
-        assertEquals("pilot/captain", pairing.key)
+        // The pairing of its kind is given to it at once, marked as the model's, the likeliest of all. Not
+        // alone: the crossovers have the other kind's too, and the fittings the tests before set off in
+        // the background may give it a chance of its own
+        val pairings = item.facets.single { it.facet == "pairing" }.propertyValues
+        val pairing = assertNotNull(pairings.find { it.key == "pilot/captain" }, "pairings $pairings")
         assertEquals(true, pairing.inferred)
         assertTrue(pairing.chance!! > 0.5, "the chance ${pairing.chance}")
+        assertTrue(pairings.all { it === pairing || (it.chance ?: 0.0) < pairing.chance!! }, "the likeliest: $pairings")
 
         // The site's tags are its word, shown as they are; of the work's, the site's mistaken one is the least likely
         val w1 = items.getItem("site", "w1").body!!.allFacets
@@ -498,7 +516,7 @@ class SiteTest {
             corrections.correctFacet("site", "p$k", FacetCorrection(facet = "pairings", added = true, key = "pair:fake:C1|fake:C2"))
         }
         val store = stores.source("site")!!
-        textVectors.refresh(store)
+        refresh(store)
         suggestions.refresh(store)
         // The pairings are made of the characters the model gave: once more, over what it gave
         suggestions.refresh(store)
@@ -535,7 +553,7 @@ class SiteTest {
         // A name of one word is a name written with a capital: the lower-case "captain" names nobody
         capture("n1|The captain|space|The Captain commands. The Captain waits. The Captain sleeps, the captain of the guard does not|")
         corrections.correctFacet("site", "n1", FacetCorrection(facet = "universe", added = true, key = "fake:U2"))
-        textVectors.refresh(store)
+        refresh(store)
         // The candidates first: asked for, the work's chances are made current, and the card read after them shows the same
         val offered = suggestionsApi.getCandidates("site", "n1", "characters").body!!
         val given = items.getItem("site", "n1").body!!.allFacets.find { it.facet == "characters" }?.propertyValues.orEmpty().filter { it.offered != true }.map { it.key }
@@ -577,7 +595,7 @@ class SiteTest {
         // The universe of a fan fiction is worked out as its characters are: given when likely, offered first when not
         capture("f1|Fleet tales|space|Ships of the fleet|")
         corrections.correctFacet("site", "f1", FacetCorrection(facet = "kind", added = true, key = "fanfiction"))
-        textVectors.refresh(store)
+        refresh(store)
         suggestions.refresh(store)
         val universes = items.getItem("site", "f1").body!!.allFacets.single { it.facet == "universe" }.propertyValues.map { it.key }
         val offeredUniverses = suggestionsApi.getCandidates("site", "f1", "universe").body!!.map { it.key }
@@ -704,7 +722,7 @@ class SiteTest {
         // The user's answer on a tag that will be merged into another
         corrections.correctFacet("site", "t3", FacetCorrection(facet = "tags", added = true, key = starhulls))
         items.rateItem("site", "t2", RatingRequest(5))
-        textVectors.refresh(stores.source("site")!!)
+        refresh(stores.source("site")!!)
 
         // Offered alike: the other tags of the sites, with how alike their names are; the site's own tag of it, merged
         val similar = tagsApi.listSimilarTags(hulls, null, 0, 50, null, null).body!!.tags
