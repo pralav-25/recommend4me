@@ -26,6 +26,8 @@ class Database(
     kind: String,
     pluginMigrations: List<String> = emptyList(),
     classLoader: ClassLoader = Thread.currentThread().contextClassLoader,
+    /** The values the application's migrations of the file are written with: `${source}` of a source's file. */
+    private val placeholders: Map<String, String> = emptyMap(),
     /** Done with the file as it is, before its migrations: what a migration drops copied elsewhere first. */
     beforeMigrations: (DSLContext) -> Unit = {},
 ) : AutoCloseable {
@@ -65,6 +67,7 @@ class Database(
     private fun migrate(locations: List<String>, table: String, classLoader: ClassLoader, shared: Boolean) {
         val result = Flyway.configure(classLoader)
             .dataSource(pool)
+            .placeholders(if (shared) emptyMap() else placeholders)
             .locations(*locations.toTypedArray())
             .table(table)
             .baselineOnMigrate(shared)

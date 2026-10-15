@@ -1,6 +1,9 @@
 package io.github.vlsergey.recommend4me.dictionary
 
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.DICTIONARY_MOVED
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_STAT
+import io.github.vlsergey.recommend4me.preferences.CatalogueRenameRepository
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import org.slf4j.LoggerFactory
@@ -18,12 +21,15 @@ private val log = LoggerFactory.getLogger(DictionaryMove::class.java)
  * type with tags of its own stops the start rather than mix them. Only books had any.
  */
 object DictionaryMove {
-    /** The tables of a type's corrections, in the order their keys need. */
+    /**
+     * The tables of a type's corrections, in the order their keys need; the names the user gave the
+     * universes are the user's preferences, moved there ([CatalogueRenameRepository.moveFrom]).
+     */
     val CORRECTIONS = listOf(
         "normalized_tag", "site_tag", "normalized_tag_parent", "normalized_tag_distinct", "normalized_tag_merge",
         "tag_entry", "tag_entry_text", "tag_entry_above", "normalized_tag_entry",
         "universe", "universe_property", "universe_character", "universe_character_property", "universe_character_class",
-        "universe_class", "universe_class_choice", "universe_character_choice", "universe_local_name",
+        "universe_class", "universe_class_choice", "universe_character_choice",
     )
 
     /** The table of a type's model. */
@@ -44,6 +50,16 @@ object DictionaryMove {
                     error("$owner has tags of its own, and the dictionaries have tags of another type already: they cannot be one by their numbers")
                 }
                 rows.forEach { r ->
+                    // The names a model kept are the calculated names of the tags' statistics now (dictionaries V5)
+                    if (table == "tag_shown_name") {
+                        val tag = r.get("TAG", Long::class.java)
+                        val rule = r.get("RULE", String::class.java)
+                        if (rule == "EXPLICIT" || !tx.fetchExists(NORMALIZED_TAG, NORMALIZED_TAG.ID.eq(tag))) return@forEach
+                        tx.insertInto(TAG_STAT).set(TAG_STAT.TAG, tag).set(TAG_STAT.CALCULATED_NAME, r.get("NAME", String::class.java)).set(TAG_STAT.CALCULATED_RULE, rule)
+                            .onDuplicateKeyUpdate().set(TAG_STAT.CALCULATED_NAME, r.get("NAME", String::class.java)).set(TAG_STAT.CALCULATED_RULE, rule)
+                            .execute()
+                        return@forEach
+                    }
                     tx.insertInto(DSL.table(DSL.name(table.uppercase())))
                         .set(r.fields().associate { f -> DSL.field(DSL.name(f.name)) to r.get(f) })
                         .execute()

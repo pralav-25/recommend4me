@@ -24,9 +24,9 @@ class SchemaDocsTest {
     fun `every database's tables are documented as its migrations make them`() {
         // Every kind of database: a folder of migrations of the application, none forgotten
         val folders = Files.list(Path.of("src/main/resources/db")).use { s -> s.map { it.fileName.toString() }.sorted().toList() }
-        if (folders != KINDS.sorted()) fail("The kinds of databases $folders are not the documented ones ${KINDS.sorted()}")
+        if (folders != (KINDS + MOVED).sorted()) fail("The kinds of databases $folders are not the documented ones ${KINDS.sorted()}")
         val wrong = KINDS.filter { kind ->
-            val expected = Database(kind, folder.resolve(kind), kind).use { diagram(it.dsl) }
+            val expected = Database(kind, folder.resolve(kind), kind, placeholders = mapOf("source" to "site")).use { diagram(it.dsl) }
             val file = docs.resolve("$kind.md")
             val written = if (Files.exists(file)) mermaid(Files.readString(file)) else null
             if (written == expected) return@filter false
@@ -112,6 +112,9 @@ class SchemaDocsTest {
 
     private companion object {
         /** Every kind of database of the application: the folders of its migrations. */
-        val KINDS = listOf("app", "source", "corrections", "ratings", "typecorrections", "model", "dictionaries")
+        val KINDS = listOf("app", "source", "corrections", "ratings", "model", "dictionaries", "preferences")
+
+        /** The files of before, migrated only to be moved elsewhere: no document. */
+        val MOVED = listOf("typecorrections")
     }
 }

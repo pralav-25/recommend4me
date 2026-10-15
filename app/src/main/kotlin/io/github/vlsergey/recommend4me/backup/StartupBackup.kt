@@ -18,7 +18,7 @@ import kotlin.io.path.name
 
 /**
  * A rolling backup of what nothing could make good — the user's grades, marks and corrections,
- * the dictionaries of tags and universes, and the settings — taken on every start before anything opens the databases. The scrape and the
+ * the dictionaries of tags and universes, the user's preferences and the settings — taken on every start before anything opens the databases. The scrape and the
  * model are left out: a scrape is downloaded again, a model trained again.
  *
  * The start waits only for plain copies of the files; they are zipped into one archive
@@ -59,7 +59,8 @@ class StartupBackup : ApplicationListener<ApplicationEnvironmentPreparedEvent> {
         /** The files to keep, by their path inside the data folder. */
         fun personalFiles(dataDir: Path): List<Path> {
             val out = ArrayList<Path>()
-            listOf("app.mv.db", "dictionaries.mv.db").map(dataDir::resolve).filter { it.exists() }.forEach(out::add)
+            listOf("app.mv.db", "dictionaries.mv.db", "preferences.mv.db").map(dataDir::resolve).filter { it.exists() }.forEach(out::add)
+            // A type's corrections of before too: kept on the start it is moved on ([TypeCorrectionsMove])
             for (level in listOf("sources", "types")) {
                 val dir = dataDir.resolve(level)
                 if (!dir.isDirectory()) continue

@@ -6,9 +6,8 @@
 |---|---|
 | `normalized_tag` | a tag of the user's: its id, the name the user gave it, whether it is ignored |
 | `site_tag` | a site's tag bound to a normalized tag, with its name and works as last counted |
-| `tag_stat` | a tag's works, graded and liked among them, and the sources of its sites' tags, as last counted |
+| `tag_stat` | a tag's works, graded and liked among them, and the sources of its sites' tags, as last counted; the name worked out of its entry or its sites' tags (`calculated_name`) and the rule it was worked out by |
 | `tag_vector` | the vectors of every name of a tag by a text encoder's plugin and model |
-| `tag_shown_name` | the name a tag without the user's name is shown by, worked out of its sites' |
 | `normalized_tag_parent` | a tag under another |
 | `normalized_tag_distinct` | two tags the user told apart |
 | `normalized_tag_merge` | a tag merged into another whose answers are still to be moved |
@@ -24,7 +23,6 @@
 | `universe_class` | a class of the catalogue, and whether its instances are characters |
 | `universe_class_choice` | the user's word on a class of a universe |
 | `universe_character_choice` | the user's word on one character of a universe |
-| `universe_local_name` | the name the user gives an entry in the interface's language |
 | `dictionary_moved` | the files of the types whose tags and universes were moved here |
 
 The diagram is made of the migrations by `SchemaDocsTest`: change it with them.
@@ -47,8 +45,8 @@ erDiagram
     }
     normalized_tag_entry {
         BIGINT tag PK, FK
-        VARCHAR catalogue PK
-        VARCHAR entry PK
+        VARCHAR catalogue PK, FK
+        VARCHAR entry PK, FK
         TIMESTAMPTZ bound_at
     }
     normalized_tag_merge {
@@ -79,9 +77,9 @@ erDiagram
         TIMESTAMPTZ above_read_at "null"
     }
     tag_entry_above {
-        VARCHAR catalogue PK
-        VARCHAR entry PK
-        VARCHAR above PK
+        VARCHAR catalogue PK, FK
+        VARCHAR entry PK, FK
+        VARCHAR above PK, FK
     }
     tag_entry_text {
         VARCHAR catalogue PK, FK
@@ -91,17 +89,14 @@ erDiagram
         INTEGER position PK
         VARCHAR text
     }
-    tag_shown_name {
-        BIGINT tag PK
-        VARCHAR name
-        VARCHAR rule
-    }
     tag_stat {
         BIGINT tag PK, FK
         INTEGER works
         INTEGER graded
         INTEGER liked
         VARCHAR_ARRAY sources
+        VARCHAR calculated_name "null"
+        VARCHAR calculated_rule "null"
     }
     tag_vector {
         BIGINT tag PK, FK
@@ -166,12 +161,6 @@ erDiagram
         VARCHAR class_id PK
         BOOLEAN included
     }
-    universe_local_name {
-        VARCHAR catalogue PK
-        VARCHAR entry_id PK
-        VARCHAR name
-        TIMESTAMPTZ named_at
-    }
     universe_property {
         VARCHAR catalogue PK, FK
         VARCHAR universe_id PK, FK
@@ -186,6 +175,9 @@ erDiagram
     normalized_tag ||--o{ site_tag : "normalized"
     normalized_tag ||--o{ tag_stat : "tag"
     normalized_tag ||--o{ tag_vector : "tag"
+    tag_entry ||--o{ normalized_tag_entry : "catalogue, entry"
+    tag_entry ||--o{ tag_entry_above : "catalogue, above"
+    tag_entry ||--o{ tag_entry_above : "catalogue, entry"
     tag_entry ||--o{ tag_entry_text : "catalogue, entry"
     universe ||--o{ universe_character : "catalogue, universe_id"
     universe ||--o{ universe_character_choice : "catalogue, universe_id"

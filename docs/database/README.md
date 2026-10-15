@@ -10,6 +10,6 @@ The schema of every one, as its migrations (`app/src/main/resources/db/<kind>`) 
 | [A source](source.md) | `sources/<source>/source.mv.db` |
 | [A source's corrections](corrections.md) | `sources/<source>/corrections.mv.db` |
 | [A source's ratings](ratings.md) | `sources/<source>/ratings.mv.db` |
-| [A content type's corrections](typecorrections.md) | `types/<type>/corrections.mv.db` |
 | [A content type's model](model.md) | `types/<type>/model.mv.db` |
 | [The dictionaries](dictionaries.md) | `dictionaries.mv.db` |
+| [The user's preferences](preferences.md) | `preferences.mv.db` |

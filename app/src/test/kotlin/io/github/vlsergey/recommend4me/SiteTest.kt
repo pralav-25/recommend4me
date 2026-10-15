@@ -640,6 +640,9 @@ class SiteTest {
         fun characterName() = items.getItem("site", "p9").body!!.allFacets.single { it.facet == "characters" }.propertyValues.single { it.key == "fake:C1" }.name
         this.universes.nameUniverseEntry("fake", "C1", LocalName("Лётчица"))
         assertEquals("Лётчица", characterName())
+        // Kept as the universe is read again from the catalogue, its characters made anew
+        this.universes.addUniverse(UniverseRef("fake", "U2"))
+        assertEquals("Лётчица", characterName())
         assertEquals(listOf("Лётчица", "Pilot"), this.universes.listCharacters("fake", "U2").body!!.single { it.character == "C1" }.names.take(2))
         this.universes.nameUniverseEntry("fake", "U2", LocalName("Флот"))
         val fleet = this.universes.listUniverses().body!!.single { it.universe == "U2" }

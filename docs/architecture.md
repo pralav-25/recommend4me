@@ -78,23 +78,24 @@ app.mv.db                          settings
 dictionaries.mv.db                 the user's dictionaries, every content type's: the normalized
                                    tags of every site (merged, named, linked, bound to entries,
                                    ignored) and the universes with their characters
+preferences.mv.db                  the user's preferences, every content type's: the names given
+                                   to universes and characters, the judgments of the search
 sources/<source>/source.mv.db      what the site says: works, facets, numbers, texts, pictures,
                                    reviews, text parts, captured pages — and their vectors, a
                                    compressed form of the same scrape
 sources/<source>/corrections.mv.db the user's corrections: tags added and removed, fields
-                                   overridden, duplicates merged within the source
+                                   overridden, duplicates merged within the source and with
+                                   the other sources of its type (kept by the smaller key)
 sources/<source>/ratings.mv.db     the user's own data: grades, marks on pictures and reviews,
                                    words on matches, the user's own actions seen on the site
 sources/<source>/images/           picture files
-types/<type>/corrections.mv.db     duplicates merged across the sources of a type, the
-                                   judgments of its search
 types/<type>/model.mv.db           the trained model, the predictions, the likeness to the marks,
                                    the directions of the set embeddings, the suggested tags — all
                                    recomputable
 types/<type>/search-index/         the search index
 models/                            ONNX graphs of the encoders
-backups/                           the settings, the dictionaries, corrections and ratings,
-                                   zipped on every start
+backups/                           the settings, the dictionaries, the preferences, corrections
+                                   and ratings, zipped on every start
 ```
 
 Every file has its own connection pool and its own Flyway history. H2 does not join across
@@ -266,9 +267,10 @@ nearest in the catalogue come first — "oral sex" right above two tags before "
 up — and of those alike near, the ones changing most.
 
 The names are worked out again a few seconds after the works or
-their grades change and kept in the type's model database (`tag_shown_name`): made of the rest, not
-the user's word. Every source reads them from there, as the universes' names are read from their
-dictionary, never from a copy of its own.
+their grades change and kept with the tags' statistics in the dictionaries (`tag_stat.calculated_name`):
+made of the rest, not the user's word. Every source reads them from there, as the universes' names
+are read from their dictionary, never from a copy of its own. The names the user gives the universes
+and the characters are the user's preferences (`preferences.mv.db`, `catalogue_entity_rename`).
 
 ## Universes
 

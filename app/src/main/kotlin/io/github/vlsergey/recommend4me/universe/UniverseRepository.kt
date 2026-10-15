@@ -7,8 +7,9 @@ import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.U
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_CHARACTER_PROPERTY
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_CLASS
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_CLASS_CHOICE
-import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_LOCAL_NAME
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.UNIVERSE_PROPERTY
+import io.github.vlsergey.recommend4me.preferences.CatalogueEntity
+import io.github.vlsergey.recommend4me.preferences.CatalogueRenameRepository
 import org.jooq.DSLContext
 import org.jooq.impl.DSL
 import java.time.Instant
@@ -56,8 +57,8 @@ class KeptEntry(val character: UniverseCharacter, val included: Boolean, val cho
 class ClassInUniverse(val id: String, val name: String, val character: Boolean, val entries: Int, val included: Boolean, val choice: Boolean?)
 
 /**
- * The dictionary of universes the user agreed on and their entries, in the type's corrections
- * database. AN ENTRY IS KEPT AS A CHARACTER by the user's word on it; else when any of its classes
+ * The dictionary of universes the user agreed on and their entries, in the dictionaries; the
+ * names the user gives them in the user's preferences. AN ENTRY IS KEPT AS A CHARACTER by the user's word on it; else when any of its classes
  * is kept — a class by the user's word on it within the universe, else when its entries are
  * characters; an entry the catalogue gave no class is kept: nothing says it is not one.
  */
@@ -65,6 +66,8 @@ class UniverseRepository(
     private val db: DSLContext,
     /** The user's languages: the texts are shown in the first of them that has one. */
     private val languages: List<String>,
+    /** The names the user gives the universes and the characters, in the user's preferences. */
+    private val renames: CatalogueRenameRepository,
 ) {
 
     fun all(): List<StoredUniverse> {
@@ -87,21 +90,10 @@ class UniverseRepository(
 
     /** The names the user gave the universes and the characters over the catalogue's: value ("<catalogue>:<id>") to name. */
     fun localNames(): Map<String, String> =
-        db.select(UNIVERSE_LOCAL_NAME.CATALOGUE, UNIVERSE_LOCAL_NAME.ENTRY_ID, UNIVERSE_LOCAL_NAME.NAME).from(UNIVERSE_LOCAL_NAME)
-            .fetch().associate { UniverseFacet.valueOf(it.value1()!!, it.value2()!!) to it.value3()!! }
+        renames.all().mapKeys { (e, _) -> UniverseFacet.valueOf(e.catalogue, e.entity) }
 
     /** The name the user gives a universe or a character of [catalogue] over the catalogue's; null or blank takes it back. */
-    fun setLocalName(catalogue: String, id: String, name: String?, now: Instant) {
-        val n = UNIVERSE_LOCAL_NAME
-        val given = name?.trim()?.takeIf { it.isNotEmpty() }
-        if (given == null) {
-            db.deleteFrom(n).where(n.CATALOGUE.eq(catalogue), n.ENTRY_ID.eq(id)).execute()
-            return
-        }
-        db.insertInto(n).set(n.CATALOGUE, catalogue).set(n.ENTRY_ID, id).set(n.NAME, given.take(1000)).set(n.NAMED_AT, now)
-            .onDuplicateKeyUpdate().set(n.NAME, given.take(1000)).set(n.NAMED_AT, now)
-            .execute()
-    }
+    fun setLocalName(catalogue: String, id: String, name: String?, now: Instant) = renames.rename(CatalogueEntity(catalogue, id), name, now)
 
     fun find(catalogue: String, id: String): StoredUniverse? = all().firstOrNull { it.catalogue == catalogue && it.id == id }
 

@@ -165,7 +165,7 @@ class SimilarPage(val total: Int, val rows: List<SimilarTag>)
  * names, within one site and across them; it merges nothing by itself.
  *
  * A tag is shown by the name the user gave it, else by its most used name on the sites ([TagNaming]):
- * worked out after the works and their grades change and kept in the model database; nothing is kept
+ * worked out after the works and their grades change and kept with its statistics; nothing is kept
  * in memory.
  */
 @Service
@@ -599,6 +599,8 @@ class Tags(
         fun ref(id: String) = TagEntryRef(catalogue.id, id)
         val links = scope.tags.aboveLinks()
         val seen = HashSet(from)
+        // The entries kept: the ones bound, the ones above kept on the way
+        val known = HashSet(from)
         var frontier = from.distinct()
         var asked = 0
         repeat(ABOVE_LEVELS) {
@@ -606,15 +608,16 @@ class Tags(
             val read = if (anew) emptySet() else scope.tags.aboveRead(frontier.map(::ref))
             val said = frontier.filter { ref(it) !in read }.takeIf { it.isNotEmpty() }?.let(catalogue::above).orEmpty()
             asked += frontier.count { ref(it) !in read }
-            val next = LinkedHashSet<String>()
-            frontier.forEach { id ->
-                val above = if (ref(id) in read) links[ref(id)].orEmpty().map { it.entry } else said[id].orEmpty().also { scope.tags.keepAbove(ref(id), it, now) }
-                above.filter(seen::add).forEach { next += it }
-            }
-            val kept = if (anew) emptySet() else scope.tags.keptEntries(next.map(::ref)).keys
-            val missing = next.filter { ref(it) !in kept }
-            if (missing.isNotEmpty()) catalogue.entries(missing, languages).forEach { scope.tags.keepEntry(catalogue.id, it, now) }
-            frontier = next.toList()
+            val aboveOf = frontier.associateWith { id -> if (ref(id) in read) links[ref(id)].orEmpty().map { it.entry } else said[id].orEmpty() }
+            // The entries above kept before the links to them: a link is to an entry kept, one the catalogue
+            // does not give — gone from it — no link, and no way on from it
+            val above = aboveOf.values.flatten().distinct().filter { it !in known }
+            val kept = if (anew) emptySet() else scope.tags.keptEntries(above.map(::ref)).keys.map { it.entry }.toSet()
+            known += kept
+            val missing = above.filter { it !in kept }
+            if (missing.isNotEmpty()) catalogue.entries(missing, languages).forEach { scope.tags.keepEntry(catalogue.id, it, now); known += it.id }
+            frontier.filter { ref(it) !in read }.forEach { id -> scope.tags.keepAbove(ref(id), said[id].orEmpty().filter { it in known }, now) }
+            frontier = aboveOf.values.flatten().filter { it in known && seen.add(it) }.distinct()
         }
         log.info("{}: what {} entries of {} are a kind of read, {} asked of it, {} met", scope.id, from.size, catalogue.id, asked, seen.size)
     }
@@ -935,7 +938,8 @@ class Tags(
         val started = System.currentTimeMillis()
         val n = naming(scope, facet, countAll(scope, facet))
         val stats = n.stats
-        scope.tags.replaceShown(stats.values.associate { t -> t.id to n.nameOf(t) })
+        // Of the application's working: the user's own name is shown over it, not kept in it
+        scope.tags.replaceCalculated(stats.values.associate { t -> t.id to TagNaming.name(t, null, n.cataloguedOf(t.key)) })
         scope.tags.keepStats(
             sites = stats.values.flatMap { t -> t.variants.values }.associate { v -> v.site to (v.name to Counts(v.uses.works, v.uses.graded, v.uses.liked)) },
             tags = stats.values.associate { t -> t.id to TagCount(t.counts, t.sources) },

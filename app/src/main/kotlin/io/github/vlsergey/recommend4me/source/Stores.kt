@@ -19,6 +19,7 @@ import io.github.vlsergey.recommend4me.part.PartRepository
 import io.github.vlsergey.recommend4me.picture.PictureFiles
 import io.github.vlsergey.recommend4me.picture.PictureRepository
 import io.github.vlsergey.recommend4me.plugin.Plugins
+import io.github.vlsergey.recommend4me.preferences.CatalogueRenameRepository
 import io.github.vlsergey.recommend4me.rating.RatingRepository
 import io.github.vlsergey.recommend4me.review.ReviewRepository
 import io.github.vlsergey.recommend4me.setvector.SetEmbeddingRepository
@@ -92,7 +93,7 @@ class SourceStore(
     val pages = CapturedPageRepository(dbs.source.dsl)
     val valueNames = ValueNameRepository(dbs.source.dsl)
 
-    val corrections = CorrectionRepository(dbs.corrections.dsl)
+    val corrections = CorrectionRepository(dbs.corrections.dsl, source.id)
 
     val ratings = RatingRepository(dbs.ratings.dsl)
     val interest = InterestRepository(dbs.ratings.dsl)
@@ -106,7 +107,7 @@ class SourceStore(
     val suggestions = SuggestionRepository(databases.model(source.contentType), source.id, drafts)
 
     /** The names of the layer of universes: the dictionary's of the content type, whatever the source; none for a type without universes. */
-    private val dictionaryNames = if (contentType.universes) UniverseNames(UniverseRepository(databases.dictionaries.dsl, languages)) else null
+    private val dictionaryNames = if (contentType.universes) UniverseNames(UniverseRepository(databases.dictionaries.dsl, languages, CatalogueRenameRepository(databases.preferences.dsl))) else null
 
     /**
      * What the values [keys] of a facet are shown by: of the layer of universes, as the dictionary
@@ -159,9 +160,9 @@ class SourceStore(
 class TypeStore(val type: ContentType, val sources: List<SourceStore>, databases: Databases, languages: List<String>) {
     val id: String get() = type.id
 
-    val links = TypeLinkRepository(databases.typeCorrections(type.id))
-    val universes = UniverseRepository(databases.dictionaries.dsl, languages)
-    val searchJudgments = SearchJudgmentRepository(databases.typeCorrections(type.id))
+    val links = TypeLinkRepository(sources.associate { it.id to databases.corrections(it.id) })
+    val universes = UniverseRepository(databases.dictionaries.dsl, languages, CatalogueRenameRepository(databases.preferences.dsl))
+    val searchJudgments = SearchJudgmentRepository(databases.preferences.dsl, sources.map { it.id })
     val tags = TagRepository(databases.dictionaries.dsl)
     val models = ModelRepository(databases.model(type.id))
     val embeddings = SetEmbeddingRepository(databases.model(type.id))

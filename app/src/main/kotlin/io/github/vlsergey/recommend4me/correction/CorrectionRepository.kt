@@ -13,9 +13,10 @@ data class FacetCorrection(val itemId: String, val facet: String, val key: Strin
 
 /**
  * The user's corrections of one source's items: facet values added and taken away, facets whose
- * values are all named, fields overridden, and items of the source that are one work.
+ * values are all named, fields overridden, and items of the source that are one work. The links of
+ * its items to other sources' are kept here too, read by [TypeLinkRepository].
  */
-class CorrectionRepository(private val db: DSLContext) {
+class CorrectionRepository(private val db: DSLContext, private val source: String) {
 
     fun setFacet(itemId: String, facet: String, key: String, added: Boolean, name: String?, now: Instant) {
         db.insertInto(FACET_CORRECTION)
@@ -143,12 +144,14 @@ class CorrectionRepository(private val db: DSLContext) {
 
     fun link(a: String, b: String, now: Instant) {
         val (first, second) = if (a < b) a to b else b to a
-        db.insertInto(ITEM_LINK).set(ITEM_LINK.ITEM_ID, first).set(ITEM_LINK.OTHER_ITEM_ID, second).set(ITEM_LINK.LINKED_AT, now)
+        db.insertInto(ITEM_LINK).set(ITEM_LINK.ITEM_ID, first).set(ITEM_LINK.OTHER_SOURCE, source).set(ITEM_LINK.OTHER_ITEM_ID, second)
+            .set(ITEM_LINK.LINKED_AT, now)
             .onDuplicateKeyIgnore().execute()
     }
 
     fun unlink(a: String, b: String) {
         db.deleteFrom(ITEM_LINK).where(
+            ITEM_LINK.OTHER_SOURCE.eq(source),
             DSL.or(
                 ITEM_LINK.ITEM_ID.eq(a).and(ITEM_LINK.OTHER_ITEM_ID.eq(b)),
                 ITEM_LINK.ITEM_ID.eq(b).and(ITEM_LINK.OTHER_ITEM_ID.eq(a)),
@@ -157,7 +160,8 @@ class CorrectionRepository(private val db: DSLContext) {
     }
 
     fun links(): List<Pair<String, String>> =
-        db.select(ITEM_LINK.ITEM_ID, ITEM_LINK.OTHER_ITEM_ID).from(ITEM_LINK).fetch { it.value1()!! to it.value2()!! }
+        db.select(ITEM_LINK.ITEM_ID, ITEM_LINK.OTHER_ITEM_ID).from(ITEM_LINK).where(ITEM_LINK.OTHER_SOURCE.eq(source))
+            .fetch { it.value1()!! to it.value2()!! }
 
     /** Every answer of the user on the item removed from the library, and its links to the source's other items. */
     fun forget(itemId: String) = db.transaction { c ->
@@ -165,7 +169,7 @@ class CorrectionRepository(private val db: DSLContext) {
         tx.deleteFrom(FACET_CORRECTION).where(FACET_CORRECTION.ITEM_ID.eq(itemId)).execute()
         tx.deleteFrom(FIELD_CORRECTION).where(FIELD_CORRECTION.ITEM_ID.eq(itemId)).execute()
         tx.deleteFrom(FACET_COMPLETE).where(FACET_COMPLETE.ITEM_ID.eq(itemId)).execute()
-        tx.deleteFrom(ITEM_LINK).where(ITEM_LINK.ITEM_ID.eq(itemId).or(ITEM_LINK.OTHER_ITEM_ID.eq(itemId))).execute()
+        tx.deleteFrom(ITEM_LINK).where(ITEM_LINK.OTHER_SOURCE.eq(source), ITEM_LINK.ITEM_ID.eq(itemId).or(ITEM_LINK.OTHER_ITEM_ID.eq(itemId))).execute()
     }
 
     companion object {

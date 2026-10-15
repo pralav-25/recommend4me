@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.tag
 
-import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_SHOWN_NAME
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_STAT
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_VECTOR
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.NORMALIZED_TAG
@@ -161,8 +160,8 @@ class TagRepository(private val db: DSLContext) {
         val ids = keys?.mapNotNull(::idOf)
         if (ids != null && ids.isEmpty()) return emptyMap()
         val out = HashMap<String, String>()
-        fun worked(only: List<Long>?) = db.select(TAG_SHOWN_NAME.TAG, TAG_SHOWN_NAME.NAME).from(TAG_SHOWN_NAME)
-            .where(only?.let { TAG_SHOWN_NAME.TAG.`in`(it) } ?: DSL.noCondition()).fetch()
+        fun worked(only: List<Long>?) = db.select(TAG_STAT.TAG, TAG_STAT.CALCULATED_NAME).from(TAG_STAT)
+            .where(TAG_STAT.CALCULATED_NAME.isNotNull, only?.let { TAG_STAT.TAG.`in`(it) } ?: DSL.noCondition()).fetch()
         fun given(only: List<Long>?) = db.select(NORMALIZED_TAG.ID, NORMALIZED_TAG.NAME).from(NORMALIZED_TAG)
             .where(NORMALIZED_TAG.NAME.isNotNull, only?.let { NORMALIZED_TAG.ID.`in`(it) } ?: DSL.noCondition()).fetch()
         val chunks = ids?.distinct()?.chunked(BATCH) ?: listOf(null)
@@ -173,21 +172,23 @@ class TagRepository(private val db: DSLContext) {
 
     /** The name a new tag is shown by until the names are worked out again: of the site's tag it is made for. */
     fun showAs(id: Long, name: ShownName) {
-        db.insertInto(TAG_SHOWN_NAME).set(TAG_SHOWN_NAME.TAG, id).set(TAG_SHOWN_NAME.NAME, name.name.take(1000)).set(TAG_SHOWN_NAME.RULE, name.rule.name)
+        db.insertInto(TAG_STAT).set(TAG_STAT.TAG, id).set(TAG_STAT.CALCULATED_NAME, name.name.take(1000)).set(TAG_STAT.CALCULATED_RULE, name.rule.name)
             .onDuplicateKeyIgnore().execute()
     }
 
-    /** The names worked out of every tag replaced by [named]: made again from the rest. */
-    fun replaceShown(named: Map<Long, ShownName>) = db.transaction { c ->
+    /**
+     * The names the application works the tags out to replaced by [named], kept with their statistics:
+     * the label of an entry, else of the sites' names; the user's own name is no part of them.
+     */
+    fun replaceCalculated(named: Map<Long, ShownName>) = db.transaction { c ->
         val tx = DSL.using(c)
-        // Only what changed: a tag gone, a name or its rule changed, a tag new — not the whole table every few seconds
-        val stored = tx.select(TAG_SHOWN_NAME.TAG, TAG_SHOWN_NAME.NAME, TAG_SHOWN_NAME.RULE).from(TAG_SHOWN_NAME).fetch()
-            .associate { it.value1()!! to (it.value2()!! to it.value3()!!) }
-        (stored.keys - named.keys).chunked(BATCH).forEach { chunk -> tx.deleteFrom(TAG_SHOWN_NAME).where(TAG_SHOWN_NAME.TAG.`in`(chunk)).execute() }
+        // Only what changed: a name or its rule changed, a tag new — not the whole table every few seconds
+        val stored = tx.select(TAG_STAT.TAG, TAG_STAT.CALCULATED_NAME, TAG_STAT.CALCULATED_RULE).from(TAG_STAT).fetch()
+            .associate { it.value1()!! to (it.value2() to it.value3()) }
         named.entries.filter { (id, s) -> stored[id] != (s.name.take(1000) to s.rule.name) }.chunked(BATCH).forEach { chunk ->
             tx.batch(chunk.map { (id, s) ->
-                tx.insertInto(TAG_SHOWN_NAME).set(TAG_SHOWN_NAME.TAG, id).set(TAG_SHOWN_NAME.NAME, s.name.take(1000)).set(TAG_SHOWN_NAME.RULE, s.rule.name)
-                    .onDuplicateKeyUpdate().set(TAG_SHOWN_NAME.NAME, s.name.take(1000)).set(TAG_SHOWN_NAME.RULE, s.rule.name)
+                tx.insertInto(TAG_STAT).set(TAG_STAT.TAG, id).set(TAG_STAT.CALCULATED_NAME, s.name.take(1000)).set(TAG_STAT.CALCULATED_RULE, s.rule.name)
+                    .onDuplicateKeyUpdate().set(TAG_STAT.CALCULATED_NAME, s.name.take(1000)).set(TAG_STAT.CALCULATED_RULE, s.rule.name)
             }).execute()
         }
     }

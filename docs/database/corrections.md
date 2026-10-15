@@ -7,7 +7,7 @@
 | `facet_correction` | the user's word on a value of a facet of a work: added (true) or taken away (false) |
 | `facet_complete` | the user said a work's values of a facet are all named |
 | `field_correction` | a field of a work as the user wrote it: the title, a text, a number |
-| `item_link` | two works of the source the user said are one |
+| `item_link` | two works the user said are one: of the source, or of it and another source of the content type — kept by the source of the smaller key |
 
 The diagram is made of the migrations by `SchemaDocsTest`: change it with them.
 
@@ -36,5 +36,6 @@ erDiagram
         VARCHAR item_id PK
         VARCHAR other_item_id PK
         TIMESTAMPTZ linked_at
+        VARCHAR other_source PK
     }
 ```
