@@ -68,8 +68,9 @@ apart, with "bot" in the user agent, as the site asks of anything automated.
 
 ## Storage
 
-H2, one file per level of data, under the data folder (`%LOCALAPPDATA%
-ecommend4me` on
+The tables of every database, as diagrams: [docs/database](database/README.md).
+
+H2, one file per level of data, under the data folder (`%LOCALAPPDATA%\recommend4me` on
 Windows, `~/.local/share/recommend4me` elsewhere; `recommend4me.data-dir`):
 
 ```

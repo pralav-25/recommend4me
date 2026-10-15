@@ -216,4 +216,6 @@ tasks.withType<Test>().configureEach {
     systemProperty("recommend4me.data-dir", layout.buildDirectory.dir("test-data").get().asFile.absolutePath)
     // The tests read the browser extension's files beside the module: a change of them runs them again
     inputs.dir(rootProject.layout.projectDirectory.dir("browser-extension/extension")).withPropertyName("extension")
+    // And the documents of the databases' schemas
+    inputs.dir(rootProject.layout.projectDirectory.dir("docs")).withPropertyName("docs")
 }
