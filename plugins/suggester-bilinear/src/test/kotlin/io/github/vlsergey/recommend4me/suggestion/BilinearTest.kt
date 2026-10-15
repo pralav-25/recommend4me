@@ -120,15 +120,36 @@ class BilinearTest {
     }
 
     @Test
-    fun `models fitted together come out as fitted alone`() {
-        val task = task()
+    fun `models fitted together come out as fitted alone`() = fitTogether(task(), null)
+
+    @Test
+    fun `models fitted together with their searches on the card come out as fitted alone`() {
+        val dir = Onnx(defaultModelsDir(), gpu = true).cudaLibraries()
+        assumeTrue(dir != null, "no CUDA libraries")
+        val cublas = Cublas.open(dir!!)
+        assumeTrue(cublas != null, "no cuBLAS to run on")
+        fitTogether(task(), cublas)
+        val t = task()
+        // And of a task without names: the weights A and their gradient never leave the card
+        fitTogether(
+            SuggestionTask(
+                t.itemIds, t.inputs, t.values, t.valueKeys, t.assigned, t.confirmed, t.rejected, t.context, t.contextKeys,
+                t.mentions, t.allowed, t.groupings, t.lackWeight, t.examples, emptyList(), Matrix(0, 0), t.drafts, t.draftWeight,
+            ),
+            cublas,
+        )
+    }
+
+    private fun fitTogether(task: SuggestionTask, card: Cublas?) {
         val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)
         val rank = 3
         val lambdas = floatArrayOf(0.1f, 0.01f)
         val folds = intArrayOf(1, 3)
         val alone = Bilinear(problem, rank)
         val starts = List(lambdas.size) { alone.start(it + 1L) }
-        val fits = Ensemble(problem, rank, lambdas, folds).fit(starts, Bilinear.MAX_STEPS) { false }
+        val ensemble = Ensemble(problem, rank, lambdas, folds, card)
+        val fits = ensemble.use { it.fit(starts, Bilinear.MAX_STEPS) { false } }
+        if (card != null) assertTrue(ensemble.searchesOnCard, "the searches not on the card")
         starts.forEachIndexed { k, start ->
             val theta = alone.fit(start, lambdas[k], folds[k])
             val loss = alone.lossAndGradient(theta, FloatArray(alone.size), lambdas[k]) { problem.foldOf[it] != folds[k] }

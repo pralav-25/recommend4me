@@ -950,9 +950,15 @@ class Tags(
         return one(scope, facet, tag)
     }
 
-    /** The tags changed: their names worked out again now, their works read again — their chances, their search — and the model of the grades trained again. */
+    /**
+     * The tags changed by the user's word: THE WORD WRITTEN AND ANSWERED AT ONCE — the marking waits
+     * for nothing that computes (user, 2026-10-16): the names and the counts of every tag worked out
+     * again in the queue of the computations after the quiet ([schedule]), shown on the counts kept
+     * till then; their works read again — their chances, their search — and the model of the grades
+     * trained again.
+     */
     private fun changed(scope: TagScope, facet: String, items: Collection<ItemKey>) {
-        rename(scope, facet)
+        schedule("tags")
         told(scope, items)
     }
 

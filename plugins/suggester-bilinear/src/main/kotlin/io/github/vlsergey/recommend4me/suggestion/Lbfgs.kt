@@ -104,23 +104,74 @@ object Lbfgs {
 }
 
 /**
- * Where the numbers of one model's point — or its gradient — lie among the products of many: its
- * pieces, each [count] numbers at [at] of [floats], read one after another as one vector ([Lbfgs.Search]).
+ * WHERE A SEARCH'S VECTORS LIE, and what it does with them ([Search]): the main memory ([OnHost]),
+ * or the card's ([SearchOnCard]). Each of [size] numbers, made once for the whole search.
  */
-internal class Pieces(val floats: Array<Floats>, val at: IntArray, val count: IntArray) {
+internal interface Space<V> {
+    fun make(size: Int): V
+
+    fun dot(a: V, b: V, n: Int): Float
+
+    /** `y += c · x`. */
+    fun axpy(c: Float, x: V, y: V, n: Int)
+
+    /** `x *= c`. */
+    fun scale(c: Float, x: V, n: Int)
+
+    fun copy(from: V, into: V, n: Int)
+
+    fun put(from: FloatArray, into: V)
+
+    fun take(from: V, n: Int): FloatArray
+}
+
+/** A search's vectors in the main memory, worked in the wide registers. */
+internal object OnHost : Space<Floats> {
+    override fun make(size: Int) = Floats(size)
+
+    override fun dot(a: Floats, b: Floats, n: Int) = Simd.dot(a, 0, b, 0, n)
+
+    override fun axpy(c: Float, x: Floats, y: Floats, n: Int) = Simd.axpy(c, x, 0, y, 0, n)
+
+    override fun scale(c: Float, x: Floats, n: Int) {
+        for (k in 0 until n) x[k] = x[k] * c
+    }
+
+    override fun copy(from: Floats, into: Floats, n: Int) = into.copy(from, 0, 0, n)
+
+    override fun put(from: FloatArray, into: Floats) = into.put(from, 0, 0, from.size)
+
+    override fun take(from: Floats, n: Int) = FloatArray(n).also { from.take(it, 0, 0, n) }
+}
+
+/** Where a search's point is written for the function to be worked out at, and where its gradient is read from. */
+internal interface Place<V> {
+    /** [x] written there. */
+    fun write(x: V)
+
+    /** `x + t · d` written there: a point along a direction. */
+    fun writeStep(x: V, t: Float, d: V)
+
+    /** What is there read into [into]. */
+    fun read(into: V)
+}
+
+/**
+ * Where the numbers of one model's point — or its gradient — lie among the products of many: its
+ * pieces, each [count] numbers at [at] of [floats], read one after another as one vector ([Search]).
+ */
+internal class Pieces(val floats: Array<Floats>, val at: IntArray, val count: IntArray) : Place<Floats> {
     val size = count.sum()
 
-    /** The numbers of [from] (contiguous, of [size]) written into the pieces. */
-    fun write(from: Floats) {
+    override fun write(x: Floats) {
         var k = 0
         for (p in floats.indices) {
-            floats[p].copy(from, k, at[p], count[p])
+            floats[p].copy(x, k, at[p], count[p])
             k += count[p]
         }
     }
 
-    /** `x + t · d` written into the pieces: a point along a direction. */
-    fun writeStep(x: Floats, t: Float, d: Floats) {
+    override fun writeStep(x: Floats, t: Float, d: Floats) {
         write(x)
         var k = 0
         for (p in floats.indices) {
@@ -129,8 +180,7 @@ internal class Pieces(val floats: Array<Floats>, val at: IntArray, val count: In
         }
     }
 
-    /** The pieces read into [into] (contiguous, of [size]). */
-    fun read(into: Floats) {
+    override fun read(into: Floats) {
         var k = 0
         for (p in floats.indices) {
             into.copy(floats[p], at[p], k, count[p])
@@ -144,16 +194,16 @@ internal class Pieces(val floats: Array<Floats>, val at: IntArray, val count: In
  * names the point it wants the function at ([propose]) and is told what the function is there
  * ([answer]) — so that many models' points are worked out in one product of them all, the slowest
  * model's every step not holding up the rest. The same algorithm in single precision, its numbers
- * where the products lie: the point, the gradient, the direction, the remembered steps and changes,
- * made once for the whole search and reused — nothing made a step.
+ * in its [space] — the main memory or the card's: the point, the gradient, the direction, the
+ * remembered steps and changes, made once for the whole search and reused — nothing made a step.
  */
-internal class Search(private val size: Int, private val maxSteps: Int) {
+internal class Search<V>(private val space: Space<V>, private val size: Int, private val maxSteps: Int) {
     /** The point reached: the minimum once [done]. */
-    val x = Floats(size)
-    private val g = Floats(size)
-    private val d = Floats(size)
-    private val steps = Array(Lbfgs.MEMORY) { Floats(size) }
-    private val changes = Array(Lbfgs.MEMORY) { Floats(size) }
+    private val x = space.make(size)
+    private val g = space.make(size)
+    private val d = space.make(size)
+    private val steps = List(Lbfgs.MEMORY) { space.make(size) }
+    private val changes = List(Lbfgs.MEMORY) { space.make(size) }
     private val rhos = FloatArray(Lbfgs.MEMORY)
     private val alphas = FloatArray(Lbfgs.MEMORY)
 
@@ -175,15 +225,16 @@ internal class Search(private val size: Int, private val maxSteps: Int) {
         private set
 
     /** The search begun at [start] (contiguous, of the model's size). */
-    fun begin(start: FloatArray) {
-        x.put(start, 0, 0, size)
-    }
+    fun begin(start: FloatArray) = space.put(start, x)
+
+    /** The point reached, read out once the search has ended. */
+    fun result(): FloatArray = space.take(x, size)
 
     /** The point the search wants the function at, written into [point]. */
-    fun propose(point: Pieces) = if (!started) point.write(x) else point.writeStep(x, t, d)
+    fun propose(point: Place<V>) = if (!started) point.write(x) else point.writeStep(x, t, d)
 
     /** The function at the point proposed: [loss], its gradient in [grad]; the [point] still holding it. */
-    fun answer(loss: Float, point: Pieces, grad: Pieces) {
+    fun answer(loss: Float, point: Place<V>, grad: Place<V>) {
         evaluations++
         if (!started) {
             started = true
@@ -204,10 +255,10 @@ internal class Search(private val size: Int, private val maxSteps: Int) {
         val s = steps[at]
         val y = changes[at]
         point.read(s)
-        Simd.axpy(-1f, x, 0, s, 0, size)
+        space.axpy(-1f, x, s, size)
         grad.read(y)
-        Simd.axpy(-1f, g, 0, y, 0, size)
-        val sy = Simd.dot(s, 0, y, 0, size)
+        space.axpy(-1f, g, y, size)
+        val sy = space.dot(s, y, size)
         if (sy > 0f) {
             rhos[at] = 1f / sy
             if (remembered < Lbfgs.MEMORY) remembered++ else oldest = (oldest + 1) % Lbfgs.MEMORY
@@ -225,39 +276,35 @@ internal class Search(private val size: Int, private val maxSteps: Int) {
      * for (two loops, algorithm 7.4), the step back to one; false when the gradient is nought.
      */
     private fun direction(): Boolean {
-        val gNorm = sqrt(Simd.dot(g, 0, g, 0, size))
+        val gNorm = sqrt(space.dot(g, g, size))
         if (gNorm == 0f) return false
-        d.copy(g, 0, 0, size)
+        space.copy(g, d, size)
         for (r in remembered - 1 downTo 0) {
             val k = (oldest + r) % Lbfgs.MEMORY
-            alphas[r] = rhos[k] * Simd.dot(steps[k], 0, d, 0, size)
-            Simd.axpy(-alphas[r], changes[k], 0, d, 0, size)
+            alphas[r] = rhos[k] * space.dot(steps[k], d, size)
+            space.axpy(-alphas[r], changes[k], d, size)
         }
         val gamma = if (remembered == 0) 1f / gNorm else {
             val k = (oldest + remembered - 1) % Lbfgs.MEMORY
-            Simd.dot(steps[k], 0, changes[k], 0, size) / Simd.dot(changes[k], 0, changes[k], 0, size)
+            space.dot(steps[k], changes[k], size) / space.dot(changes[k], changes[k], size)
         }
-        scale(d, gamma)
+        space.scale(gamma, d, size)
         for (r in 0 until remembered) {
             val k = (oldest + r) % Lbfgs.MEMORY
-            val beta = rhos[k] * Simd.dot(changes[k], 0, d, 0, size)
-            Simd.axpy(alphas[r] - beta, steps[k], 0, d, 0, size)
+            val beta = rhos[k] * space.dot(changes[k], d, size)
+            space.axpy(alphas[r] - beta, steps[k], d, size)
         }
-        scale(d, -1f)
-        slope = Simd.dot(g, 0, d, 0, size)
+        space.scale(-1f, d, size)
+        slope = space.dot(g, d, size)
         if (slope >= 0) {
             // Not a descent: the history is forgotten, the gradient followed
             remembered = 0
             oldest = 0
-            d.copy(g, 0, 0, size)
-            scale(d, -1f / gNorm)
-            slope = Simd.dot(g, 0, d, 0, size)
+            space.copy(g, d, size)
+            space.scale(-1f / gNorm, d, size)
+            slope = space.dot(g, d, size)
         }
         t = 1f
         return true
-    }
-
-    private fun scale(f: Floats, c: Float) {
-        for (k in 0 until size) f[k] = f[k] * c
     }
 }

@@ -739,8 +739,11 @@ class SiteTest {
         // Nothing is merged by itself
         assertEquals(listOf("hulls"), tagsApi.getTag(hulls).body!!.variants.map { it.tag })
 
-        // Merged: the site's tags of the other bound to this one, the other no more
-        val merged = tagsApi.relateTags(TagRelationRequest(hulls, starhulls, TagRelation.MERGED)).body!!
+        // Merged: the site's tags of the other bound to this one, the other no more. The word answered
+        // at once, the names and the counts worked out in the queue after the quiet — here at once
+        assertEquals(hulls, tagsApi.relateTags(TagRelationRequest(hulls, starhulls, TagRelation.MERGED)).body!!.key)
+        tagService.scope()?.let { tagService.rename(it, it.facet) }
+        val merged = tagsApi.getTag(hulls).body!!
         assertEquals(hulls, merged.key)
         assertEquals(setOf("hulls", "starhulls"), merged.variants.map { it.tag }.toSet())
         assertEquals(4, merged.works)
@@ -897,8 +900,11 @@ class SiteTest {
         // Both site's tags merged rows of it; one taken out, to a new tag of its own; the answer stays with the tag
         fun rows() = tagsApi.listSimilarTags(hulls, null, 0, 50, null, null).body!!.tags
         assertEquals(setOf("hulls", "starhulls"), rows().filter { it.site != null }.onEach { assertEquals(TagRelation.MERGED, it.relation) }.map { it.site!!.tag }.toSet())
-        val out = tagsApi.bindSiteTag(TagBindingRequest("site", "starhulls")).body!!
-        assertTrue(out.key != hulls && out.key != starhulls, "a new tag ${out.key}")
+        val takenOut = tagsApi.bindSiteTag(TagBindingRequest("site", "starhulls")).body!!
+        assertTrue(takenOut.key != hulls && takenOut.key != starhulls, "a new tag ${takenOut.key}")
+        // Counted in the queue after the quiet — here at once
+        tagService.scope()?.let { tagService.rename(it, it.facet) }
+        val out = tagsApi.getTag(takenOut.key).body!!
         assertEquals(2, out.works)
         assertEquals(listOf("hulls"), tagsApi.getTag(hulls).body!!.variants.map { it.tag })
         assertEquals(listOf(hulls to true), stores.source("site")!!.corrections.facetsOf("t3").filter { it.facet == "tags" }.map { it.key to it.added })

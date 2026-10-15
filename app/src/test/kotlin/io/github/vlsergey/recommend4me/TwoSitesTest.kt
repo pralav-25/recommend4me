@@ -266,7 +266,10 @@ class TwoSitesTest {
         corrections.correctFacet("alpha", "a3", FacetCorrection(facet = "tags", added = true, key = breakers))
         corrections.correctFacet("beta", "b3", FacetCorrection(facet = "tags", added = false, key = waves))
 
-        val merged = tags.relateTags(TagRelationRequest(waves, breakers, TagRelation.MERGED)).body!!
+        tags.relateTags(TagRelationRequest(waves, breakers, TagRelation.MERGED))
+        // The names and the counts worked out in the queue after the quiet — here at once
+        tagService.scope()?.let { tagService.rename(it, it.facet) }
+        val merged = tags.getTag(waves).body!!
         assertEquals(setOf(SiteTagRef("alpha", "waves"), SiteTagRef("beta", "breakers")), merged.variants.map { SiteTagRef(it.source, it.tag) }.toSet())
         assertEquals(404, tags.getTag(breakers).statusCode.value())
         fun answers(source: String, item: String) = stores.source(source)!!.corrections.facetsOf(item).filter { it.facet == "tags" }.map { it.key to it.added }

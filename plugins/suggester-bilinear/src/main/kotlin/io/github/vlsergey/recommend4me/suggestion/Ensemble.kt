@@ -149,20 +149,29 @@ internal class Ensemble(
         onCard?.close()
     }
 
-    /** Uᵀ = Aᵀ Xᵀ of the first [kr] rows of Aᵀ — every model still searching: on the card when the features are there. */
-    private fun itemsCoordinates(kr: Int) {
+    /**
+     * Uᵀ = Aᵀ Xᵀ of the first [kr] rows of Aᵀ — every model still searching: on the card when the
+     * features are there; Aᵀ sent there first unless the searches write it there ([aOnCard]).
+     */
+    private fun itemsCoordinates(kr: Int, aOnCard: Boolean) {
         val c = onCard
         if (c == null) {
             Blas.gemm(false, true, kr, n, dx, aT, 0, dx, p.x.held, 0, dx, uT, 0, n)
             return
         }
-        c.aT.upload(aT, 0, 0, kr * dx)
+        if (aOnCard) {
+            // The names read A in the main memory: brought over, of the tasks with names alone
+            if (h > 0) c.aT.download(aT, 0, 0, kr * dx)
+        } else c.aT.upload(aT, 0, 0, kr * dx)
         c.cublas.gemm(false, true, kr, n, dx, c.aT, 0, dx, c.x, 0, dx, c.uT, 0, n)
         c.uT.download(uT, 0, 0, kr * n)
     }
 
-    /** dAᵀ = dUᵀ X of the first [kr] rows: on the card when the features are there. */
-    private fun itemsGradient(kr: Int) {
+    /**
+     * dAᵀ = dUᵀ X of the first [kr] rows: on the card when the features are there; taken back
+     * unless the searches read it there ([aOnCard]) — then only for the names to add their part.
+     */
+    private fun itemsGradient(kr: Int, aOnCard: Boolean) {
         val c = onCard
         if (c == null) {
             Blas.gemm(false, false, kr, dx, n, duT, 0, n, p.x.held, 0, dx, gA, 0, dx)
@@ -170,7 +179,7 @@ internal class Ensemble(
         }
         c.duT.upload(duT, 0, 0, kr * n)
         c.cublas.gemm(false, false, kr, dx, n, c.duT, 0, n, c.x, 0, dx, c.gA, 0, dx)
-        c.gA.download(gA, 0, 0, kr * dx)
+        if (!aOnCard || h > 0) c.gA.download(gA, 0, 0, kr * dx)
     }
 
     /** Of every slot, its pieces of the point and of the gradient: told once. */
@@ -197,19 +206,54 @@ internal class Ensemble(
             rounds, searchNanos / 1_000_000, featuresNanos / 1_000_000, pairsNanos / 1_000_000, restNanos / 1_000_000,
         )
 
-    /** Every model fitted from its start ([starts], each of [Bilinear]'s layout), [maxSteps] steps at most. */
+    /** Whether the searches of the last fitting were on the card. */
+    var searchesOnCard = false
+        private set
+
+    /**
+     * Every model fitted from its start ([starts], each of [Bilinear]'s layout), [maxSteps] steps at
+     * most. THE SEARCHES ON THE CARD when the features are there and it has room for their vectors —
+     * the weights A written and read there, never leaving it; else in the main memory.
+     */
     fun fit(starts: List<FloatArray>, maxSteps: Int, stop: () -> Boolean): Fits = Blas.wide {
-        val searches = Array(count) { k -> Search(size, maxSteps).also { it.begin(ordered(starts[k])) } }
+        val c = onCard
+        if (c != null) {
+            SearchOnCard(c.cublas).use { space ->
+                try {
+                    val scratch = space.make(size - r * dx)
+                    fun place(slot: Int, gradient: Boolean) = CardPieces(
+                        c.cublas, if (gradient) c.gA else c.aT, slot.toLong() * r * dx, r * dx,
+                        (if (gradient) grads else points)[slot].let { all -> Pieces(all.floats.copyOfRange(1, 5), all.at.copyOfRange(1, 5), all.count.copyOfRange(1, 5)) },
+                        scratch,
+                    )
+                    val searches = List(count) { Search(space, size, maxSteps) }
+                    searchesOnCard = true
+                    return@wide fitIn(searches, Array(count) { place(it, false) }, Array(count) { place(it, true) }, aOnCard = true, starts, stop)
+                } catch (e: NoRoomOnCard) {
+                    // Left in the main memory: the vectors made on the card freed as the space closes
+                }
+            }
+        }
+        searchesOnCard = false
+        fitIn(List(count) { Search(OnHost, size, maxSteps) }, points, grads, aOnCard = false, starts, stop)
+    }
+
+    /** Every model fitted by its search of [searches], its point written into [places] and its gradient read from [gradients] of its slot. */
+    private fun <V> fitIn(
+        searches: List<Search<V>>, places: Array<out Place<V>>, gradients: Array<out Place<V>>, aOnCard: Boolean,
+        starts: List<FloatArray>, stop: () -> Boolean,
+    ): Fits {
+        searches.forEachIndexed { k, s -> s.begin(ordered(starts[k])) }
         val losses = FloatArray(count)
         val endedAt = LongArray(count)
         while (active > 0) {
             if (stop()) throw CancellationException("the search is given up")
             var at = System.nanoTime()
-            for (slot in 0 until active) searches[slotModel[slot]].propose(points[slot])
+            for (slot in 0 until active) searches[slotModel[slot]].propose(places[slot])
             searchNanos += System.nanoTime() - at
-            evaluate(losses)
+            evaluate(losses, aOnCard)
             at = System.nanoTime()
-            for (slot in 0 until active) searches[slotModel[slot]].answer(losses[slot], points[slot], grads[slot])
+            for (slot in 0 until active) searches[slotModel[slot]].answer(losses[slot], places[slot], gradients[slot])
             searchNanos += System.nanoTime() - at
             rounds++
             // A model whose search ended leaves the products: the last one still searching takes its slot
@@ -222,7 +266,7 @@ internal class Ensemble(
                 } else slot++
             }
         }
-        Fits(searches.map { standard(it.x) }, IntArray(count) { searches[it].evaluations }, endedAt)
+        return Fits(searches.map { standard(it.result()) }, IntArray(count) { searches[it].evaluations }, endedAt)
     }
 
     /**
@@ -244,14 +288,15 @@ internal class Ensemble(
 
     /**
      * The loss of the model in every slot still searching at its point, into [losses]; its gradient
-     * into the gradient's pieces. [Bilinear.lossAndGradient] of every model at once.
+     * into the gradient's pieces. [Bilinear.lossAndGradient] of every model at once. [aOnCard]: the
+     * searches are on the card — the weights A are read there, and their gradient left there.
      */
-    internal fun evaluate(losses: FloatArray) {
+    internal fun evaluate(losses: FloatArray, aOnCard: Boolean = false) {
         val k = active
         val kr = k * r
         // Uᵀ = Aᵀ Xᵀ and Vᵀ = Bᵀ Zᵀ + Eᵀ of every model, one product each
         var at = System.nanoTime()
-        itemsCoordinates(kr)
+        itemsCoordinates(kr, aOnCard)
         featuresNanos += System.nanoTime() - at
         at = System.nanoTime()
         Blas.gemm(false, true, kr, m, dz, bT, 0, dz, p.z.held, 0, dz, vT, 0, m)
@@ -274,19 +319,30 @@ internal class Ensemble(
         Blas.gemm(false, false, kr, dz, m, gE, 0, m, p.z.held, 0, dz, gB, 0, dz)
         restNanos += System.nanoTime() - at
         at = System.nanoTime()
-        itemsGradient(kr)
+        itemsGradient(kr, aOnCard)
         featuresNanos += System.nanoTime() - at
         at = System.nanoTime()
-        if (h > 0) namesGradient(k)
+        if (h > 0) {
+            namesGradient(k)
+            // The gradient of A with the names' part, back where the searches read it
+            if (aOnCard) onCard!!.gA.upload(gA, 0, 0, kr * dx)
+        }
         // The penalty on every weight, once the products have written the gradient: the pair's own
-        // too, but the common bias, the base rate of every value
+        // too, but the common bias, the base rate of every value. Of A on the card when it is there
         for (slot in 0 until k) {
             val lambda = lambdas[slotModel[slot]]
             val common = pair[slot * Bilinear.PAIR + 2]
             val theta = points[slot]
             val gradient = grads[slot]
             var penalty = 0f
-            for (q in theta.floats.indices) {
+            val first = if (aOnCard) 1 else 0
+            if (aOnCard) {
+                val c = onCard!!
+                val aAt = slot.toLong() * r * dx
+                penalty += c.cublas.dot(c.aT, aAt, c.aT, aAt, r * dx)
+                c.cublas.axpy(2 * lambda, c.aT, aAt, c.gA, aAt, r * dx)
+            }
+            for (q in first until theta.floats.size) {
                 penalty += Simd.dot(theta.floats[q], theta.at[q], theta.floats[q], theta.at[q], theta.count[q])
                 Simd.axpy(2 * lambda, theta.floats[q], theta.at[q], gradient.floats[q], gradient.at[q], theta.count[q])
             }
@@ -476,7 +532,7 @@ internal class Ensemble(
             points[model].write(Floats.of(ordered(fitted[model])))
         }
         val kr = count * r
-        itemsCoordinates(kr)
+        itemsCoordinates(kr, aOnCard = false)
         Blas.gemm(false, true, kr, m, dz, bT, 0, dz, p.z.held, 0, dz, vT, 0, m)
         Simd.axpy(1f, eT, 0, vT, 0, kr * m)
         for (model in 0 until count) {
@@ -524,7 +580,7 @@ internal class Ensemble(
         val own = Floats(size)
         losses to List(count) { model ->
             grads[model].read(own)
-            standard(own)
+            standard(own.toArray())
         }
     }
 
@@ -539,8 +595,7 @@ internal class Ensemble(
     }
 
     /** This one's layout back in [Bilinear]'s. */
-    private fun standard(x: Floats): FloatArray {
-        val own = x.toArray()
+    private fun standard(own: FloatArray): FloatArray {
         val out = FloatArray(size)
         untranspose(own, 0, dx, out, 0)
         untranspose(own, r * dx, dz, out, dx * r)

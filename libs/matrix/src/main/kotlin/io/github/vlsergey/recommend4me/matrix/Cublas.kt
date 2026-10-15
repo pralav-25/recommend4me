@@ -29,8 +29,13 @@ class Cublas private constructor(
     private val cudaFree: MethodHandle,
     private val cudaMemcpy: MethodHandle,
     private val cublasSgemm: MethodHandle,
+    private val cublasSdot: MethodHandle,
+    private val cublasSaxpy: MethodHandle,
+    private val cublasSscal: MethodHandle,
     private val handle: MemorySegment,
 ) {
+    /** The scalars a call hands over and takes back — α, β, a dot's result: one place for them, made once; one thread at a time. */
+    private val scalars: MemorySegment = Arena.global().allocate(ValueLayout.JAVA_FLOAT, 4)
 
     /** Floats in the card's memory: [count] of them. Freed by [close]. */
     inner class DeviceFloats(val count: Long) : AutoCloseable {
@@ -48,6 +53,9 @@ class Cublas private constructor(
         /** [n] numbers at [at] written into [into] at [intoAt]: from the card to the main memory. */
         fun download(into: Floats, intoAt: Int, at: Long, n: Int) =
             copy(into.seg.asSlice(intoAt.toLong() * Float.SIZE_BYTES), at(at), n.toLong(), DEVICE_TO_HOST)
+
+        /** [n] numbers of [from] at [fromAt] written at [at]: on the card, nothing through the main memory. */
+        fun copyFrom(from: DeviceFloats, fromAt: Long, at: Long, n: Int) = copy(at(at), from.at(fromAt), n.toLong(), DEVICE_TO_DEVICE)
 
         fun at(k: Long): MemorySegment = MemorySegment.ofAddress(address.address() + k * Float.SIZE_BYTES)
 
@@ -76,15 +84,36 @@ class Cublas private constructor(
         a: DeviceFloats, aAt: Long, lda: Int, b: DeviceFloats, bAt: Long, ldb: Int, c: DeviceFloats, cAt: Long, ldc: Int, beta: Float = 0f,
     ) {
         if (m == 0 || n == 0) return
-        Arena.ofConfined().use { arena ->
-            val alpha = arena.allocateFrom(ValueLayout.JAVA_FLOAT, 1f)
-            val b0 = arena.allocateFrom(ValueLayout.JAVA_FLOAT, beta)
-            val status = cublasSgemm.invokeExact(
-                handle, if (transB) OP_T else OP_N, if (transA) OP_T else OP_N, n, m, k,
-                alpha, b.at(bAt), ldb, a.at(aAt), lda, b0, c.at(cAt), ldc,
-            ) as Int
-            check(status == 0) { "a product on the card failed: cuBLAS status $status" }
-        }
+        scalars.setAtIndex(ValueLayout.JAVA_FLOAT, 0, 1f)
+        scalars.setAtIndex(ValueLayout.JAVA_FLOAT, 1, beta)
+        val status = cublasSgemm.invokeExact(
+            handle, if (transB) OP_T else OP_N, if (transA) OP_T else OP_N, n, m, k,
+            scalar(0), b.at(bAt), ldb, a.at(aAt), lda, scalar(1), c.at(cAt), ldc,
+        ) as Int
+        check(status == 0) { "a product on the card failed: cuBLAS status $status" }
+    }
+
+    private fun scalar(k: Long): MemorySegment = scalars.asSlice(k * Float.SIZE_BYTES, Float.SIZE_BYTES.toLong())
+
+    /** `Σ a[aAt + q] · b[bAt + q]` for q under [n], on the card; the sum brought back. */
+    fun dot(a: DeviceFloats, aAt: Long, b: DeviceFloats, bAt: Long, n: Int): Float {
+        val status = cublasSdot.invokeExact(handle, n, a.at(aAt), 1, b.at(bAt), 1, scalar(2)) as Int
+        check(status == 0) { "a dot on the card failed: cuBLAS status $status" }
+        return scalars.getAtIndex(ValueLayout.JAVA_FLOAT, 2)
+    }
+
+    /** `y[yAt + q] += c · x[xAt + q]` for q under [n], on the card. */
+    fun axpy(c: Float, x: DeviceFloats, xAt: Long, y: DeviceFloats, yAt: Long, n: Int) {
+        scalars.setAtIndex(ValueLayout.JAVA_FLOAT, 0, c)
+        val status = cublasSaxpy.invokeExact(handle, n, scalar(0), x.at(xAt), 1, y.at(yAt), 1) as Int
+        check(status == 0) { "an axpy on the card failed: cuBLAS status $status" }
+    }
+
+    /** `x[at + q] *= c` for q under [n], on the card. */
+    fun scale(c: Float, x: DeviceFloats, at: Long, n: Int) {
+        scalars.setAtIndex(ValueLayout.JAVA_FLOAT, 0, c)
+        val status = cublasSscal.invokeExact(handle, n, scalar(0), x.at(at), 1) as Int
+        check(status == 0) { "a scaling on the card failed: cuBLAS status $status" }
     }
 
     companion object {
@@ -92,6 +121,7 @@ class Cublas private constructor(
         private const val OP_T = 1
         private const val HOST_TO_DEVICE = 1
         private const val DEVICE_TO_HOST = 2
+        private const val DEVICE_TO_DEVICE = 3
 
         private var opened: Cublas? = null
         private var tried = false
@@ -127,6 +157,9 @@ class Cublas private constructor(
                         blas, "cublasSgemm_v2",
                         FunctionDescriptor.of(int, address, int, int, int, int, int, address, address, int, address, int, address, address, int),
                     ),
+                    cublasSdot = handleOf(blas, "cublasSdot_v2", FunctionDescriptor.of(int, address, int, address, int, address, int, address)),
+                    cublasSaxpy = handleOf(blas, "cublasSaxpy_v2", FunctionDescriptor.of(int, address, int, address, address, int, address, int)),
+                    cublasSscal = handleOf(blas, "cublasSscal_v2", FunctionDescriptor.of(int, address, int, address, address, int)),
                     handle = handle,
                 ).takeIf { it.checked() }.also { if (it == null) log.warn("cuBLAS in {} computes a product wrong: the products stay on the processor", dir) }
             } catch (e: Throwable) {

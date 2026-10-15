@@ -176,7 +176,8 @@ class BilinearSuggester internal constructor(
                 losses = fits.losses
                 endedAt = fits.endedAt
                 ensemble.heldOut(weights, List(count) { held[it / FOLDS] }, List(count) { unseen[it / FOLDS] })
-                where = (if (ensemble.featuresOnCard) "the items' features on the card (cuBLAS)" else "on the processor (OpenBLAS)") + ", " + ensemble.timing
+                where = (if (ensemble.featuresOnCard) "the items' features on the card (cuBLAS)" else "on the processor (OpenBLAS)") +
+                    (if (ensemble.searchesOnCard) ", the searches on the card" else ", the searches on the processor") + ", " + ensemble.timing
             }
         } else {
             where = "on the card (ONNX Runtime), a model at a time"
