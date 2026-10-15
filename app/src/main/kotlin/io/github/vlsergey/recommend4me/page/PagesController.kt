@@ -67,12 +67,11 @@ class PagesController(
         val summary = cards.cards(type, listOf(key)).firstOrNull() ?: return null
         val schema = store.schema
         val wanted = decor?.facets.orEmpty().map { it.facet }.toSet() + schema.facets.filter { it.suggest || it.infer }.map { it.key }
-        // First: a work just opened gets its chances made here; an answer made those it changed current itself
-        val suggested = suggestions.ofItem(store, itemId).map { it.toApi(store) }
-        suggestions.ensureFor(store, itemId)
+        // Its chances made now in memory, once for the suggestions and the values both
+        val chances = suggestions.chances(store, listOf(itemId))[itemId].orEmpty()
+        val suggested = suggestions.ofItem(store, itemId, chances).map { it.toApi(store) }
         val site = store.items.facets(itemId)
         val corrections = store.corrections.facetsOf(itemId)
-        val chances = store.suggestions.ofItems(listOf(itemId))[itemId]
         val names = wanted.associateWith { facet ->
             store.names(facet, site[facet].orEmpty() + corrections.filter { it.facet == facet }.map { it.key } + ModelValues.named(chances?.get(facet)))
         }

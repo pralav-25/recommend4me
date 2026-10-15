@@ -11,6 +11,8 @@ import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.correction.FacetAnswered
 import io.github.vlsergey.recommend4me.suggestion.FacetChancesChanged
+import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
+import io.github.vlsergey.recommend4me.suggestion.WorkChances
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectors
@@ -45,6 +47,7 @@ class Search(
     private val textVectors: TextVectors,
     private val phrases: PhraseVectors,
     private val workload: Workload,
+    private val suggestions: FacetSuggestions,
 ) {
     private val pending = ConcurrentHashMap<String, MutableSet<ItemKey>>()
     private val built = ConcurrentHashMap<String, CountDownLatch>()
@@ -87,11 +90,15 @@ class Search(
         }
     }
 
-    /** Every document of a type, streamed: the items read a chunk at a time. */
+    /**
+     * Every document of a type, streamed: the items read a chunk at a time; the values the model
+     * gives them made of every work of a source in one pass first, held while its chunks are read.
+     */
     private fun documentsOf(type: TypeStore): Sequence<SearchDocument> = sequence {
         for (s in type.sources) {
             val ids = s.items.keys().map { it.id }
-            for (chunk in ids.chunked(CHUNK)) yieldAll(documents(s, chunk).values)
+            val chances = suggestions.chances(s, null)
+            for (chunk in ids.chunked(CHUNK)) yieldAll(documents(s, chunk, chances = chances).values)
         }
     }
 
@@ -99,12 +106,13 @@ class Search(
      * The documents of the items [ids] of a source, read in one batch per table: their fields — the
      * chapters read among them — and, with [passages], the passages of the texts searched by meaning
      * and of the chapters: every window of a text longer than one with its own vector, a shorter one
-     * whole with the text's.
+     * whole with the text's. The values the model gives them of their [chances], made now of them
+     * when not given.
      */
-    fun documents(s: SourceStore, ids: List<String>, passages: Boolean = true): Map<ItemKey, SearchDocument> {
+    fun documents(s: SourceStore, ids: List<String>, passages: Boolean = true, chances: WorkChances? = null): Map<ItemKey, SearchDocument> {
         val schema = s.schema
         val heads = s.items.heads(ids)
-        val chances = s.suggestions.ofItems(ids)
+        val chances = chances ?: suggestions.chances(s, ids)
         val facets = s.items.facetsOf(ids).mapValues { (id, site) -> ModelValues.of(schema, site, chances[id]) }
         val facetCorrections = s.corrections.facetsOf(ids)
         val hierarchies = s.hierarchies()

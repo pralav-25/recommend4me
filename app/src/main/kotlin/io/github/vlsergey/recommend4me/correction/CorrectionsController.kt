@@ -54,22 +54,21 @@ class CorrectionsController(
     private fun corrected(store: SourceStore, item: String): ResponseEntity<ItemDetails> {
         events.publishEvent(ItemsChanged(store.id, listOf(item)))
         recommendations.scheduleRetrain(store.type, "correction")
-        // Not waiting for the chances the change makes: the page asks for them apart
-        return details.read(ItemKey(store.id, item), withChances = false)?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
+        // Its chances made of the change as the work is read
+        return details.read(ItemKey(store.id, item))?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
     }
 
     /**
      * An answer on a facet: [change] written, and nothing else — nothing of the work read back: a
      * second answer right after the first waits for no reading. The page shows the answer once it
-     * is kept and reads the work anew once the answers have settled; the chances it changes are
-     * made apart ([FacetSuggestions.answered]), and the page asks for them when they are made
-     * (settleSuggestions).
+     * is kept and reads the work anew once the answers have settled; its chances are made of the
+     * answer when it is read ([FacetSuggestions.chances]).
      */
     private fun answered(store: SourceStore, item: String, facet: String, change: () -> Unit) {
         val started = System.currentTimeMillis()
         change()
-        suggestions.answered(store, item, facet)
-        // The search and the model of the grades read the user's answers: the work is indexed and learnt anew
+        // The models of the facets, the search and the model of the grades read the user's answers:
+        // fitted, indexed and learnt anew in the background
         events.publishEvent(FacetAnswered(store.type, store.id, item, facet))
         log.info("{}: an answer on {} of {} written in {} ms", store.id, facet, item, System.currentTimeMillis() - started)
     }

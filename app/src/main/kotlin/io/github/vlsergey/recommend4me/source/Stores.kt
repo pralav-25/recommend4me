@@ -108,7 +108,7 @@ class SourceStore(
     /** The drafts of the layer of the source's works ([LayerDrafts][io.github.vlsergey.recommend4me.draft.LayerDrafts]), in the model database of its content type. */
     val drafts = DraftRepository(databases.model(source.contentType), source.id)
 
-    val suggestions = SuggestionRepository(databases.model(source.contentType), source.id, drafts)
+    val suggestions = SuggestionRepository(databases.model(source.contentType), source.id)
 
     /** The names of the layer of universes: the dictionary's of the content type, whatever the source; none for a type without universes. */
     private val dictionaryNames = if (contentType.universes) UniverseNames(UniverseRepository(databases.dictionaries.dsl, languages, CatalogueRenameRepository(databases.preferences.dsl))) else null

@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.suggestion
 
 import io.github.vlsergey.recommend4me.correction.Corrected
+import io.github.vlsergey.recommend4me.correction.FacetAnswered
 import io.github.vlsergey.recommend4me.correction.FacetCorrection
 import io.github.vlsergey.recommend4me.encoder.TextEncoder
 import io.github.vlsergey.recommend4me.encoder.TextKind
@@ -42,12 +43,9 @@ import java.nio.file.Path
 import java.time.Instant
 import java.util.IdentityHashMap
 import java.util.concurrent.CancellationException
-import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantLock
@@ -57,6 +55,12 @@ private val log = LoggerFactory.getLogger(FacetSuggestions::class.java)
 
 /** The model gave items of a source other values of a facet it works out: what reads them reads them again. */
 data class FacetChancesChanged(val source: String, val ids: List<String>)
+
+/** The chances of works, made in memory when they are read ([FacetSuggestions.chances]): item to facet to value to chance. */
+typealias WorkChances = Map<String, Map<String, Map<String, Chance>>>
+
+/** [WorkChances] as they are made, a facet after another. */
+private typealias MadeChances = HashMap<String, HashMap<String, Map<String, Chance>>>
 
 /** The values of a facet an item lacks and more likely has than not, as the interface shows them. */
 class ItemFacetSuggestions(val facet: FacetDef, val suggested: List<Chance>, val names: Map<String, String>)
@@ -70,19 +74,24 @@ class ItemFacetCandidates(val facet: FacetDef, val candidates: List<FacetCandida
 /**
  * WHAT THE MODEL SAYS OF THE VALUES OF FACETS, by the suggester plugin, for every facet a source
  * marks [suggest][FacetDef.suggest] or [infer][FacetDef.infer]: the chance of every value a work
- * has, and of every value it lacks that it more likely has than not. Kept in the model database of
- * the content type with what each item's chances were made of — every value of the item, the
- * user's answers, its texts, its chapters — as a fingerprint.
+ * has, and of every value it lacks that it more likely has than not.
  *
- * The suggester is fitted again whenever anything it learns from has changed (the fingerprint of
- * the whole facet), and every item is then worked out again. A page that asks for an item that
- * never had chances gets them at once, by the weights fitted last. An answer of the user is not
- * kept waiting for the chances it changes: they are made apart ([answered]), and a making of them
- * — of a work, of the whole source — is given up for a newer change and made again after it.
+ * ONLY THE MODEL OF EACH FACET IS KEPT ([SuggestionRepository]): its fitted state and the values it
+ * chooses from. THE CHANCES OF THE WORKS ARE NOT (user, 2026-10-15): whoever reads works — a page, a
+ * card, a filter over the catalogue, the search index, the training of the grades — gets them made
+ * in memory of those works alone, from their vectors and values, by the models kept ([chances]).
+ * Nothing waits for a refit, nothing is written of a work.
  *
- * NOTHING IS KEPT BETWEEN OPERATIONS: each one reads the source's items, values and vectors in one
- * pass, and drops them at its end. Only the work waiting is kept: the sources with changes, how
- * many changes each had, the works whose chances are being made after answers.
+ * THE FACETS ARE WORKED OUT IN A CHAIN, in the order of [facetsOf]: each reads as its context the
+ * values the site and the user give of every other facet, and the values the model gives of the
+ * facets before it, made in the same pass — a work's characters are those of the universes given
+ * before them, its pairings pairs of the characters given before them. The fitting and the reading
+ * follow the same chain: a facet is judged on what it was fitted on.
+ *
+ * The models are fitted again in the background, in the queue of the computations, whenever
+ * anything they learn from changed (the fingerprint of the whole facet); a fitting under way is
+ * given up for a newer change and made again after it. Of the data nothing is kept between
+ * operations; only the work waiting: the sources with changes, how many changes each had.
  */
 @Service
 class FacetSuggestions(
@@ -101,16 +110,10 @@ class FacetSuggestions(
     /** How many changes each source has had ([changed]): a refresh begun before the last one is given up. */
     private val generations = ConcurrentHashMap<String, AtomicLong>()
 
-    /** The items whose chances are being made current after the user's answers ([answered]), by "source/item"; guarded by itself. */
-    private val answering = HashMap<String, Answering>()
-
-    /** The making of chances after answers: apart from the background refresh, which takes seconds a facet. */
-    private val answers = Executors.newSingleThreadExecutor { r -> Thread(r, "answers").apply { isDaemon = true } }
-
     /**
-     * The facets the model works on, in the order they are worked out: those it gives values of
-     * first — their values are the context of the others, and the pairings are of the characters
-     * given before them — so that one round settles them all.
+     * The facets the model works on, in the order of the chain they are worked out in: those it
+     * gives values of first — their values are the context of the others, the characters are of the
+     * universes given before them, the pairings of the characters — in the order of the schema.
      */
     fun facetsOf(store: SourceStore): List<FacetDef> = store.schema.facets.filter { it.suggest || it.infer }.sortedBy { !it.infer }
 
@@ -123,16 +126,20 @@ class FacetSuggestions(
     @EventListener
     fun partsSaved(event: PartsSaved) = changed(event.source, "parts")
 
+    /** The user's answer on a work's value: what the models of the facets learn from. */
+    @EventListener
+    fun answered(event: FacetAnswered) = changed(event.source, "answer")
+
     /**
-     * Something the source's chances are made of changed — the [reason], a key the interface words,
+     * Something the source's models learn from changed — the [reason], a key the interface words,
      * told in the queue of the works till the refresh begins: the source is refreshed after the
-     * quiet that follows. A refresh under way is given up ([newer]): it works on what it read before
-     * the change, and the one after the quiet works on all of it.
+     * quiet that follows. A refresh under way is given up: it works on what it read before the
+     * change, and the one after the quiet works on all of it.
      */
-    private fun changed(source: String, reason: String, newer: Boolean = true) {
+    private fun changed(source: String, reason: String) {
         val store = stores.source(source) ?: return
         if (facetsOf(store).isEmpty()) return
-        if (newer) generationOf(source).incrementAndGet()
+        generationOf(source).incrementAndGet()
         waiting += source
         val scheduling = scheduled.compareAndSet(false, true)
         val due = if (scheduling) Instant.now().plusSeconds(DELAY_SECONDS) else null
@@ -180,9 +187,9 @@ class FacetSuggestions(
     }
 
     /**
-     * Fits the suggester of every facet of the source again when what it learns from changed, and
-     * works out every item whose fingerprint changed — every item after a fitting. For a caller that
-     * waits for it: carried through whatever changes meanwhile; those are refreshed after their quiet.
+     * Fits the model of every facet of the source again when what it learns from changed, down the
+     * chain. For a caller that waits for it: carried through whatever changes meanwhile; those are
+     * refreshed after their quiet.
      */
     fun refresh(store: SourceStore) = refresh(store, givenUp = false, mapOf("asked" to 1))
 
@@ -190,26 +197,39 @@ class FacetSuggestions(
      * [refresh]; [givenUp] — with a [CancellationException] once the source changes again
      * ([changed]): the background's; [reasons] — what it is made for, told in the queue of the works
      * beside those every facet was planned for ([changed]); null — those alone.
+     *
+     * Every facet a work of the queue of its own; the chances of every work of the facets before,
+     * made in the pass, are the context of the next — held for the pass alone. The works whose given
+     * values a refit changed are told once at its end ([FacetChancesChanged]).
      */
     private fun refresh(store: SourceStore, givenUp: Boolean, reasons: Map<String, Int>?) {
         val encoder = plugins.textEncoder() ?: return
         val generation = generationOf(store.id).get()
         val stop = if (givenUp) ({ generationOf(store.id).get() != generation }) else ({ false })
-        facetsOf(store).forEach { facet ->
-            val suggester = plugins.suggester(store.id, facet.key) ?: return@forEach
+        val facets = facetsOf(store)
+        val made = seeded(store, null)
+        val changedIds = LinkedHashSet<String>()
+        facets.forEachIndexed { k, facet ->
             val work = refreshing(store.id, facet)
             val planned = workload.take(work)
-            workload.run(work, reasons.orEmpty().toMutableMap().apply { planned.forEach { (k, n) -> merge(k, n, Int::plus) } }) { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
+            val suggester = plugins.suggester(store.id, facet.key) ?: return@forEachIndexed
+            workload.run(work, reasons.orEmpty().toMutableMap().apply { planned.forEach { (key, n) -> merge(key, n, Int::plus) } }) {
+                lockOf(store, facet).withLock { changedIds += fitFacet(store, facets, k, suggester, encoder, made, stop) }
+            }
         }
+        if (changedIds.isNotEmpty()) events.publishEvent(FacetChancesChanged(store.id, changedIds.toList()))
     }
 
     /**
      * The facet's suggester fitted again FROM SCRATCH — every setting tried anew, not a short walk on
-     * from the state fitted last — and every item worked out again: the user asked for it on the page
-     * of the models. In the background; false when the source has no such facet.
+     * from the state fitted last: the user asked for it on the page of the models. Its context, the
+     * facets before it in the chain, made of every work first. In the background; false when the
+     * source has no such facet.
      */
     fun searchAnew(store: SourceStore, facetKey: String): Boolean {
-        val facet = facetsOf(store).firstOrNull { it.key == facetKey } ?: return false
+        val facets = facetsOf(store)
+        val k = facets.indexOfFirst { it.key == facetKey }.takeIf { it >= 0 } ?: return false
+        val facet = facets[k]
         if (plugins.suggester(store.id, facet.key) == null) return false
         val encoder = plugins.textEncoder() ?: return false
         val id = "${store.id}/${facet.key}"
@@ -218,7 +238,10 @@ class FacetSuggestions(
             try {
                 // The suggester named when it runs: one chosen meanwhile is the one fitted
                 val suggester = plugins.suggester(store.id, facet.key) ?: return@execute
-                workload.run(Work("suggesterAnew", source = store.id, facet = facet.key), mapOf("asked" to 1)) { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, anew = true) } }
+                val changedIds = workload.run(Work("suggesterAnew", source = store.id, facet = facet.key), mapOf("asked" to 1)) {
+                    lockOf(store, facet).withLock { fitFacet(store, facets, k, suggester, encoder, chain(store, null, k), { false }, anew = true) }
+                }
+                if (changedIds.isNotEmpty()) events.publishEvent(FacetChancesChanged(store.id, changedIds))
             } catch (e: Exception) {
                 log.warn("{}: the suggester of {} was not fitted anew: {}", store.id, facet.key, e.message, e)
             } finally {
@@ -243,10 +266,11 @@ class FacetSuggestions(
      * every one on ([FacetComparisons]); null when the source has no such facet or nothing to read with.
      */
     fun task(store: SourceStore, facetKey: String): SuggestionTask? {
-        val facet = facetsOf(store).firstOrNull { it.key == facetKey } ?: return null
+        val facets = facetsOf(store)
+        val k = facets.indexOfFirst { it.key == facetKey }.takeIf { it >= 0 } ?: return null
         val encoder = plugins.textEncoder() ?: return null
-        val vocabulary = universeVocabulary(store, facet, null) ?: examplesVocabulary(store, facet)
-        return load(store, facet, encoder, vocabulary, null).task
+        val made = chain(store, null, k)
+        return load(store, facets[k], encoder, vocabularyOf(store, facets[k], null, made), null, made, null).task
     }
 
     /** The facets being fitted anew now ([searchAnew]), by "source/facet": the work under way, nothing of the data. */
@@ -255,183 +279,172 @@ class FacetSuggestions(
     /** Whether the facet's suggester is being fitted anew ([searchAnew]). */
     fun searching(store: SourceStore, facetKey: String): Boolean = "${store.id}/$facetKey" in searching
 
-    /** One lock a facet: a page waits only for the facet it asks of, not for a long fitting of another. */
+    /** One lock a facet: a fitting of one facet does not wait for a long fitting of another. */
     private fun lockOf(store: SourceStore, facet: FacetDef) = locks.computeIfAbsent("${store.id}/${facet.key}") { ReentrantLock() }
 
     /**
-     * The item's chances of the [facets] made now, by the weights fitted last — a facet never fitted
-     * is fitted in the background, the page does not wait for it. Not under the lock of
-     * the facet: a refit of the whole facet takes seconds, and the user waits for these. A refit
-     * under way may write the item's chances made of what it read before; their fingerprint then
-     * tells they are stale, and they are made again.
+     * THE CHANCES OF THE WORKS [ids] — of every work of the source when null — made now in memory
+     * by the models kept, down the chain of the facets; of the facets up to [through] alone when
+     * given (none when the source works out no such facet). Of every facet the values shown: had,
+     * rejected, given as examples, likely, and the likeliest others offered; the drafts of the layer
+     * among them ([Chance.draftedFrom]). A facet never fitted has no chances, its drafts alone.
+     * Nothing is written, nothing waited for: never in the queue of the computations — the marking
+     * of a work waits for nothing (user, 2026-10-15).
      */
-    private fun refreshNow(store: SourceStore, itemId: String, facets: List<FacetDef>, stop: () -> Boolean = { false }) {
-        val encoder = plugins.textEncoder() ?: return
-        facets.forEach { facet -> plugins.suggester(store.id, facet.key)?.let { refreshFacet(store, facet, it, encoder, itemId, stop) } }
+    fun chances(store: SourceStore, ids: Collection<String>?, through: String? = null): WorkChances {
+        val facets = facetsOf(store)
+        val upTo = if (through == null) facets.size else facets.indexOfFirst { it.key == through } + 1
+        return chain(store, ids, upTo)
     }
 
-    /** What the model of the facet reads — of the item [only] alone, when given. */
-    private fun load(store: SourceStore, facet: FacetDef, encoder: TextEncoder, vocabulary: Vocabulary?, only: String?) = FacetData.load(
+    /** [chances] of the [wanted] facets alone — those on a card, those the model of the grades reads: the chain down to the last of them. */
+    fun chancesOf(store: SourceStore, ids: Collection<String>?, wanted: Collection<String>): WorkChances =
+        facetsOf(store).lastOrNull { it.key in wanted }?.let { chances(store, ids, it.key) } ?: seeded(store, ids)
+
+    /** The chances of the works [ids] (every work when null) of the first [upTo] facets of the chain. */
+    private fun chain(store: SourceStore, ids: Collection<String>?, upTo: Int): MadeChances {
+        val made = seeded(store, ids)
+        val encoder = plugins.textEncoder() ?: return made
+        if (ids != null && ids.isEmpty()) return made
+        val facets = facetsOf(store)
+        for (k in 0 until minOf(upTo, facets.size)) {
+            val facet = facets[k]
+            val suggester = plugins.suggester(store.id, facet.key) ?: continue
+            val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id } ?: continue
+            val vocabulary = vocabularyOf(store, facet, ids, made)
+            val data = load(store, facet, encoder, vocabulary, ids, made, stored.values)
+            if (data.values.isEmpty()) continue
+            val fitted = suggester.unpack(stored.content, data.task) ?: continue
+            keep(made, facet, data, fitted.on(data.task), vocabulary)
+        }
+        return made
+    }
+
+    /** The drafts of the layer of the works [ids] (every work when null) as their chances: 1, marked so, till the model gives its own. */
+    private fun seeded(store: SourceStore, ids: Collection<String>?): MadeChances {
+        val made = MadeChances()
+        (if (ids == null) store.drafts.all() else store.drafts.ofItems(ids)).forEach { (id, list) ->
+            list.groupBy { it.facet }.forEach { (facet, drafts) ->
+                made.getOrPut(id) { HashMap() }[facet] = drafts.associate { d -> d.key to Chance(id, facet, d.key, had = false, chance = 1.0, draftedFrom = d.from) }
+            }
+        }
+        return made
+    }
+
+    /**
+     * The chances of the [facet] of every work of [data] put among [made] — over the drafts, which
+     * keep the model's chance — and the values the model alone gives each (no draft among them):
+     * what a refit compares.
+     */
+    private fun keep(made: MadeChances, facet: FacetDef, data: FacetData, scores: SuggestionScores, vocabulary: Vocabulary?): Map<String, Set<String>> {
+        val given = HashMap<String, Set<String>>()
+        data.ids.indices.chunked(CHUNK).forEach { chunk ->
+            val chances = scores.of(chunk.toIntArray())
+            chunk.forEachIndexed { j, i ->
+                val id = data.ids[i]
+                val own = chancesOf(id, facet.key, chances[j], data, i, vocabulary?.allowed?.invoke(id)).associateBy { it.key }
+                if (facet.infer) given[id] = ModelValues.given(own).toSet()
+                val byFacet = made.getOrPut(id) { HashMap() }
+                val drafts = byFacet[facet.key].orEmpty().values.filter { it.drafted }
+                byFacet[facet.key] = if (drafts.isEmpty()) own else HashMap(own).also { out ->
+                    drafts.forEach { d -> out[d.key] = out[d.key]?.copy(draftedFrom = d.draftedFrom) ?: d }
+                }
+            }
+        }
+        return given
+    }
+
+    /** The vocabulary of the facet: of the universes, or of a facet learnt from the sites' facet; null of any other. */
+    private fun vocabularyOf(store: SourceStore, facet: FacetDef, ids: Collection<String>?, made: WorkChances): Vocabulary? =
+        universeVocabulary(store, facet, ids, made) ?: examplesVocabulary(store, facet, ids)
+
+    /**
+     * What the model of the facet reads — of the works [ids] alone, when given, judged among the
+     * values the model kept chooses from ([valueKeys]) — with the values the model gives of the
+     * [context] facets, [made] before it in the chain.
+     */
+    private fun load(
+        store: SourceStore, facet: FacetDef, encoder: TextEncoder, vocabulary: Vocabulary?, ids: Collection<String>?,
+        made: WorkChances, valueKeys: List<String>?,
+    ) = FacetData.load(
         store, facet, encoder, vocabulary?.values.orEmpty(),
-        imageEncoder = plugins.imageEncoder()?.id, sets = stores.typeOf(store.id).embeddings.ids(), only = only,
-        // Counted in the texts of the item [only] alone: no other item's chances are made
-        mentions = vocabulary?.mentions(store, only),
+        imageEncoder = plugins.imageEncoder()?.id, sets = stores.typeOf(store.id).embeddings.ids(), only = ids,
+        modelled = made, valueKeys = valueKeys,
+        // Counted in the texts of the works [ids] alone: no other work's chances are made
+        mentions = vocabulary?.mentions(store, ids),
         allowed = vocabulary?.allowed, groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
         hintNames = vocabulary?.hintNames.orEmpty(), hintAmong = vocabulary?.hintAmong ?: { emptyList() },
     )
 
     /**
-     * The chance of EVERY value of the facet for the item — of a facet whose values a work may have
-     * are limited ([Vocabulary.allowed]), of those it may have — made now by the weights fitted last
-     * and not kept: only the likeliest of an item's chances are kept, and the user who asks for more
-     * gets the rest from here. Null when the facet was never fitted.
+     * The model of the [k]-th of the [facets] fitted again when what it learns from changed — every
+     * setting tried anew when [anew], the user asked for it ([searchAnew]) — and every work's chances
+     * of it made into [made], the context of the facets after it. [stop] is asked between the
+     * stages, and by the fitting between its steps: newer data came, and the work is given up with a
+     * [CancellationException] before anything made of the old is kept. Answers the works whose
+     * given values a refit changed: every work scored by the model before and after it.
      */
-    private fun everyChance(store: SourceStore, facet: FacetDef, itemId: String, vocabulary: Vocabulary?): List<Chance>? {
-        val suggester = plugins.suggester(store.id, facet.key) ?: return null
-        val encoder = plugins.textEncoder() ?: return null
-        val data = load(store, facet, encoder, vocabulary, itemId)
-        val i = data.ids.indexOf(itemId).takeIf { it >= 0 } ?: return null
-        val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id } ?: return null
-        val fitted = suggester.unpack(stored.content, data.task) ?: return null
-        val chances = fitted.on(data.task).of(intArrayOf(i)).single()
-        val has = data.held[i].toHashSet()
-        val named = data.task.mentions[i]
-        return chances.indices.map { v -> Chance(itemId, facet.key, data.values[v], v in has, chances[v].toDouble(), named?.let { it[v] ?: 0 }) }
-    }
-
-    /**
-     * The facet worked out: of every item whose fingerprint changed — of the item [only], by the
-     * weights fitted last, when given. [stop] is asked between the stages, and by the fitting
-     * between its steps: newer data came, and the work is given up with a [CancellationException]
-     * before anything made of the old is kept.
-     */
-    private fun refreshFacet(
-        store: SourceStore, facet: FacetDef, suggester: FacetSuggester, encoder: TextEncoder, only: String?, stop: () -> Boolean = { false },
-        /** Fitted again from scratch, every setting tried anew, whatever it was fitted on — the user asked for it ([searchAnew]). */
+    private fun fitFacet(
+        store: SourceStore, facets: List<FacetDef>, k: Int, suggester: FacetSuggester, encoder: TextEncoder, made: MadeChances, stop: () -> Boolean,
         anew: Boolean = false,
-    ) {
+    ): List<String> {
+        val facet = facets[k]
         fun checkpoint() {
             if (stop()) throw CancellationException("${store.id}: ${facet.key} given up for newer changes")
         }
         val started = System.currentTimeMillis()
-        val vocabulary = universeVocabulary(store, facet, only) ?: examplesVocabulary(store, facet)
+        val vocabulary = vocabularyOf(store, facet, null, made)
         val vocabularyMillis = System.currentTimeMillis() - started
         checkpoint()
-        val data = load(store, facet, encoder, vocabulary, only)
+        val data = load(store, facet, encoder, vocabulary, null, made, null)
         val read = System.currentTimeMillis() - started
         checkpoint()
         // The whole task kept in a file when asked for: its fitting made again and measured apart from the application
-        if (only == null) System.getenv(TASKS_FOLDER)?.let { dir -> SuggestionTaskFile.write(data.task, Path.of(dir, "${store.id}-${facet.key}.task.gz")) }
-        val now = Instant.now()
-        if (data.values.isEmpty()) return nothingToGive(store, facet, data, only, now)
+        System.getenv(TASKS_FOLDER)?.let { dir -> SuggestionTaskFile.write(data.task, Path.of(dir, "${store.id}-${facet.key}.task.gz")) }
+        if (data.values.isEmpty()) return emptyList()
         val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id }
         val kept = stored?.let { suggester.unpack(it.content, data.task) }
         val unpacked = System.currentTimeMillis() - started
         checkpoint()
-        if (kept == null && only != null) {
-            // Not fitted, or fitted on what no longer fits: a page never waits for a fitting of the
-            // whole facet — minutes for the characters of every universe. The facet is fitted in the
-            // background; an item that never had chances is kept with none until then, so a read
-            // does not ask again (the characters are offered without chances meanwhile). Not a newer
-            // change: a fitting under way goes on
-            if (store.suggestions.fingerprint(only, facet.key) == null) nothingToGive(store, facet, data, only, now)
-            return changed(store.id, "notFitted", newer = false)
+        val current = !anew && kept != null && stored.basis == data.basis
+        val fitted = if (current) {
+            // Fitted before the values it chooses from were kept: kept now, not fitted again
+            if (stored.values != data.values) store.suggestions.keepValues(facet.key, data.values)
+            kept
+        } else {
+            // From the state fitted last when there is one: the data moved a little since
+            val fitStarted = System.currentTimeMillis()
+            val fresh = suggester.fit(data.task, if (anew) null else kept, stop) ?: return emptyList()
+            checkpoint()
+            val fit = SuggesterFit(fresh.report, System.currentTimeMillis() - fitStarted, data.ids.size, data.values.size)
+            store.suggestions.saveSuggester(facet.key, suggester.id, Instant.now(), data.basis, fresh.pack(), data.values, fit)
+            log.info("{}: the suggester of {} fitted on {} items, {} values in {} ms, {} of them reading", store.id, facet.key, data.ids.size, data.values.size, System.currentTimeMillis() - started, read)
+            fresh
         }
-        // Of one item's task never: what the weights were fitted on is told by the background refresh ([FacetData.load])
-        val current = !anew && only == null && kept != null && stored.basis == data.basis
-        val fitted = when {
-            current || only != null -> kept ?: return
-            else -> {
-                // From the state fitted last when there is one: the data moved a little since
-                val fitStarted = System.currentTimeMillis()
-                val made = suggester.fit(data.task, if (anew) null else kept, stop) ?: return nothingToGive(store, facet, data, null, now)
-                checkpoint()
-                val fit = SuggesterFit(made.report, System.currentTimeMillis() - fitStarted, data.ids.size, data.values.size)
-                store.suggestions.saveSuggester(facet.key, suggester.id, now, data.basis, made.pack(), fit)
-                log.info("{}: the suggester of {} fitted on {} items, {} values in {} ms, {} of them reading", store.id, facet.key, data.ids.size, data.values.size, System.currentTimeMillis() - started, read)
-                made
-            }
-        }
-        // Fitted on other data: the whole facet is fitted again and worked out in the background —
-        // after the change that made it other, which was a newer one itself
-        if (!current && only != null) changed(store.id, "newData", newer = false)
-        val refitted = !current && only == null
-        // The fingerprints the chances were made of, read before the scoring: of the whole facet, what the writing compares with
-        val fingerprintsRead = if (only == null) store.suggestions.fingerprints(facet.key) else null
-        val known = fingerprintsRead ?: mapOf(only to store.suggestions.fingerprint(only!!, facet.key))
-        val rows = data.ids.indices.filter { i ->
-            val id = data.ids[i]
-            refitted || ((only == null || id == only) && known[id] != data.fingerprints[i])
-        }
-        if (rows.isEmpty()) return
         val fittedAt = System.currentTimeMillis() - started
-        val scores = fitted.on(data.task)
-        // What the model gave alone before: the drafts are not of its making — of this facet alone
-        val before = if (facet.infer) store.suggestions.givenOf(facet.key, only) else emptyMap()
-        val beforeAt = System.currentTimeMillis() - started
-        val changedIds = ArrayList<String>()
-        var scored = 0L
-        // Of every item: the scores, what is kept of them, the writing — each summed over the chunks
-        var scoring = 0L
-        var keeping = 0L
-        var writing = 0L
-        rows.chunked(CHUNK).forEach { chunk ->
-            val at = System.currentTimeMillis()
-            val chances = scores.of(chunk.toIntArray())
-            scored = System.currentTimeMillis() - started
-            scoring += System.currentTimeMillis() - at
-            val made = HashMap<String, Long>()
-            val out = ArrayList<Chance>()
-            val keptAt = System.currentTimeMillis()
-            chunk.forEachIndexed { k, i ->
-                val id = data.ids[i]
-                made[id] = data.fingerprints[i]
-                val own = chancesOf(id, facet.key, chances[k], data, i, vocabulary?.allowed?.invoke(id))
-                out += own
-                if (facet.infer && ModelValues.given(own.associateBy { it.key }).toSet() != before[id].orEmpty()) changedIds += id
-            }
-            val writeAt = System.currentTimeMillis()
-            keeping += writeAt - keptAt
-            // Of the whole facet: a work whose chances an answer made since [known] was read keeps those
-            store.suggestions.replace(facet.key, made, out, now, expected = fingerprintsRead)
-            writing += System.currentTimeMillis() - writeAt
+        val after = keep(made, facet, data, fitted.on(data.task), vocabulary)
+        val scored = System.currentTimeMillis() - started
+        // What the model before the refit gave alone: scored again, nothing of it kept
+        val changedIds = if (current || !facet.infer) emptyList() else {
+            val before = kept?.let { k0 -> keep(MadeChances(), facet, data, k0.on(data.task), vocabulary) }
+            data.ids.filter { id -> before == null || before[id].orEmpty() != after[id].orEmpty() }
         }
-        if (changedIds.isNotEmpty()) events.publishEvent(FacetChancesChanged(store.id, changedIds))
-        if (rows.size > 1) log.info(
-            "{}: chances of {} of {} items made in {} ms — the dictionary {}, reading {}, the weights {}, fitting {}, the chances before {}, scoring {}, keeping {}, writing {}",
-            store.id, facet.key, rows.size, System.currentTimeMillis() - started,
-            vocabularyMillis, read - vocabularyMillis, unpacked - read, fittedAt - unpacked, beforeAt - fittedAt, scoring, keeping, writing,
+        log.info(
+            "{}: chances of {} of {} items made in memory in {} ms — the dictionary {}, reading {}, the weights {}, fitting {}, scoring {}; {} works given other values",
+            store.id, facet.key, data.ids.size, System.currentTimeMillis() - started,
+            vocabularyMillis, read - vocabularyMillis, unpacked - read, fittedAt - unpacked, scored - fittedAt, changedIds.size,
         )
-        // What an answer waits for, a stage at a time: the whole is made again for one work
-        else if (only != null) log.info(
-            "{}: chances of {} of {} made in {} ms — the dictionary {}, reading {}, the weights {}, the chances {}, kept {}",
-            store.id, facet.key, only, System.currentTimeMillis() - started,
-            vocabularyMillis, read - vocabularyMillis, unpacked - read, scored - unpacked, System.currentTimeMillis() - started - scored,
-        )
+        return changedIds
     }
 
     /**
-     * The facet has nothing to give: no values, or no work the user said has one to learn from (the
-     * secondary characters before the first answer). Every item — the item [only], when given — is
-     * kept as worked out with no chances, by its fingerprint: a read does not try again, a change of
-     * the item or of what the facet learns from does.
-     */
-    private fun nothingToGive(store: SourceStore, facet: FacetDef, data: FacetData, only: String?, now: Instant) {
-        val known = store.suggestions.fingerprints(facet.key)
-        val made = data.ids.indices.filter { (only == null || data.ids[it] == only) && known[data.ids[it]] != data.fingerprints[it] }
-            .associate { data.ids[it] to data.fingerprints[it] }
-        made.keys.chunked(CHUNK).forEach { chunk -> store.suggestions.replace(facet.key, chunk.associateWith { made.getValue(it) }, emptyList(), now) }
-    }
-
-    /**
-     * What is kept of item [i]'s chances: of every value it has, of every value the user rejected
+     * What is made of item [i]'s chances: of every value it has, of every value the user rejected
      * (shown crossed out, in its place by its chance), every one the site gives it as an example —
      * offered to answer on whatever its chance, shown with it — and of the values it lacks those it
      * more likely has than not and the likeliest others offered besides; of a facet that says which
      * values a work may have ([allowed]: a work's characters are of its universes, its pairings of
      * its characters) of those alone. Not every value it may have: of a work of a large universe
-     * thousands of characters, written at every refresh — the user choosing among them gets every one
-     * made at the asking ([candidates]).
+     * thousands of characters — the user choosing among them gets every one at the asking ([candidates]).
      */
     private fun chancesOf(id: String, facet: String, chances: FloatArray, data: FacetData, i: Int, allowed: Set<String>?): List<Chance> {
         val has = data.held[i].toHashSet()
@@ -488,10 +501,11 @@ class FacetSuggestions(
         val hintAmong: (String) -> Collection<String> = { emptyList() },
     ) {
         /** How often each item's own texts name each value, by [naming]; null when the values are not counted. */
-        fun mentions(store: SourceStore, only: String?): ((String) -> Map<String, Int>?)? = naming?.let { of ->
+        fun mentions(store: SourceStore, ids: Collection<String>?): ((String) -> Map<String, Int>?)? = naming?.let { of ->
             // Of every work: the values' names read once for them all, not a query of each work's
-            val names = if (only == null) store.everyName() else store.items::facetNames
-            return { id -> if (only != null && id != only) null else of(id)?.count(store.workTexts(id, names)) }
+            val names = if (ids == null) store.everyName() else store.items::facetNames
+            val within = ids?.toHashSet()
+            return { id -> if (within != null && id !in within) null else of(id)?.count(store.workTexts(id, names)) }
         }
     }
 
@@ -505,9 +519,17 @@ class FacetSuggestions(
      * little, the user's answers tell — of the values the site did not give a work, the share the
      * user rejected rather than confirmed, by the rule of succession: as much as a lacking value
      * weighs as a value the work has not.
+     *
+     * Of the works [ids] alone, when given — read by the model kept, which knows its values — their
+     * examples alone: the values of every source are what a fitting learns from.
      */
-    private fun examplesVocabulary(store: SourceStore, facet: FacetDef): Vocabulary? {
+    private fun examplesVocabulary(store: SourceStore, facet: FacetDef, ids: Collection<String>?): Vocabulary? {
         val from = store.schema.facets.firstOrNull { it.key == facet.examplesFrom } ?: return null
+        if (ids != null) {
+            val bound = store.tags.bindingsOf(store.id)
+            val own = store.items.facetsOf(ids).mapValues { (_, facets) -> facets[from.key].orEmpty().mapNotNull { bound[it]?.let(TagRepository::key) }.distinct() }
+            return Vocabulary(emptyMap(), allowed = null, examples = { id -> own[id].orEmpty() })
+        }
         // Every normalized tag a site's tag of the type is bound to, of every source of the type
         val bindings = store.tags.bindings()
         val values = HashMap<String, String>()
@@ -533,11 +555,12 @@ class FacetSuggestions(
     }
 
     /**
-     * The vocabulary of a facet of the universes; of the item [only], when given, what depends on the
-     * items read of it alone — its universes, the characters of its other facet, its pairs — not of
-     * every item: of a work of a large universe the chances of thousands of characters each.
+     * The vocabulary of a facet of the universes; of the works [ids], when given, what depends on the
+     * works read of them alone — their universes, the characters of their other facet, their pairs —
+     * not of every work: of a work of a large universe the chances of thousands of characters each.
+     * The values the model gave of the facets before it are [made] in the chain.
      */
-    private fun universeVocabulary(store: SourceStore, facet: FacetDef, only: String? = null): Vocabulary? {
+    private fun universeVocabulary(store: SourceStore, facet: FacetDef, ids: Collection<String>?, made: WorkChances): Vocabulary? {
         val type = stores.typeOf(store.id)
         if (!type.type.universes) return null
         return when (facet.key) {
@@ -546,8 +569,9 @@ class FacetSuggestions(
             // Every universe of the dictionary, linked to a work or not yet — to a work not known to have none
             UniverseFacets.UNIVERSE -> {
                 val kinds = HashMap<String, List<String>>()
-                store.items.forEachFacet(UniverseFacets.KIND) { id, keys -> kinds[id] = keys }
-                store.corrections.allFacets().filter { it.facet == UniverseFacets.KIND }.groupBy { it.itemId }.forEach { (id, own) ->
+                if (ids == null) store.items.forEachFacet(UniverseFacets.KIND) { id, keys -> kinds[id] = keys }
+                else store.items.facetsOf(ids).forEach { (id, facets) -> facets[UniverseFacets.KIND]?.let { kinds[id] = it } }
+                answersOf(store, ids).filter { it.facet == UniverseFacets.KIND }.groupBy { it.itemId }.forEach { (id, own) ->
                     kinds[id] = Corrected.facets(mapOf(UniverseFacets.KIND to kinds[id].orEmpty()), own)[UniverseFacets.KIND].orEmpty()
                 }
                 val universes = type.universes.all()
@@ -581,10 +605,12 @@ class FacetSuggestions(
             // The main characters and the secondary ones alike, each without what the other has
             UniverseFacets.CHARACTERS, UniverseFacets.SECONDARY_CHARACTERS -> {
                 // Every character of every universe — by all its names: the fans write the one they like —
-                // and the original characters; a work is given those of its own universes. Of one item,
-                // the characters of its universes alone: no other is kept of it ([FacetData.load])
-                val universes = workUniverses(store, only)
-                val read = type.universes.all().let { all -> if (only == null) all else all.filter { it.value in universes[only].orEmpty() } }
+                // and the original characters; a work is given those of its own universes. Of the works
+                // read, the characters of their universes alone: no other is chosen from ([FacetData.load])
+                val universes = workUniverses(store, ids, made)
+                val read = type.universes.all().let { all ->
+                    if (ids == null) all else ids.flatMap { universes[it].orEmpty() }.toSet().let { own -> all.filter { it.value in own } }
+                }
                 val ofUniverse = HashMap<String, Set<String>>()
                 val values = HashMap<String, String>(UniverseFacet.ORIGINAL_CHARACTERS)
                 val names = HashMap<String, List<String>>()
@@ -600,7 +626,7 @@ class FacetSuggestions(
                         c.sex?.let { sexes[value] = it }
                     }
                 }
-                val out = leftOut(store, facet.key, only)
+                val out = leftOut(store, facet.key, ids, made)
                 fun of(id: String) = universes[id].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet() - out(id)
                 // A name of a character names it and none of the other characters of its universes:
                 // judged among them all, one set for every character of the same universes
@@ -621,12 +647,12 @@ class FacetSuggestions(
             }
             UniverseFacets.PAIRINGS -> {
                 // Every pair of a work's characters: the confirmed ones and those the model gives it
-                val characters = linked(store, UniverseFacets.CHARACTERS, only).toMutableMap()
-                chancesOf(store, UniverseFacets.CHARACTERS, only).forEach { (id, chances) ->
+                val characters = linked(store, UniverseFacets.CHARACTERS, ids).toMutableMap()
+                made.forEach { (id, chances) ->
                     val given = ModelValues.given(chances[UniverseFacets.CHARACTERS].orEmpty())
                     if (given.isNotEmpty()) characters[id] = characters[id].orEmpty() + given
                 }
-                val rejected = answersOf(store, only).filter { it.facet == UniverseFacets.CHARACTERS && !it.added }
+                val rejected = answersOf(store, ids).filter { it.facet == UniverseFacets.CHARACTERS && !it.added }
                     .groupBy({ it.itemId }, { it.key })
                 // The original characters pair with anyone: a work need not list them among its main ones
                 val pairs = characters.mapValues { (id, own) ->
@@ -685,13 +711,13 @@ class FacetSuggestions(
     /**
      * The characters left out of the [facet] of every item ([UniverseFacet.leftOut]): those of its
      * other facet of characters — the user's answers, and the main ones the model gives it. The
-     * main characters are worked out before the secondary ones: their chances are current here.
+     * main characters are worked out before the secondary ones in the chain: [made] has them.
      */
-    private fun leftOut(store: SourceStore, facet: String, only: String? = null): (String) -> Set<String> {
+    private fun leftOut(store: SourceStore, facet: String, ids: Collection<String>?, made: WorkChances): (String) -> Set<String> {
         if (UniverseFacet.otherCharacters(facet) == null) return { emptySet() }
-        val answers = answersOf(store, only).filter { it.facet in UniverseFacet.CHARACTER_FACETS }.groupBy { it.itemId }
+        val answers = answersOf(store, ids).filter { it.facet in UniverseFacet.CHARACTER_FACETS }.groupBy { it.itemId }
         val given = if (facet == UniverseFacets.SECONDARY_CHARACTERS)
-            chancesOf(store, UniverseFacets.CHARACTERS, only).mapValues { ModelValues.given(it.value[UniverseFacets.CHARACTERS].orEmpty()) }
+            made.mapValues { ModelValues.given(it.value[UniverseFacets.CHARACTERS].orEmpty()) }
         else emptyMap()
         return { id ->
             val own = answers[id].orEmpty()
@@ -705,12 +731,13 @@ class FacetSuggestions(
     /**
      * The universes whose characters every work may have: the ones the user confirmed, and the ones
      * the model gives it — more likely than not — unless the user rejected them; none but the
-     * confirmed once the user said the work has no other universes.
+     * confirmed once the user said the work has no other universes. The universes the model gives
+     * are [made] before the characters in the chain.
      */
-    private fun workUniverses(store: SourceStore, only: String? = null): Map<String, List<String>> {
-        val answers = answersOf(store, only).filter { it.facet == UniverseFacets.UNIVERSE }.groupBy { it.itemId }
-        val complete = if (only == null) store.corrections.allComplete() else mapOf(only to store.corrections.completeOf(only))
-        val given = chancesOf(store, UniverseFacets.UNIVERSE, only)
+    private fun workUniverses(store: SourceStore, ids: Collection<String>?, made: WorkChances): Map<String, List<String>> {
+        val answers = answersOf(store, ids).filter { it.facet == UniverseFacets.UNIVERSE }.groupBy { it.itemId }
+        val complete = if (ids == null) store.corrections.allComplete() else store.corrections.completeOf(ids)
+        val given = made
         return (answers.keys + given.keys).associateWith { id ->
             val own = answers[id].orEmpty()
             val confirmed = own.filter { it.added }.map { it.key }
@@ -719,36 +746,31 @@ class FacetSuggestions(
         }
     }
 
-    /** The values of a facet the user linked every item — the item [only], when given — to: item to values. */
-    private fun linked(store: SourceStore, facet: String, only: String? = null): Map<String, List<String>> =
-        answersOf(store, only).filter { it.facet == facet && it.added }.groupBy({ it.itemId }, { it.key })
+    /** The values of a facet the user linked every item — the items [ids], when given — to: item to values. */
+    private fun linked(store: SourceStore, facet: String, ids: Collection<String>?): Map<String, List<String>> =
+        answersOf(store, ids).filter { it.facet == facet && it.added }.groupBy({ it.itemId }, { it.key })
 
-    /** The user's answers on the facets of every item, or of the item [only]. */
-    private fun answersOf(store: SourceStore, only: String?): List<FacetCorrection> =
-        if (only == null) store.corrections.allFacets() else store.corrections.facetsOf(only)
-
-    /** The chances of the [facet] of every item, or of the item [only]: of a work of a large universe the chances of thousands of characters each. */
-    private fun chancesOf(store: SourceStore, facet: String, only: String?): Map<String, Map<String, Map<String, Chance>>> =
-        if (only == null) store.suggestions.ofFacets(listOf(facet)) else store.suggestions.ofItems(listOf(only), facets = listOf(facet))
+    /** The user's answers on the facets of every item, or of the items [ids]. */
+    private fun answersOf(store: SourceStore, ids: Collection<String>?): List<FacetCorrection> =
+        if (ids == null) store.corrections.allFacets() else store.corrections.facetsOf(ids).values.flatten()
 
     /**
-     * The values to suggest for an item, every facet the source suggests values of, read now with
-     * the user's corrections on top: a value the user has answered on is left out. An item that
-     * never had chances gets them now; one whose data changed is refreshed in the background.
+     * The values to suggest for an item, every facet the source suggests values of, with the user's
+     * corrections on top: a value the user has answered on is left out. Of its [chances] made now
+     * ([chances]) — passed by a caller that made them already.
      */
-    fun ofItem(store: SourceStore, itemId: String): List<ItemFacetSuggestions> {
+    fun ofItem(store: SourceStore, itemId: String, chances: Map<String, Map<String, Chance>>? = null): List<ItemFacetSuggestions> {
         val facets = facetsOf(store)
         if (facets.isEmpty() || store.items.find(itemId) == null) return emptyList()
         val corrections = store.corrections.facetsOf(itemId)
         val site = store.items.facets(itemId)
-        ensure(store, itemId, facets, site, corrections)
-        val chances = store.suggestions.ofItems(listOf(itemId))[itemId].orEmpty()
+        val made = chances ?: chances(store, listOf(itemId))[itemId].orEmpty()
         return facets.filter { it.suggest && !it.infer }.map { facet ->
             val answered = corrections.filter { it.facet == facet.key }.map { it.key }.toSet()
             val current = site[facet.key].orEmpty().toSet()
             // Of a facet of one value the work has — the site's or the user's — none other is suggested
             val held = facet.single && (current.isNotEmpty() || corrections.any { it.facet == facet.key && it.added })
-            val suggested = if (held) emptyList() else chances[facet.key].orEmpty().values
+            val suggested = if (held) emptyList() else made[facet.key].orEmpty().values
                 .filter { !it.had && it.key !in answered && it.key !in current && it.chance > ModelValues.LIKELY }.sortedByDescending { it.chance }
             ItemFacetSuggestions(facet, suggested, store.names(facet.key, suggested.map { it.key }))
         }
@@ -760,8 +782,10 @@ class FacetSuggestions(
      * its two named in one paragraph. Null for a facet whose values are not counted in the texts.
      */
     fun quotes(store: SourceStore, itemId: String, facet: String, value: String): List<Quote>? {
-        val def = facetsOf(store).find { it.key == facet } ?: return null
-        val naming = universeVocabulary(store, def, itemId)?.naming ?: return null
+        val facets = facetsOf(store)
+        val k = facets.indexOfFirst { it.key == facet }.takeIf { it >= 0 } ?: return null
+        val ids = listOf(itemId)
+        val naming = universeVocabulary(store, facets[k], ids, chain(store, ids, k))?.naming ?: return null
         return naming(itemId)?.quotes(store.workPassages(itemId), value).orEmpty()
     }
 
@@ -774,37 +798,35 @@ class FacetSuggestions(
      */
     fun candidates(store: SourceStore, itemId: String, facet: String): ItemFacetCandidates? {
         val facets = facetsOf(store)
-        val def = facets.find { it.key == facet } ?: return null
+        val k = facets.indexOfFirst { it.key == facet }.takeIf { it >= 0 } ?: return null
+        val def = facets[k]
         if (store.items.find(itemId) == null) return null
-        // NOTHING WAITED FOR, NOTHING KEPT: the marking of a work waits for nothing that computes the
-        // model (user, 2026-10-15) — not for the chances being made after the answers, not for a
-        // writing of the chances the background holds up. The chances of the facets before this one,
-        // its context, are those kept now; the newer come with the next reading
+        // NOTHING WAITED FOR, NOTHING KEPT: the chances of the facets before this one — its context —
+        // and of this one made now in memory by the models kept (user, 2026-10-15)
+        val ids = listOf(itemId)
+        val made = chain(store, ids, k)
         val corrections = store.corrections.facetsOf(itemId)
         val site = store.items.facets(itemId)
-        // Only the likeliest are kept: every other made now, by the weights fitted last — of a work's
-        // universes, characters and pairings, those it may have alone
-        val vocabulary = universeVocabulary(store, def, itemId) ?: examplesVocabulary(store, def)
+        // Every value made, not those shown alone — of a work's universes, characters and pairings, those it may have
+        val vocabulary = vocabularyOf(store, def, ids, made)
         val may = vocabulary?.allowed?.invoke(itemId)
-        val chances = everyChance(store, def, itemId, vocabulary)?.filter { may == null || it.key in may || it.had }
-            ?: store.suggestions.ofItems(listOf(itemId))[itemId].orEmpty()[facet].orEmpty().values
+        val every = everyChance(store, facets, k, itemId, vocabulary, made)
+        val chances = every?.filter { may == null || it.key in may || it.had } ?: made[itemId].orEmpty()[facet].orEmpty().values
         val answered = corrections.filter { it.facet == facet }.map { it.key }.toSet()
-        // The work's values as its card shows them: its site's, and those the chances kept give it — made
-        // in the background, they may be older than the chances made here, and a value is never both
-        // given and offered
-        val current = ModelValues.of(store.schema, site, store.suggestions.ofItems(listOf(itemId))[itemId])[facet].orEmpty().toSet()
+        // The work's values as its card shows them, of the same chances: a value is never both given and offered
+        val current = ModelValues.of(store.schema, site, made[itemId])[facet].orEmpty().toSet()
         // A character of the work's other facet of characters is no candidate here; nor a tag under
         // one the user said the work has not — it has none of them ([TagHierarchy])
         val hierarchy = store.hierarchies()[facet]
         // Nor a tag the user ignores: never offered
-        val out = leftOut(store, facet, itemId)(itemId) +
+        val out = leftOut(store, facet, ids, made)(itemId) +
             corrections.filter { it.facet == facet && !it.added }.flatMap { hierarchy?.descendants(it.key).orEmpty() } +
             store.ignoredTags()[facet].orEmpty()
         // A value the model gives the work is the work's already
         val scored = chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
             .map { FacetCandidate(it.key, it.chance, it.mentions) }
         val unscored = if (facet !in UniverseFacet.CHARACTER_FACETS || chances.any { !it.had } || facet in store.corrections.completeOf(itemId)) emptyList() else {
-            val named = vocabulary?.mentions(store, itemId)?.invoke(itemId)
+            val named = vocabulary?.mentions(store, ids)?.invoke(itemId)
             may.orEmpty()
                 .filter { it !in answered && it !in current && it !in out && chances.none { c -> c.key == it } }
                 .map { FacetCandidate(it, null, named?.let { n -> n[it] ?: 0 }) }
@@ -817,178 +839,40 @@ class FacetSuggestions(
     }
 
     /**
-     * The user [answered] on a facet of the item: its chances of that facet and of the facets worked
-     * out after it — made of its values — are made current by the weights fitted last, apart from
-     * the answer, which is not kept waiting for them. Answers that come while they are made are
-     * gathered: the making under way is given up at its next stage — what it read is stale — and
-     * made once more for them all, from the earliest facet any of them was on. The whole source
-     * is refreshed in the background, after its quiet ([changed]).
+     * The chance of EVERY value of the [k]-th of the [facets] for the item — of a facet whose values
+     * a work may have are limited ([Vocabulary.allowed]), of those it may have — made now by the model
+     * kept, those shown put among [made]; null when the facet was never fitted.
      */
-    fun answered(store: SourceStore, itemId: String, answered: String) {
-        val facets = facetsOf(store).filter { it.infer }
-        // An answer on either facet of characters leaves a character out of the other: both made current
-        val first = if (answered in UniverseFacet.CHARACTER_FACETS) UniverseFacets.CHARACTERS else answered
-        val from = facets.indexOfFirst { it.key == first }
-        if (from < 0) return
-        makeLater(store, itemId, from)
+    private fun everyChance(store: SourceStore, facets: List<FacetDef>, k: Int, itemId: String, vocabulary: Vocabulary?, made: MadeChances): List<Chance>? {
+        val facet = facets[k]
+        val suggester = plugins.suggester(store.id, facet.key) ?: return null
+        val encoder = plugins.textEncoder() ?: return null
+        val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id } ?: return null
+        val data = load(store, facet, encoder, vocabulary, listOf(itemId), made, stored.values)
+        val i = data.ids.indexOf(itemId).takeIf { it >= 0 } ?: return null
+        if (data.values.isEmpty()) return null
+        val scores = (suggester.unpack(stored.content, data.task) ?: return null).on(data.task)
+        keep(made, facet, data, scores, vocabulary)
+        val chances = scores.of(intArrayOf(i)).single()
+        val has = data.held[i].toHashSet()
+        val named = data.task.mentions[i]
+        return chances.indices.map { v -> Chance(itemId, facet.key, data.values[v], v in has, chances[v].toDouble(), named?.let { it[v] ?: 0 }) }
     }
 
-    /**
-     * The item's chances made current from the facet [from] on, in the queue of the computations:
-     * whoever asks goes on at once — the marking of a work never waits for the model (user, 2026-10-15).
-     */
-    private fun makeLater(store: SourceStore, itemId: String, from: Int) {
-        val key = "${store.id}/$itemId"
-        synchronized(answering) {
-            val work = answering.getOrPut(key) { Answering() }
-            work.generation++
-            work.from = minOf(work.from, from)
-            if (!work.running) {
-                work.running = true
-                answers.execute { makeCurrent(store, itemId, key, work) }
-            }
-        }
-    }
-
-    /**
-     * Waits until the item's chances are made current after every answer on it so far; at once when
-     * none is being made. Never longer than [SETTLE_WAIT_SECONDS]: the chances of a work of a great
-     * universe behind those of other works may take long, and a page is not held for them — it shows
-     * the chances as they are, the newer come with the next reading. True when they are current.
-     */
-    fun settled(store: SourceStore, itemId: String): Boolean {
-        val waiting = synchronized(answering) { answering["${store.id}/$itemId"]?.settled } ?: return true
-        return try {
-            waiting.get(SETTLE_WAIT_SECONDS, TimeUnit.SECONDS)
-            true
-        } catch (e: TimeoutException) {
-            log.info("{}: chances of {} still being made after {} s: read as they are", store.id, itemId, SETTLE_WAIT_SECONDS)
-            false
-        } catch (e: ExecutionException) {
-            false
-        } catch (e: CancellationException) {
-            false
-        }
-    }
-
-    /**
-     * The making of an item's chances after the user's answers: until no answer came while it was
-     * made. Whatever ends it — an error of the JVM too, out of memory on a great task — the work is
-     * free after: no answer on it is left unmade for good, no reader waits for it for ever.
-     */
-    private fun makeCurrent(store: SourceStore, itemId: String, key: String, work: Answering) {
-        try {
-            workload.run(Work("workChances", source = store.id, item = itemId), mapOf("answer" to 1)) { makeCurrentRounds(store, itemId, key, work) }
-        } catch (e: Throwable) {
-            log.error("{}: chances of {} were not made", store.id, itemId, e)
-            synchronized(answering) {
-                if (answering[key] === work) answering.remove(key)
-                work.running = false
-                work.settled.completeExceptionally(e)
-            }
-            if (e is Error) throw e
-        }
-    }
-
-    private fun makeCurrentRounds(store: SourceStore, itemId: String, key: String, work: Answering) {
-        while (true) {
-            val (generation, from) = synchronized(answering) { (work.generation to work.from).also { work.from = Int.MAX_VALUE } }
-            val stop = { synchronized(answering) { work.generation != generation } }
-            val started = System.currentTimeMillis()
-            val made = try {
-                val facets = facetsOf(store).filter { it.infer }
-                if (store.items.find(itemId) != null) {
-                    // From the facet answered on round the circle: every facet the model works out reads the others
-                    ensure(store, itemId, facets.drop(from) + facets.take(from), store.items.facets(itemId), store.corrections.facetsOf(itemId), now = true, stop = stop)
-                }
-                true
-            } catch (e: CancellationException) {
-                false
-            } catch (e: Exception) {
-                log.warn("{}: chances of {} were not made: {}", store.id, itemId, e.message, e)
-                true
-            }
-            synchronized(answering) {
-                if (!made) work.from = minOf(work.from, from)
-                if (work.generation == generation) {
-                    log.info("{}: chances of {} made current after the answers in {} ms", store.id, itemId, System.currentTimeMillis() - started)
-                    answering.remove(key)
-                    work.running = false
-                    work.settled.complete(Unit)
-                    return
-                }
-            }
-        }
-    }
-
-    /**
-     * An item's chances being made current after the user's answers: how many answers there were
-     * ([generation] — a making begun before the last one is stale), the earliest facet answered
-     * on not yet made, whether it is being made, and the waiters for its end.
-     */
-    private class Answering {
-        var generation = 0L
-        var from = Int.MAX_VALUE
-        var running = false
-        val settled = CompletableFuture<Unit>()
-    }
-
-    /**
-     * The item's chances of the facets the model gives values of, for a page opening it: NEVER
-     * WAITED FOR — the marking of a work waits for nothing that computes the model (user,
-     * 2026-10-15). A work that has none gets them in the queue of the computations ([makeLater]),
-     * the page reads them once made ([settled]); stale ones are refreshed in the background.
-     */
-    fun ensureFor(store: SourceStore, itemId: String) {
-        val facets = facetsOf(store).filter { it.infer }
-        if (facets.isEmpty() || store.items.find(itemId) == null) return
-        ensure(store, itemId, facets, store.items.facets(itemId), store.corrections.facetsOf(itemId))
-    }
-
-    /**
-     * The item's chances made now when what they were made of changed and the caller is the queue
-     * of the computations itself ([now]: made current after the answers); otherwise those it has
-     * none of made there later, and stale ones refreshed in the background.
-     */
-    private fun ensure(
-        store: SourceStore, itemId: String, facets: List<FacetDef>, site: Map<String, List<String>>, corrections: List<FacetCorrection>,
-        now: Boolean = false, stop: () -> Boolean = { false },
-    ) {
-        val encoder = plugins.textEncoder() ?: return
-        val fingerprint = FacetData.fingerprint(
-            site, corrections, store.textVectors.hashes(encoder.id, itemId).values, store.parts.windowCount(itemId, encoder.id),
-            store.corrections.completeOf(itemId), store.drafts.ofItems(listOf(itemId))[itemId].orEmpty(),
-        )
-        val known = facets.associateWith { store.suggestions.fingerprint(itemId, it.key) }
-        val stale = facets.filter { known[it] != fingerprint }
-        if (stale.isEmpty()) return
-        when {
-            now -> refreshNow(store, itemId, stale, stop)
-            stale.any { known[it] == null } -> makeLater(store, itemId, facets.indexOf(stale.first()))
-            // The change that made them stale was told already: a refresh under way is not given up for it
-            else -> changed(store.id, "newData", newer = false)
-        }
-    }
 
     @PreDestroy
     fun shutdown() {
         worker.shutdownNow()
-        answers.shutdownNow()
-        // Nobody waits for chances that will not be made
-        synchronized(answering) { answering.values.forEach { it.settled.cancel(false) } }
     }
 
     companion object {
         /** The quiet after the last change before a source is refreshed: a page sends itself several times as it grows. */
         private const val DELAY_SECONDS = 5L
 
-        /** The longest a reader waits for a work's chances made after the answers ([settled]). */
-        private const val SETTLE_WAIT_SECONDS = 30L
-
         /** The environment variable naming the folder every task of a whole facet is kept in ([SuggestionTaskFile]); unset, none is. */
         private const val TASKS_FOLDER = "RECOMMEND4ME_TASKS"
 
-        /** Items scored at once and written in one transaction: memory, not meaning. */
+        /** Items scored at once: memory, not meaning. */
         private const val CHUNK = 2_000
     }
 }
@@ -1006,17 +890,18 @@ internal class FacetData(
     val held: List<IntArray>,
     /** Whether the user said each item's values of the facet are all named: it is given no other. */
     val complete: BooleanArray,
-    val fingerprints: LongArray,
-    /** The fingerprint of the whole facet: of every item's. */
+    /** The fingerprint of the whole facet: of every item's; [NO_BASIS] of the task of some works read alone. */
     val basis: Long,
 ) {
     companion object {
         /**
-         * The rule of what is kept of an item's chances: 2 — the likeliest others offered besides the
-         * likely ones; 3 — the rejected ones too; 4 — the site's examples too; 5 — of a facet of
-         * limited values, not every value the work may have: the likely and the offered alone.
+         * The rule of what is made of an item's chances and read of the others: 2 — the likeliest
+         * others offered besides the likely ones; 3 — the rejected ones too; 4 — the site's examples
+         * too; 5 — of a facet of limited values, not every value the work may have: the likely and
+         * the offered alone; 6 — the chain: a facet reads the values the model gives of the facets
+         * before it alone, made in the same pass.
          */
-        private const val KEPT = 5
+        private const val KEPT = 6
 
         /**
          * How much a drafted value the user has not confirmed weighs in what the model learns, against
@@ -1055,16 +940,19 @@ internal class FacetData(
          * [examples]: the values the site gives an item as examples of the facet, the item's own as
          * far as the model learns ([FacetDef.examplesFrom]); a value it lacks weighs [lackWeight].
          *
-         * [only]: THE TASK OF THAT ITEM ALONE — one row, judged by the weights fitted last, which read
-         * a task by the keys of its values, its context and its blocks: its inputs, the other facets'
-         * values the model gave it, its context and its fingerprint are read of it alone, not of every
-         * item — of a work of a large universe the chances of thousands of characters each. The values
-         * chosen from are every value still. No [basis]: what the weights were fitted on is told by the
-         * background refresh, which reads every item.
+         * [only]: THE TASK OF THOSE WORKS ALONE — their rows, judged by the model kept, which reads a
+         * task by the keys of its values, its context and its blocks: their inputs, values, context
+         * are read of them alone, not of every work; the values chosen from are those the model kept
+         * chooses from ([valueKeys]) and their own. No [basis]: what the weights were fitted on is told
+         * by the background refresh, which reads every work.
+         *
+         * [modelled]: the values the model gives of the facets before this one in the chain, made in
+         * the same pass, and the drafts of the layer; of the others the site's and the user's alone.
          */
         fun load(
             store: SourceStore, facet: FacetDef, encoder: TextEncoder, known: Map<String, String> = emptyMap(),
-            imageEncoder: String? = null, sets: Map<SetKind, Long> = emptyMap(), only: String? = null,
+            imageEncoder: String? = null, sets: Map<SetKind, Long> = emptyMap(), only: Collection<String>? = null,
+            modelled: WorkChances = emptyMap(), valueKeys: List<String>? = null,
             mentions: ((String) -> Map<String, Int>?)? = null,
             allowed: ((String) -> Set<String>)? = null,
             groupings: ((List<String>) -> List<ValueGrouping>)? = null,
@@ -1074,22 +962,23 @@ internal class FacetData(
             hintAmong: (String) -> Collection<String> = { emptyList() },
         ): FacetData {
             val schema = store.schema
-            // Every item's values make the values chosen from; the rows of the task are of every item, or of [only]
-            val every = store.items.keys().map { it.id }
-            val ids = if (only == null) every else listOf(only)
+            // The rows of the task: every work, or the works [only]; their values alone read
+            val every = only?.distinct() ?: store.items.keys().map { it.id }
+            val ids = every
             val site = HashMap<String, HashMap<String, MutableList<String>>>()
-            store.items.forEachFacetValue { id, f, key -> site.getOrPut(id) { HashMap() }.getOrPut(f) { ArrayList() } += key }
-            val corrections = store.corrections.allFacets().groupBy { it.itemId }
+            if (only == null) store.items.forEachFacetValue { id, f, key -> site.getOrPut(id) { HashMap() }.getOrPut(f) { ArrayList() } += key }
+            else store.items.facetsOf(every).forEach { (id, facets) -> site[id] = HashMap(facets.mapValues { it.value.toMutableList() }) }
+            val corrections = if (only == null) store.corrections.allFacets().groupBy { it.itemId } else store.corrections.facetsOf(every)
             // Of a facet of tags, the user's answers with what they say of the tags above and under them
             val hierarchy = store.hierarchies()[facet.key]
             val answers = if (hierarchy == null) corrections else corrections.mapValues { hierarchy.expand(facet.key, it.value) }
             val within = hierarchy?.let { mapOf(facet.key to it) }.orEmpty()
-            val complete = store.corrections.allComplete()
+            val complete = if (only == null) store.corrections.allComplete() else store.corrections.completeOf(every)
             // The examples are the facet's values as far as the model learns, the user's answers over
             // them — the facet the user corrects; the site's facet they come from is among the item's inputs
             // And the drafts of the layer ([LayerDrafts][io.github.vlsergey.recommend4me.draft.LayerDrafts]): values the item
             // has unless the user said otherwise, learnt from with less weight ([DRAFT_WEIGHT]) — they are no one's word
-            val drafts = store.drafts.all()
+            val drafts = if (only == null) store.drafts.all() else store.drafts.ofItems(every)
             val drafted = drafts.mapValues { (_, list) -> list.filter { it.facet == facet.key }.map { it.key } }.filterValues { it.isNotEmpty() }
             val learnt = if (examples == null && drafted.isEmpty()) site else HashMap(site).also { all ->
                 every.forEach { id ->
@@ -1099,29 +988,30 @@ internal class FacetData(
             }
             val corrected = every.associateWith { id -> TagHierarchy.corrected(learnt[id].orEmpty(), corrections[id].orEmpty(), within) }
 
-            // Every value of the facet the site or the user gave any item, and every value known besides
+            // Every value of the facet the site or the user gave any work read, the values the model kept
+            // chooses from, and every value known besides
             val everyValue = (corrected.values.flatMap { it[facet.key].orEmpty() } +
-                answers.values.flatten().filter { it.facet == facet.key }.map { it.key } + known.keys).distinct().sorted()
-            // Of one item of a facet whose values a work may have are limited ([allowed]: a work's
-            // characters are of its universes), those it may have and its own alone: no other is
-            // kept of it — of a work of two universes some thousand characters, not every one
+                answers.values.flatten().filter { it.facet == facet.key }.map { it.key } + known.keys + valueKeys.orEmpty()).distinct().sorted()
+            // Of works of a facet whose values a work may have are limited ([allowed]: a work's
+            // characters are of its universes), those they may have and their own alone: no other is
+            // chosen from — of a work of two universes some thousand characters, not every one
             val values = if (only == null || allowed == null) everyValue else {
-                val own = allowed(only) + corrected[only]?.get(facet.key).orEmpty() +
-                    answers[only].orEmpty().filter { it.facet == facet.key }.map { it.key } + drafted[only].orEmpty() + examples?.invoke(only).orEmpty()
+                val own = HashSet<String>()
+                every.forEach { id ->
+                    own += allowed(id)
+                    own += corrected[id]?.get(facet.key).orEmpty()
+                    answers[id].orEmpty().filter { it.facet == facet.key }.forEach { own += it.key }
+                    own += drafted[id].orEmpty()
+                    own += examples?.invoke(id).orEmpty()
+                }
                 everyValue.filter { it in own }
             }
             val index = values.withIndex().associate { (i, k) -> k to i }
 
             // The other facets' values as the context — of the facets the source has now, the site's own among them.
-            // THE FACETS THE MODEL WORKS OUT READ EACH OTHER, IN A CIRCLE — the universes, the main and the
-            // secondary characters, the pairings, the tags: of every other one, the values the model gives
-            // the item besides the site's and the user's, as it gave them last; the tags with those above them
-            val others = schema.facets.filter { it.infer && it.key != facet.key }.map { it.key }
-            val modelled = when {
-                others.isEmpty() -> emptyMap()
-                only != null -> store.suggestions.ofItems(ids, facets = others)
-                else -> store.suggestions.ofFacets(others)
-            }
+            // THE CHAIN: of the facets before this one, the values the model gives the item besides the
+            // site's and the user's, made in the same pass ([modelled] holds those alone, and the drafts);
+            // the tags with those above them
             val hierarchies = store.hierarchies()
             val facets = schema.facets.map { it.key }.toSet()
             val contextOf = ids.map { id ->
@@ -1142,11 +1032,13 @@ internal class FacetData(
             val d = encoder.dim
             // A facet the site gives values of has them as its labels: its own line on the site is
             // those values written out, no input of it — as the facet is none of its own context
-            val ownLine = facet.original?.takeIf { site.values.any { facet.key in it } }
+            // — whether the site gives values of it told of every work, as the model was fitted, not of the works read
+            val siteGives = if (only == null) site.values.any { facet.key in it } else store.items.valueUses(facet.key).isNotEmpty()
+            val ownLine = facet.original?.takeIf { siteGives }
             val inputs = inputs(store, ids, encoder, imageEncoder, sets, only, leaveOut = setOfNotNull(ownLine))
 
             val names = Matrix(values.size, d)
-            nameVectors(store, facet.key, values, corrections.values.flatten(), known, encoder).forEach { (key, v) ->
+            nameVectors(store, facet.key, values, corrections.values.flatten(), known, encoder, asKept = only != null).forEach { (key, v) ->
                 index[key]?.let { names.held.put(v, 0, names.row(it), d) }
             }
 
@@ -1194,24 +1086,19 @@ internal class FacetData(
                 },
                 hintTexts = if (named.size == hintValues.size) hintTexts else hintTexts.gather(named.toIntArray()),
             )
-            val hashes = HashMap<String, MutableList<String>>()
-            val windowCounts = if (only == null) {
-                store.textVectors.hashes(encoder.id).forEach { (k, hash) -> hashes.getOrPut(k.first) { ArrayList() } += hash }
-                store.parts.windowCounts(encoder.id)
-            } else {
-                hashes[only] = store.textVectors.hashes(encoder.id, only).values.toMutableList()
-                mapOf(only to store.parts.windowCount(only, encoder.id))
-            }
-            val fingerprints = LongArray(ids.size) { i ->
-                val id = ids[i]
-                fingerprint(site[id].orEmpty(), corrections[id].orEmpty(), hashes[id].orEmpty(), windowCounts[id] ?: 0, complete[id].orEmpty(), drafts[id].orEmpty())
-            }
             // The item's own values: neither the site's examples nor the drafts
             val held = if (examples == null && drafted.isEmpty()) task.assigned else ids.map { id ->
                 indices(TagHierarchy.corrected(site[id].orEmpty(), corrections[id].orEmpty(), within)[facet.key].orEmpty())
             }
-            // The task of one item tells nothing of what the weights were fitted on
-            if (only != null) return FacetData(ids, values, task, held, allNamed, fingerprints, NO_BASIS)
+            // The task of some works tells nothing of what the weights were fitted on
+            if (only != null) return FacetData(ids, values, task, held, allNamed, NO_BASIS)
+            val hashes = HashMap<String, MutableList<String>>()
+            store.textVectors.hashes(encoder.id).forEach { (k, hash) -> hashes.getOrPut(k.first) { ArrayList() } += hash }
+            val windowCounts = store.parts.windowCounts(encoder.id)
+            val fingerprints = LongArray(ids.size) { i ->
+                val id = ids[i]
+                fingerprint(site[id].orEmpty(), corrections[id].orEmpty(), hashes[id].orEmpty(), windowCounts[id] ?: 0, complete[id].orEmpty(), drafts[id].orEmpty())
+            }
             // The values chosen from and their groups are part of what is learnt: a universe added or
             // removed, a sex learnt of a character, fits again
             // What is kept of the chances is part of it too: a new rule of what to keep makes them again
@@ -1235,18 +1122,17 @@ internal class FacetData(
                         },
                     ),
             )
-            return FacetData(ids, values, task, held, allNamed, fingerprints, basis)
+            return FacetData(ids, values, task, held, allNamed, basis)
         }
 
         /**
          * Every input of the [ids], as the model of the grades reads them: a block of every text
          * that has vectors (the title, the description, the notes, the site's lines), of every
          * picture block, of every set (the reviews, the windows of the chapters, the screenshots).
-         * Of the item [only] alone when given — no other item's chances are made — the rows of
-         * the others left empty.
+         * Of the works [only] alone when given, read by their keys; of every work streamed.
          */
         private fun inputs(
-            store: SourceStore, ids: List<String>, encoder: TextEncoder, imageEncoder: String?, sets: Map<SetKind, Long>, only: String?,
+            store: SourceStore, ids: List<String>, encoder: TextEncoder, imageEncoder: String?, sets: Map<SetKind, Long>, only: Collection<String>?,
             /** The texts not read, by their keys. */
             leaveOut: Set<String>,
         ): List<InputBlock> {
@@ -1266,16 +1152,22 @@ internal class FacetData(
                 imageEncoder?.let { e -> store.pictures.forEachItemVector(e) { id, block, v -> put(id, block, v) } }
                 store.setVectors.forEach(sets) { id, block, v -> put(id, block, v) }
             } else {
-                store.textVectors.ofMany(listOf(only), encoder.id)[only]?.forEach { (key, v) -> texts[key]?.let { put(only, it, v) } }
-                imageEncoder?.let { e -> store.pictures.itemVectorsOf(listOf(only), e)[only]?.forEach { (block, v) -> put(only, block, v) } }
-                store.setVectors.ofMany(listOf(only), sets)[only]?.forEach { (block, v) -> put(only, block, v) }
+                store.textVectors.ofMany(ids, encoder.id).forEach { (id, own) -> own.forEach { (key, v) -> texts[key]?.let { put(id, it, v) } } }
+                imageEncoder?.let { e -> store.pictures.itemVectorsOf(ids, e).forEach { (id, own) -> own.forEach { (block, v) -> put(id, block, v) } } }
+                store.setVectors.ofMany(ids, sets).forEach { (id, own) -> own.forEach { (block, v) -> put(id, block, v) } }
             }
             return blocks.map { (name, b) -> InputBlock(name, b.first, b.second) }
         }
 
-        /** The vectors of the values' names as queries — of [known]'s texts for those it has — encoded now where missing or the name changed. */
+        /**
+         * The vectors of the values' names as queries — of [known]'s texts for those it has — encoded
+         * now where missing or the name changed. [asKept]: of works read by the model kept, the vector
+         * kept of a value is its vector whatever its name now — the one the model was fitted with; a
+         * renamed value is encoded again at the next fitting, not at every reading.
+         */
         private fun nameVectors(
             store: SourceStore, facet: String, values: List<String>, corrections: List<FacetCorrection>, known: Map<String, String>, encoder: TextEncoder,
+            asKept: Boolean = false,
         ): Map<String, FloatArray> {
             // The names [known] gives are the dictionary's: the source asked of the others alone
             val names = store.names(facet, values.filter { it !in known }) + corrections.filter { it.facet == facet && it.name != null }.associate { it.key to it.name!! } + known
@@ -1286,7 +1178,7 @@ internal class FacetData(
             values.forEach { key ->
                 val name = names[key] ?: key
                 val have = stored[key]
-                if (have != null && have.first == Vectors.hash(name)) out[key] = have.second else todo += key to name
+                if (have != null && (asKept || have.first == Vectors.hash(name))) out[key] = have.second else todo += key to name
             }
             todo.chunked(ENCODE_BATCH).forEach { batch ->
                 val vectors = encoder.encode(batch.map { it.second }, TextKind.QUERY)

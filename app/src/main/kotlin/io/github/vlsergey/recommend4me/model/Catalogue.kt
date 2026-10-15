@@ -11,6 +11,7 @@ import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.source.NumberScale
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.TypeStore
+import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.work.WorkClusters
@@ -79,7 +80,12 @@ class Catalogue(
 
 /** Reads a [Catalogue], and the same of single items for the requests of the interface. */
 @Component
-class CatalogueReader(private val plugins: Plugins, private val works: Works, private val likenesses: Likenesses) {
+class CatalogueReader(
+    private val plugins: Plugins,
+    private val works: Works,
+    private val likenesses: Likenesses,
+    private val suggestions: FacetSuggestions,
+) {
 
     /**
      * The catalogue of [type]: every work's facets and numbers, the vectors of the works a training
@@ -163,8 +169,8 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
             if (facet in facetIds) facets.getOrPut(id) { HashMap() }.getOrPut(facet) { ArrayList() } += key
         }
         val facetCorrections = s.corrections.allFacets().groupBy { it.itemId }
-        // The values the model gives the items of the facets it works out
-        val chances = s.suggestions.ofFacets(s.schema.facets.filter { it.infer && it.feature }.map { it.key })
+        // The values the model gives the items of the facets it works out: made now of every work, in one pass
+        val chances = suggestions.chancesOf(s, null, s.schema.facets.filter { it.infer && it.feature }.map { it.key })
         val numberDefs = s.schema.numbers.filter { it.feature }.associateBy { it.key }
         val numbers = HashMap<String, HashMap<String, Double>>()
         s.items.forEachNumber { id, key, value -> if (key in numberDefs) numbers.getOrPut(id) { HashMap() }[key] = value }
@@ -196,7 +202,8 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
         val head = s.items.find(key.id) ?: return null
         val facetIds = s.schema.facets.filter { it.feature }.associate { it.key to FeatureNames.facetId(s.source, it) }
         val categorical = LinkedHashSet<String>()
-        val base = ModelValues.of(s.schema, s.items.facets(key.id), s.suggestions.ofItems(listOf(key.id))[key.id])
+        val wanted = s.schema.facets.filter { it.infer && it.feature }.map { it.key }
+        val base = ModelValues.of(s.schema, s.items.facets(key.id), suggestions.chancesOf(s, listOf(key.id), wanted)[key.id])
         val ignored = s.ignoredTags()
         TagHierarchy.corrected(base, s.corrections.facetsOf(key.id), s.hierarchies()).forEach { (facet, keys) ->
             val facetId = facetIds[facet] ?: return@forEach

@@ -8,6 +8,7 @@ import io.github.vlsergey.recommend4me.correction.Corrected
 import io.github.vlsergey.recommend4me.correction.FacetCorrection
 import io.github.vlsergey.recommend4me.interest.Interest
 import io.github.vlsergey.recommend4me.source.FacetDef
+import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.model.FeatureNames
 import io.github.vlsergey.recommend4me.model.Recommendations
@@ -71,6 +72,7 @@ class ItemList(
     private val cards: ItemCards,
     private val search: Search,
     private val recommendations: Recommendations,
+    private val suggestions: FacetSuggestions,
 ) {
 
     /** A facet as the filters of a content type know it: the shared key of its sources' facets, or "<source>.<key>" — as the model does. */
@@ -204,11 +206,15 @@ class ItemList(
         return { id -> values.all { (byItem, choice) -> choice.passes(byItem[id].orEmpty()) } }
     }
 
-    /** Every item's values of one facet as the user sees them: the site's, the model's of a facet it works out, the user's corrections on top. */
+    /**
+     * Every item's values of one facet as the user sees them: the site's, the model's of a facet it
+     * works out, the user's corrections on top. The model's made now of every work of the source, at
+     * every asking (user, 2026-10-15: slow for now, made faster later), none kept.
+     */
     private fun valuesOf(s: SourceStore, def: FacetDef, corrections: Map<String, List<FacetCorrection>>): Map<String, List<String>> {
         val byItem = HashMap<String, List<String>>()
         s.items.forEachFacet(def.key) { id, keys -> byItem[id] = keys }
-        if (def.infer) s.suggestions.ofFacets(listOf(def.key)).forEach { (id, chances) ->
+        if (def.infer) suggestions.chances(s, null, through = def.key).forEach { (id, chances) ->
             byItem[id] = ModelValues.of(s.schema, mapOf(def.key to byItem[id].orEmpty()), chances)[def.key].orEmpty()
         }
         corrections.forEach { (id, list) ->

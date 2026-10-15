@@ -11,9 +11,7 @@
 | `mark_likeness` | how every work is alike what the user marked |
 | `mark_likeness_strength` | every work's strength of likeness to every mark |
 | `mark_likeness_axes` | a work's four axes of likeness to the marks |
-| `facet_suggester` | the fitted state of the suggester of a facet, and how it was fitted: the report of what it tried and chose, how long it took, how many works and values it learnt from |
-| `facet_suggestion_basis` | what a work's chances were made of, as a hash |
-| `facet_suggestion` | the chance of a value of a facet for a work |
+| `facet_suggester` | the fitted state of the suggester of a facet — the model the chances of a work's values are made by when the work is read, none of them kept — the values it chooses from, and how it was fitted: the report of what it tried and chose, how long it took, how many works and values it learnt from |
 | `layer_draft` | a value a source drafts of a work from its own values through the dictionary of universes |
 | `work_likeness` | how the description of a work answers that of a graded work, by the reranker |
 | `work_likeness_text` | the hash of a work's text all its pairs were last read at |
@@ -34,22 +32,7 @@ erDiagram
         BIGINT fit_millis "null"
         INTEGER items "null"
         INTEGER value_count "null"
-    }
-    facet_suggestion {
-        VARCHAR source PK
-        VARCHAR item_id PK
-        VARCHAR facet PK
-        VARCHAR value_key PK
-        CHAR kind
-        DOUBLE chance
-        INTEGER mentions "null"
-    }
-    facet_suggestion_basis {
-        VARCHAR source PK
-        VARCHAR item_id PK
-        VARCHAR facet PK
-        BIGINT fingerprint
-        TIMESTAMPTZ made_at
+        CLOB value_keys "null"
     }
     held_out {
         VARCHAR source PK

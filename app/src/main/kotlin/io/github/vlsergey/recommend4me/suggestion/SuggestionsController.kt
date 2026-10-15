@@ -34,7 +34,7 @@ class SuggestionsController(private val stores: Stores, private val suggestions:
     override fun settleSuggestions(source: String, item: String): ResponseEntity<Unit> {
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         if (store.items.find(item) == null) return ResponseEntity.notFound().build()
-        suggestions.settled(store, item)
+        // Nothing to wait for: a work's chances are made when it is read, of its answers as they are
         return ResponseEntity.noContent().build()
     }
 

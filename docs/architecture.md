@@ -176,28 +176,25 @@ so a value the site gave it that nothing else supports comes out unlikely, and a
 work does not move its own chances. The rank and the penalty are chosen by the held-out loss —
 the strongest penalty within one standard error of the least.
 
-The facets the model works out — the universes, the main and the secondary characters, the
-pairings, the tags — read each other in a circle: each is learnt and worked out with every other
-one's values as its context, the values the model gave besides the site's and the user's, as it
-gave them last; what the model gave of another facet since is part of what a facet is fitted on,
-so it is fitted again at the next refresh. An answer on any of them makes the work's chances of
-all of them current, from the facet answered on round the circle.
+The facets the model works out — the kinds, the universes, the main and the secondary characters,
+the pairings, the tags, the languages — are worked out IN A CHAIN, in the order of the schema: each
+reads as its context the values the site and the user give of every other facet, and the values
+the model gives of the facets before it, made in the same pass. A work's characters are those of
+the universes given before them, its pairings pairs of the characters given before them. The
+fitting and the reading follow the same chain, so a facet is judged on what it was fitted on.
 
-The chances are kept in the model database with what each was made of (a fingerprint of the
-work's values, the user's answers, its texts and chapters). The suggester is fitted again
-whenever anything it learns from changes, and every work is then worked out again; a work a page
-asks for that never had chances gets them at once, by the weights fitted last. The chances of one
-work — after the user's answers, or when it never had them — are made of a task of that work alone:
-the weights read a task by the keys of its values, its context and its blocks, so nothing of the
-other works is read, and of a facet whose values a work may have are limited (its universes'
-characters) only those values are chosen from. Whether the weights still fit is told by the
-background refresh, which reads every work.
+ONLY THE MODEL OF EACH FACET IS KEPT, in the model database: its fitted state and the values it
+chooses from. THE CHANCES OF THE WORKS ARE NOT KEPT (user, 2026-10-15): whoever reads works — a
+page, a card, the extension, a filter over the catalogue, the search index, the training of the
+grades — gets them made in memory at the reading, of those works alone, from their vectors and
+values by the models kept, through the chain. Nothing waits for a refit and nothing is written.
+The model of a facet is fitted again in the background, in the queue of the computations, whenever
+anything it learns from changes; a refit tells which works' given values changed by scoring every
+work by the model before and after it.
 
-Of a work's chances only those shown are kept — of the values it has, rejected, given as examples,
-more likely than not, and the few likeliest others offered — whatever the facet: not every
-character of a work's universes, thousands of them written at every refresh. The user choosing
-among every value a work may have (the candidates) gets them made at the asking. A refresh tells
-which works' values changed by the model's given values of that facet alone.
+Of a work's chances those shown are made — of the values it has, rejected, given as examples, more
+likely than not, and the few likeliest others offered — not every character of a work's universes.
+The user choosing among every value a work may have (the candidates) gets every one at the asking.
 
 ## The normalized tags
 

@@ -17,6 +17,7 @@ import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.suggestion.Chance
+import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
 import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.tag.TagHierarchy
 import io.github.vlsergey.recommend4me.work.TextPlace
@@ -30,7 +31,7 @@ data class Graded(val grade: Int?, val previousGrade: Int?, val previousVersion:
 
 /** The cards of works as the list shows them, read in batch: one query per table per source. */
 @Component
-class ItemCards(private val stores: Stores, private val works: Works) {
+class ItemCards(private val stores: Stores, private val works: Works, private val suggestions: FacetSuggestions) {
 
     /** The grades of the items [ids] of a source at their [versions]. */
     fun graded(ratings: List<Rating>, versions: Map<String, String>): Map<String, Graded> =
@@ -187,8 +188,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             val corrections = store.corrections.facetsOf(ids)
             val fields = store.corrections.fieldsOf(ids)
             val onCard = store.schema.facets.filter { it.onCard }.map { it.key }.toSet()
-            // The chances of the facets on a card alone
-            val chances = store.suggestions.ofItems(ids, facets = onCard)
+            // The chances of the facets on a card alone, made now of these works
+            val chances = suggestions.chancesOf(store, ids, onCard)
             val names = onCard.associateWith { facet ->
                 store.names(facet, ids.flatMap { facets[it]?.get(facet).orEmpty() + ModelValues.named(chances[it]?.get(facet)) + corrections[it].orEmpty().filter { c -> c.facet == facet }.map { c -> c.key } })
             }
