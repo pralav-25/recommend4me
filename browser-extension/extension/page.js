@@ -413,8 +413,9 @@
 
   function clear() {
     document.querySelectorAll("[data-r4m]:not(r4m-badge)").forEach((e) => {
-      // A field's own parts stay in it: the field is put back whole ([addFields])
-      if (e.parentElement && e.parentElement.closest("form.r4m-add")) return;
+      // A field's own parts stay in it: the field is put back whole ([addFields]). A card's badge
+      // stays with what it shows: filled once, it is not asked for again ([cards])
+      if (e.parentElement && e.parentElement.closest("form.r4m-add, r4m-badge")) return;
       e.remove();
     });
     document.querySelectorAll(".r4m-removed, .r4m-doubted, .r4m-marked").forEach((e) =>
