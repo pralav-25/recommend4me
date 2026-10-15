@@ -162,6 +162,16 @@
   const MORE_STEP = 5;
 
   /**
+   * THE FIELDS TO ADD A VALUE ARE KEPT THROUGH THE DRAWING OF THE PAGE ANEW, by work and facet
+   * ("source/item|facet"): every answer and every reading of the work draws the page again, and a
+   * field drawn anew would lose what is typed in it, its focus and its open list. A field the
+   * drawing leaves out is dropped.
+   */
+  const addFields = new Map();
+  /** The focus given back to a field after the drawing: not the user's focusing it. */
+  let refocusing = false;
+
+  /**
    * What moves the work's prediction ({ of: "source/item", parts }), read apart from the page: of
    * a graded work the application fits a model that had not seen it for the asking, a second or
    * more. After a change it is read anew only once the changes have settled for [SETTLE_MS].
@@ -323,6 +333,8 @@
       }
       server = await browser.runtime.sendMessage({ type: "server" });
       view = await api("GET", `/api/pages?url=${enc(location.href)}`);
+      // The work read anew: the candidates the fields offer may be others now
+      addFields.forEach((form) => form.r4mStale());
       // What moves the prediction is read apart, not waited for: a work seen first gets it at once
       if (view.item && (!explanation || explanation.of !== keyOf(view.item))) readExplanation(view.item);
     } catch (e) {
@@ -360,7 +372,11 @@
   }
 
   function clear() {
-    document.querySelectorAll("[data-r4m]:not(r4m-badge)").forEach((e) => e.remove());
+    document.querySelectorAll("[data-r4m]:not(r4m-badge)").forEach((e) => {
+      // A field's own parts stay in it: the field is put back whole ([addFields])
+      if (e.parentElement && e.parentElement.closest("form.r4m-add")) return;
+      e.remove();
+    });
     document.querySelectorAll(".r4m-removed, .r4m-doubted, .r4m-marked").forEach((e) =>
       e.classList.remove("r4m-removed", "r4m-doubted", "r4m-marked"),
     );
@@ -381,7 +397,32 @@
     return false;
   }
 
+  /**
+   * Draws the page anew; the field typed in keeps its text, its list and its focus — given back,
+   * with the caret where it was.
+   */
   function render() {
+    const active = document.activeElement;
+    const focused = active && active.closest && active.closest("form.r4m-add") ? active : null;
+    const caret = focused ? [focused.selectionStart, focused.selectionEnd] : null;
+    draw();
+    addFields.forEach((form, id) => {
+      if (form.isConnected) return;
+      form.r4mClose();
+      addFields.delete(id);
+    });
+    if (focused && focused.isConnected && document.activeElement !== focused) {
+      refocusing = true;
+      try {
+        focused.focus({ preventScroll: true });
+        if (caret[0] !== null) focused.setSelectionRange(caret[0], caret[1]);
+      } finally {
+        refocusing = false;
+      }
+    }
+  }
+
+  function draw() {
     clear();
     // The site's skin may change while the page is open
     document.documentElement.setAttribute("data-r4m-theme", pageIsDark() ? "dark" : "light");
@@ -813,6 +854,9 @@
    * of a name only. The list here draws what is scrolled to, a few screens at a time.
    */
   function addField(item, facet, label) {
+    const id = `${keyOf(item)}|${facet}`;
+    const kept = addFields.get(id);
+    if (kept && !kept.isConnected) return kept;
     const form = el("form", "r4m-add");
     const input = el("input");
     input.type = "text";
@@ -839,6 +883,7 @@
     /** Adds a value: a hint by its key, a name typed ([key] none) by its name. */
     function add(name, key, nameKey) {
       if (!name) return;
+      form.r4mStale();
       act(() => correct(item, facet, key ? { key } : { name }, true), answeredShown(facet, { key: key || name, name, nameKey, offered: true }, true), about(facet, key || name));
     }
 
@@ -915,26 +960,43 @@
     }
 
     box.addEventListener("scroll", drawMore);
+    form.r4mClose = close;
+    form.r4mStale = () => {};
     if (chosen) {
-      let asked = false;
-      input.addEventListener("focus", async () => {
-        if (asked) return narrow();
-        asked = true;
-        try {
-          const candidates = await api("GET", `/api/items/${enc(s.source)}/${enc(s.item)}/candidates?facet=${enc(facet)}`);
-          hints = candidates.map((c) => ({
-            name: nameOf(c),
-            key: c.key,
-            nameKey: c.nameKey,
-            note: [c.chance !== undefined && c.chance !== null ? percent(c.chance) : "", mentionsText(c.mentions)].filter(Boolean).join(" · "),
-          }));
-          narrow();
-        } catch (e) {
-          // No hints: the value is added by its name all the same
-          asked = false;
+      /** The reading of the candidates, once for the work as last read: read again after it is read anew ([form.r4mStale]). */
+      let reading = null;
+      const hintsRead = () => {
+        if (!reading) {
+          reading = api("GET", `/api/items/${enc(s.source)}/${enc(s.item)}/candidates?facet=${enc(facet)}`).then(
+            (candidates) => {
+              hints = candidates.map((c) => ({
+                name: nameOf(c),
+                key: c.key,
+                nameKey: c.nameKey,
+                note: [c.chance !== undefined && c.chance !== null ? percent(c.chance) : "", mentionsText(c.mentions)].filter(Boolean).join(" · "),
+              }));
+            },
+            () => {
+              // No hints: the value is added by its name all the same; asked again on the next typing
+              reading = null;
+            },
+          );
         }
+        return reading;
+      };
+      form.r4mStale = () => {
+        reading = null;
+      };
+      input.addEventListener("focus", async () => {
+        // The focus given back after the drawing: the list stays as it was
+        if (refocusing) return;
+        await hintsRead();
+        narrow();
       });
-      input.addEventListener("input", narrow);
+      input.addEventListener("input", async () => {
+        await hintsRead();
+        narrow();
+      });
     } else {
       let timer = null;
       input.addEventListener("input", () => {
@@ -994,6 +1056,7 @@
     form.appendChild(input);
     form.appendChild(box);
     form.appendChild(note);
+    if (!kept) addFields.set(id, form);
     return form;
   }
 
