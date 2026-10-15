@@ -80,8 +80,9 @@ class Ficbook : Source {
      * statuses; the user's marks of a work — liked, read, followed. 6: the pairings and the
      * characters alone in one field, every entry of the line as written; the fandom a standard one.
      * 7: what a tag's own page says the tag means. 8: the direction a standard one, with AO3's category.
+     * 9: the cover of a work's own page, not only of a card of a list.
      */
-    override val parserVersion = 8
+    override val parserVersion = 9
 
     override val signals = listOf(
         Books.READ.asSignal(),
@@ -105,7 +106,8 @@ class Ficbook : Source {
             FacetDecor(UniverseFacets.PAIRINGS, after = PAIRINGS_BLOCK),
         ),
         reviews = ReviewDecor("article.comment-container[id^='com']", idPrefix = "com"),
-        pictures = PictureDecor("img.fic-cover"),
+        // The cover of the work's header; the covers of the cards are of other works
+        pictures = PictureDecor("section.fanfic-hat .fanfic-hat-cover img"),
         cards = CardDecor("article.fanfic-inline", ".fanfic-inline-title a[href^='/readfic/']"),
     )
 

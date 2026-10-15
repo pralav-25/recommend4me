@@ -81,6 +81,15 @@ class FicbookPages(private val context: SourceContext) {
         id
     }
 
+    /**
+     * The cover of a work's header, of the size a card of a list shows — one picture, whichever page
+     * it is read of: as the site sends it, the attribute of its component; as the browser drew it,
+     * the picture. None when the header has none: a work without a cover, or a markup changed.
+     */
+    private fun cover(hat: Element): String? =
+        (hat.selectFirst("fanfic-cover[src-desktop]")?.attr("src-desktop") ?: hat.selectFirst(".fanfic-hat-cover img[src]")?.attr("src"))
+            ?.takeIf { it.isNotBlank() }
+
     /** The direction, the rating and the status a card or a header shows as labels. */
     private fun badges(id: String, badges: Element?) {
         badges ?: return
@@ -179,6 +188,7 @@ class FicbookPages(private val context: SourceContext) {
         }
         items.upsert(ItemHead(id, "$BASE/readfic/$id", title, updatedAt = parts.mapNotNull { it.publishedAt }.maxOrNull()), now)
         badges(id, doc.selectFirst("section.fanfic-badges"))
+        cover(hat)?.let { items.setPictures(id, listOf(it)) }
         doc.selectFirst("section.fanfic-badges button span")?.text()?.let(PageText::number)?.let { items.setNumbers(id, mapOf(LIKES to it.toDouble())) }
         val authors = hat.select("[itemprop=author]").mapNotNull { a ->
             AUTHOR_ID.find(a.attr("href"))?.groupValues?.get(1)?.let { FacetValue(it, a.text().trim()) }

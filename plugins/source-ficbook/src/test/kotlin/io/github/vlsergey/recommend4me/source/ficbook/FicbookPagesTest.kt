@@ -140,6 +140,25 @@ class FicbookPagesTest {
     }
 
     @Test
+    fun `a work's cover is read of its header, as the site sends it and as the browser draws it`() {
+        val url = "https://ficbook.net/readfic/$work"
+        val covers = "https://assets.teinon.net/fanfic-covers"
+        fun withCover(html: String) = Jsoup.parse(page("readfic.html")).also { it.selectFirst(".fanfic-hat")!!.prependChild(Jsoup.parse(html).body().child(0)) }.outerHtml()
+        val sent = MemorySourceContext()
+        source.capture(CapturedPage(url, withCover("""<fanfic-cover class="jsVueComponent" src-original="$covers/X.webp" src-desktop="$covers/d_X.webp" src-mobile="$covers/m_X.webp"></fanfic-cover>"""), now), sent)
+        assertEquals(listOf("$covers/d_X.webp"), sent.pictures[work])
+        val drawn = MemorySourceContext()
+        val picture = """<div class="jsVueComponent"><div class="fanfic-hat-cover"><picture class="fanfic-hat-cover-picture">""" +
+            """<source media="(max-width: 650px)" srcset="$covers/m_X.webp"><img src="$covers/d_X.webp" alt="" width="200"></picture></div></div>"""
+        source.capture(CapturedPage(url, withCover(picture), now), drawn)
+        assertEquals(listOf("$covers/d_X.webp"), drawn.pictures[work])
+        // The extension marks the cover of the header, not the covers of the other works' cards
+        assertEquals(listOf("$covers/d_X.webp"), Jsoup.parse(withCover(picture)).select(source.pageDecor.pictures!!.selector).map { it.attr("src") })
+        // A work without a cover has none
+        assertNull(MemorySourceContext().also { source.capture(CapturedPage(url, page("readfic.html"), now), it) }.pictures[work])
+    }
+
+    @Test
     fun `a work's page without its header changes nothing, a block of tags of a changed markup leaves the tags`() {
         val context = MemorySourceContext()
         val url = "https://ficbook.net/readfic/$work"
