@@ -1,6 +1,11 @@
 package io.github.vlsergey.recommend4me.workload
 
 import java.time.Instant
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -44,6 +49,27 @@ class WorkloadTest {
         val expected = workload.expected(Work("heldOut", source = "s", item = "2"))!!
         assertTrue(expected >= 30, "expected $expected ms")
         assertNull(workload.expected(Work("heldOut", source = "other", item = "2")))
+    }
+
+    @Test
+    fun `works alike asked while one waits are that one, its reasons summed`() {
+        val workload = Workload()
+        val held = Work("held", item = "1")
+        val release = CountDownLatch(1)
+        val started = CountDownLatch(1)
+        val blocker = thread { workload.run(Work("train", type = "t"), emptyMap()) { started.countDown(); release.await() } }
+        started.await()
+        val runs = AtomicInteger()
+        val answers = (1..3).map { i -> CompletableFuture.supplyAsync { workload.run(held, mapOf("page" to 1)) { runs.incrementAndGet(); "answer" } } }
+        while (workload.waiting().singleOrNull()?.reasons?.get("page") != 3) Thread.sleep(5)
+        // A batch of its own is not joined
+        val own = CompletableFuture.supplyAsync { workload.run(held, mapOf("items" to 1), joinAlike = false) { runs.incrementAndGet(); "own" } }
+        while (workload.waiting().size < 2) Thread.sleep(5)
+        release.countDown()
+        blocker.join()
+        assertEquals(listOf("answer", "answer", "answer"), answers.map { it.get(5, TimeUnit.SECONDS) })
+        assertEquals("own", own.get(5, TimeUnit.SECONDS))
+        assertEquals(2, runs.get())
     }
 
     @Test

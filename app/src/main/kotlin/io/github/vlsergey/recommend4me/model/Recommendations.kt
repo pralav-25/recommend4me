@@ -794,7 +794,7 @@ class Recommendations(
      * of the model of [interest] — read under the type's lock; the measuring itself needs no lock —
      * it reads nothing more. Null when there are too few.
      */
-    fun measuringInput(typeId: String, interest: Boolean = false): MeasuringInput? = workload.run(Work("scorersInput", type = typeId), mapOf("asked" to 1)) {
+    fun measuringInput(typeId: String, interest: Boolean = false): MeasuringInput? = workload.run(Work("scorersInput", type = typeId), mapOf("asked" to 1), joinAlike = false) {
         val catalogue = reader.read(type(typeId))
         val p = (if (interest) prepareInterest(catalogue) else prepare(catalogue)) ?: return@run null
         MeasuringInput(p.task, p.xFor, p.grades.size)
@@ -857,7 +857,7 @@ class Recommendations(
      * way — and the weights chosen on every grade. The rows are read under the type's lock, the
      * trainings — hundreds of them — run without it. Nothing is kept. [cautious]: [GroupWeights.tune].
      */
-    fun weighing(typeId: String, cautious: Boolean = true): Weighing? = workload.run(Work("weighing", type = typeId), mapOf("asked" to 1)) { weighed(typeId, cautious) }
+    fun weighing(typeId: String, cautious: Boolean = true): Weighing? = workload.run(Work("weighing", type = typeId), mapOf("asked" to 1), joinAlike = false) { weighed(typeId, cautious) }
 
     private fun weighed(typeId: String, cautious: Boolean): Weighing? {
         val type = type(typeId)

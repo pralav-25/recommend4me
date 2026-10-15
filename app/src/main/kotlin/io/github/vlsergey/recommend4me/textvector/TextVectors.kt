@@ -102,7 +102,11 @@ class TextVectors(
         only: Collection<String>? = null,
         progress: (done: Int, total: Int) -> Unit = { _, _ -> },
         cancelled: () -> Boolean = { false },
-    ): Int = workload.run(Work("textVectors", source = store.id, item = only?.singleOrNull()), mapOf(reason to (only?.size ?: 1))) {
+    ): Int = workload.run(
+        Work("textVectors", source = store.id, item = only?.singleOrNull()), mapOf(reason to (only?.size ?: 1)),
+        // A batch of ids is its own: another batch of the source is not this one
+        joinAlike = only == null || only.size == 1,
+    ) {
         refreshed(store, only, progress, cancelled)
     }
 

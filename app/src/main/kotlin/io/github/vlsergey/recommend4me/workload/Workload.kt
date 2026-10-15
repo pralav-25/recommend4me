@@ -4,8 +4,9 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.locks.ReentrantLock
 
 private val log = LoggerFactory.getLogger(Workload::class.java)
@@ -58,7 +59,9 @@ class FinishedWork(val work: Work, val began: Instant, val ended: Instant, val r
 class Workload {
     /** Fair: the longest waiting goes first. */
     private val lock = ReentrantLock(true)
-    private val waiting = ConcurrentLinkedQueue<HeavyWork>()
+
+    /** The works waiting their turn, the longest waiting first; guarded by itself. */
+    private val waiting = ArrayList<Waiter>()
     private val planned = ConcurrentHashMap<Work, PlannedWork>()
 
     /** The last works done, the oldest first; guarded by itself. */
@@ -73,24 +76,49 @@ class Workload {
     /**
      * Runs [body] once every work asked for before it is done; answers what it answers. The reasons
      * of the work planned alike, if any, go with it.
+     *
+     * ALIKE WORKS ARE ONE: asked while a work alike still waits its turn, it is not queued a second
+     * time — the caller waits for that one and answers what it answers, its reasons added to it; it
+     * begins on the data as they are then, the newer change too. A work alike already running is not
+     * joined: it read the data before the change, so the work is queued again. A caller whose work is
+     * more than its [Work] tells — a batch of its own ids — passes [joinAlike] false.
      */
-    fun <T> run(work: Work, reasons: Map<String, Int> = take(work), body: () -> T): T {
+    fun <T> run(work: Work, reasons: Map<String, Int> = take(work), joinAlike: Boolean = true, body: () -> T): T {
         if (lock.isHeldByCurrentThread) return body()
-        val entry = HeavyWork(work, Instant.now(), reasons)
-        waiting += entry
+        val (entry, own) = synchronized(waiting) {
+            val alike = if (joinAlike) waiting.firstOrNull { it.joinable && it.work == work } else null
+            if (alike != null) {
+                alike.reasons = merged(alike.reasons, reasons)
+                alike to false
+            } else {
+                Waiter(work, Instant.now(), reasons, joinAlike).also { waiting += it } to true
+            }
+        }
+        if (!own) return joined(entry)
         try {
-            lock.lockInterruptibly()
-        } finally {
-            waiting -= entry
+            try {
+                lock.lockInterruptibly()
+            } finally {
+                synchronized(waiting) { waiting -= entry }
+            }
+        } catch (e: Throwable) {
+            entry.result.completeExceptionally(e)
+            throw e
         }
         try {
             val waited = Duration.between(entry.since, Instant.now())
             if (waited > NOTED) log.info("{} waited {} s for the works before it", work, waited.toSeconds())
-            val running = HeavyWork(work, Instant.now(), reasons)
+            val running = HeavyWork(work, Instant.now(), entry.reasons)
             current = running
             var failed = true
             try {
-                return body().also { failed = false }
+                return body().also {
+                    failed = false
+                    entry.result.complete(it)
+                }
+            } catch (e: Throwable) {
+                entry.result.completeExceptionally(e)
+                throw e
             } finally {
                 done(running, failed)
             }
@@ -98,6 +126,21 @@ class Workload {
             current = null
             lock.unlock()
         }
+    }
+
+    /** What the work alike [entry] answered, once it is done; its failure thrown here too. */
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> joined(entry: Waiter): T = try {
+        entry.result.get() as T
+    } catch (e: ExecutionException) {
+        throw e.cause ?: e
+    }
+
+    private fun merged(a: Map<String, Int>, b: Map<String, Int>): Map<String, Int> = a.toMutableMap().apply { b.forEach { (k, n) -> merge(k, n, Int::plus) } }
+
+    /** A work waiting its turn: its reasons grow as works alike join it, its callers wait for its [result]. */
+    private class Waiter(val work: Work, val since: Instant, @Volatile var reasons: Map<String, Int>, val joinable: Boolean) {
+        val result = CompletableFuture<Any?>()
     }
 
     /** The work [entry] ended: kept among the works done, with how long it took. */
@@ -137,7 +180,7 @@ class Workload {
     fun running(): HeavyWork? = current
 
     /** The works waiting their turn, the longest waiting first. */
-    fun waiting(): List<HeavyWork> = waiting.toList().sortedBy { it.since }
+    fun waiting(): List<HeavyWork> = synchronized(waiting) { waiting.map { HeavyWork(it.work, it.since, it.reasons) } }.sortedBy { it.since }
 
     /** The works planned, the soonest due first. */
     fun planned(): List<PlannedWork> = planned.values.sortedBy { it.due }

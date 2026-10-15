@@ -555,7 +555,8 @@ class SiteTest {
         capture("n1|The captain|space|The Captain commands. The Captain waits. The Captain sleeps, the captain of the guard does not|")
         corrections.correctFacet("site", "n1", FacetCorrection(facet = "universe", added = true, key = "fake:U2"))
         refresh(store)
-        // The candidates first: asked for, the work's chances are made current, and the card read after them shows the same
+        // The candidates wait for nothing: they offer what the weights say now, the work's kept chances
+        // are made in the queue of the computations; a value the card gives is never offered beside it
         val offered = suggestionsApi.getCandidates("site", "n1", "characters").body!!
         val given = items.getItem("site", "n1").body!!.allFacets.find { it.facet == "characters" }?.propertyValues.orEmpty().filter { it.offered != true }.map { it.key }
         assertEquals(setOf("fake:C1", "fake:C2", "oc:female", "oc:male"), (offered.map { it.key } + given).toSet(), "offered $offered, given $given")

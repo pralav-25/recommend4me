@@ -354,7 +354,7 @@ class FacetSuggestions(
         }
         // Fitted on other data: the whole facet is fitted again and worked out in the background —
         // after the change that made it other, which was a newer one itself
-        if (!current && only != null) changed(store.id, "stale", newer = false)
+        if (!current && only != null) changed(store.id, "newData", newer = false)
         val refitted = !current && only == null
         // The fingerprints the chances were made of, read before the scoring: of the whole facet, what the writing compares with
         val fingerprintsRead = if (only == null) store.suggestions.fingerprints(facet.key) else null
@@ -776,20 +776,23 @@ class FacetSuggestions(
         val facets = facetsOf(store)
         val def = facets.find { it.key == facet } ?: return null
         if (store.items.find(itemId) == null) return null
-        // The chances being made after the user's answers are waited for, not made a second time beside them
-        settled(store, itemId)
+        // NOTHING WAITED FOR, NOTHING KEPT: the marking of a work waits for nothing that computes the
+        // model (user, 2026-10-15) — not for the chances being made after the answers, not for a
+        // writing of the chances the background holds up. The chances of the facets before this one,
+        // its context, are those kept now; the newer come with the next reading
         val corrections = store.corrections.facetsOf(itemId)
         val site = store.items.facets(itemId)
-        // The facet and those worked out before it, its values made of theirs: not the long fittings after it
-        ensure(store, itemId, facets.take(facets.indexOf(def) + 1), site, corrections, now = true)
-        // Only the likeliest are kept: every other made now — of a work's universes, characters and
-        // pairings, those it may have alone
+        // Only the likeliest are kept: every other made now, by the weights fitted last — of a work's
+        // universes, characters and pairings, those it may have alone
         val vocabulary = universeVocabulary(store, def, itemId) ?: examplesVocabulary(store, def)
         val may = vocabulary?.allowed?.invoke(itemId)
         val chances = everyChance(store, def, itemId, vocabulary)?.filter { may == null || it.key in may || it.had }
             ?: store.suggestions.ofItems(listOf(itemId))[itemId].orEmpty()[facet].orEmpty().values
         val answered = corrections.filter { it.facet == facet }.map { it.key }.toSet()
-        val current = site[facet].orEmpty().toSet()
+        // The work's values as its card shows them: its site's, and those the chances kept give it — made
+        // in the background, they may be older than the chances made here, and a value is never both
+        // given and offered
+        val current = ModelValues.of(store.schema, site, store.suggestions.ofItems(listOf(itemId))[itemId])[facet].orEmpty().toSet()
         // A character of the work's other facet of characters is no candidate here; nor a tag under
         // one the user said the work has not — it has none of them ([TagHierarchy])
         val hierarchy = store.hierarchies()[facet]
@@ -827,6 +830,14 @@ class FacetSuggestions(
         val first = if (answered in UniverseFacet.CHARACTER_FACETS) UniverseFacets.CHARACTERS else answered
         val from = facets.indexOfFirst { it.key == first }
         if (from < 0) return
+        makeLater(store, itemId, from)
+    }
+
+    /**
+     * The item's chances made current from the facet [from] on, in the queue of the computations:
+     * whoever asks goes on at once — the marking of a work never waits for the model (user, 2026-10-15).
+     */
+    private fun makeLater(store: SourceStore, itemId: String, from: Int) {
         val key = "${store.id}/$itemId"
         synchronized(answering) {
             val work = answering.getOrPut(key) { Answering() }
@@ -923,21 +934,21 @@ class FacetSuggestions(
     }
 
     /**
-     * The item's chances of the facets the model gives values of: made now when it has none, else
-     * refreshed in the background when what they were made of changed.
+     * The item's chances of the facets the model gives values of, for a page opening it: NEVER
+     * WAITED FOR — the marking of a work waits for nothing that computes the model (user,
+     * 2026-10-15). A work that has none gets them in the queue of the computations ([makeLater]),
+     * the page reads them once made ([settled]); stale ones are refreshed in the background.
      */
     fun ensureFor(store: SourceStore, itemId: String) {
         val facets = facetsOf(store).filter { it.infer }
         if (facets.isEmpty() || store.items.find(itemId) == null) return
-        // The chances being made after the user's answers are waited for, not made a second time beside them
-        settled(store, itemId)
         ensure(store, itemId, facets, store.items.facets(itemId), store.corrections.facetsOf(itemId))
     }
 
     /**
-     * The item's chances made now when it has none — or when what they were made of changed and
-     * the caller waits for them ([now]: the user just answered and chooses next); otherwise
-     * refreshed in the background.
+     * The item's chances made now when what they were made of changed and the caller is the queue
+     * of the computations itself ([now]: made current after the answers); otherwise those it has
+     * none of made there later, and stale ones refreshed in the background.
      */
     private fun ensure(
         store: SourceStore, itemId: String, facets: List<FacetDef>, site: Map<String, List<String>>, corrections: List<FacetCorrection>,
@@ -951,9 +962,12 @@ class FacetSuggestions(
         val known = facets.associateWith { store.suggestions.fingerprint(itemId, it.key) }
         val stale = facets.filter { known[it] != fingerprint }
         if (stale.isEmpty()) return
-        if (now || stale.any { known[it] == null }) refreshNow(store, itemId, stale, stop)
-        // The change that made them stale was told already: a refresh under way is not given up for it
-        else changed(store.id, "stale", newer = false)
+        when {
+            now -> refreshNow(store, itemId, stale, stop)
+            stale.any { known[it] == null } -> makeLater(store, itemId, facets.indexOf(stale.first()))
+            // The change that made them stale was told already: a refresh under way is not given up for it
+            else -> changed(store.id, "newData", newer = false)
+        }
     }
 
     @PreDestroy

@@ -36,7 +36,6 @@ import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.downloadsPages
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.tag.Tags
-import io.github.vlsergey.recommend4me.textvector.TextVectors
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.core.io.FileSystemResource
@@ -63,7 +62,6 @@ class ItemsController(
     private val details: ItemDetailsReader,
     private val pictures: PictureService,
     private val contexts: SourceContexts,
-    private val textVectors: TextVectors,
     private val recommendations: Recommendations,
     private val events: ApplicationEventPublisher,
     private val removal: ItemRemoval,
@@ -175,7 +173,7 @@ class ItemsController(
             throw Refusal.SITE_SILENT.refuse(HttpStatus.BAD_GATEWAY, "The site did not answer: ${e.message}", "error" to (e.message ?: e.javaClass.simpleName))
         }
         if (!refreshed) throw Refusal.REFRESH_FAILED.refuse(HttpStatus.CONFLICT, "The source $source could not download the page of $item")
-        textVectors.refresh(store, "pageRead", only = listOf(item))
+        // Its texts encoded in the queue of the computations, as every written work's: not waited for here
         recommendations.scoreItem(ItemKey(source, item))
         return getItem(source, item)
     }

@@ -173,7 +173,8 @@ class Search(
         built[type.id]?.let { if (it.count > 0) return }
         val keys = pending[type.id]?.let { set -> set.toList().also { set.removeAll(it.toSet()) } }.orEmpty()
         if (keys.isEmpty()) return
-        workload.run(Work("searchUpdate", type = type.id), mapOf("items" to keys.size)) {
+        // The works taken here are this update's own: another update is of others
+        workload.run(Work("searchUpdate", type = type.id), mapOf("items" to keys.size), joinAlike = false) {
             val docs = HashMap<ItemKey, SearchDocument>()
             keys.groupBy { it.source }.forEach { (source, list) ->
                 stores.source(source)?.let { docs += documents(it, list.map { k -> k.id }) }
