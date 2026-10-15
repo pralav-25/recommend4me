@@ -26,15 +26,13 @@ class DatabaseTest {
             // Random bytes: the file's compression gives nothing back of them
             repeat(900) { i -> db.dsl.execute("INSERT INTO junk VALUES (?, ?)", i, random.nextBytes(100_000)) }
             db.dsl.execute("DELETE FROM junk WHERE id >= 10")
-            // H2 lets go of the rows deleted in the background, a second or two: till the share used stops falling
-            val until = System.currentTimeMillis() + 15_000
-            var last = -1
-            var same = 0
-            while (same < 4 && System.currentTimeMillis() < until) {
-                Thread.sleep(500)
-                val now = db.usage()!!.third
-                same = if (now == last) same + 1 else 0
-                last = now
+            // H2 lets go of the pages of the rows deleted in the background, a checkpoint at a time, slower
+            // on a busy machine: till they are let go — of 900 rows 10 kept, a few percent of the pages
+            // live — not till the share merely stops falling for a while
+            val until = System.currentTimeMillis() + 120_000
+            while (db.usage()!!.third >= RELEASED && System.currentTimeMillis() < until) {
+                db.dsl.execute("CHECKPOINT")
+                Thread.sleep(250)
             }
             // Compacted only when it gives back much: a file of 64 MB or more, mostly unused
             val (before, after) = assertNotNull(db.compact(60_000), "usage ${db.usage()}")
@@ -50,5 +48,10 @@ class DatabaseTest {
     @Test
     fun `a small file is not compacted while open`() {
         Database("small", folder.resolve("ratings"), "ratings").use { db -> assertNull(db.compact(1000)) }
+    }
+
+    private companion object {
+        /** The share of live pages in the file's chunks, percent, below which the deleted rows are let go. */
+        const val RELEASED = 20
     }
 }
