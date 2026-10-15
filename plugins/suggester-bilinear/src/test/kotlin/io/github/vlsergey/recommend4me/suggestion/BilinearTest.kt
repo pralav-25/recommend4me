@@ -67,6 +67,67 @@ class BilinearTest {
     }
 
     @Test
+    fun `every model in one product has the loss and the gradient it has alone, without names`() {
+        val t = task()
+        val task = SuggestionTask(
+            t.itemIds, t.inputs, t.values, t.valueKeys, t.assigned, t.confirmed, t.rejected, t.context, t.contextKeys,
+            t.mentions, t.allowed, t.groupings, t.lackWeight, t.examples, emptyList(), Matrix(0, 0), t.drafts, t.draftWeight,
+        )
+        compareTogether(task)
+    }
+
+    @Test
+    fun `every model in one product has the loss and the gradient it has alone`() = compareTogether(task())
+
+    private fun compareTogether(task: SuggestionTask) {
+        val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)
+        val rank = 3
+        val lambdas = floatArrayOf(0.1f, 0.01f, 0.001f, 0.01f)
+        val folds = intArrayOf(0, 1, 2, 4)
+        val ensemble = Ensemble(problem, rank, lambdas, folds)
+        val alone = Bilinear(problem, rank)
+        val random = Random(17)
+        val thetas = List(lambdas.size) { FloatArray(alone.size) { (random.nextGaussian() * 0.3).toFloat() } }
+        val (losses, gradients) = ensemble.lossesAndGradients(thetas)
+        thetas.forEachIndexed { k, theta ->
+            val grad = FloatArray(alone.size)
+            val loss = alone.lossAndGradient(theta, grad, lambdas[k]) { problem.foldOf[it] != folds[k] }
+            assertTrue(abs(loss - losses[k]) < 1e-4 * abs(loss), "model $k: loss $loss alone, ${losses[k]} together")
+            val at = grad.indices.maxBy { abs(grad[it] - gradients[k][it]) / max(1e-4f, abs(grad[it])) }
+            val worst = abs(grad[at] - gradients[k][at]) / max(1e-4f, abs(grad[at]))
+            val dx = problem.design.itemWidth * rank
+            val dz = problem.design.valueWidth * rank
+            val part = when {
+                at < dx -> "A"
+                at < dx + dz -> "B"
+                at < dx + dz + problem.m * rank -> "E"
+                at < dx + dz + problem.m * rank + problem.m -> "bias"
+                else -> "pair"
+            }
+            assertTrue(worst < 1e-3, "model $k: the worst relative difference of the gradient $worst, at $at of $part: ${grad[at]} alone, ${gradients[k][at]} together")
+        }
+    }
+
+    @Test
+    fun `models fitted together come out as fitted alone`() {
+        val task = task()
+        val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)
+        val rank = 3
+        val lambdas = floatArrayOf(0.1f, 0.01f)
+        val folds = intArrayOf(1, 3)
+        val alone = Bilinear(problem, rank)
+        val starts = List(lambdas.size) { alone.start(it + 1L) }
+        val fits = Ensemble(problem, rank, lambdas, folds).fit(starts, Bilinear.MAX_STEPS) { false }
+        starts.forEachIndexed { k, start ->
+            val theta = alone.fit(start, lambdas[k], folds[k])
+            val loss = alone.lossAndGradient(theta, FloatArray(alone.size), lambdas[k]) { problem.foldOf[it] != folds[k] }
+            val together = alone.lossAndGradient(fits.weights[k], FloatArray(alone.size), lambdas[k]) { problem.foldOf[it] != folds[k] }
+            // The same search on floats added in another order: the same minimum to the float's resolution of the loss
+            assertTrue(abs(loss - together) < 1e-3 * abs(loss), "model $k: loss $loss alone, $together together")
+        }
+    }
+
+    @Test
     fun `the gradient is the loss's own, the names' part with it`() {
         val task = task()
         val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)

@@ -136,6 +136,91 @@ object Blas {
         )
     }
 
+    /**
+     * `c = op(a) · op(b) + beta · c`, row-major, ONE CALL OF THE WHOLE: the library shares it out
+     * among its own threads when a caller asks for them ([wide]), none of ours. Every side
+     * addressed where it lies — [aAt], [bAt], [cAt] the numbers it starts at — nothing copied.
+     * op(a) is m × k (a is k × m when [transA]), op(b) k × n, c m × n.
+     */
+    fun gemm(
+        transA: Boolean, transB: Boolean, m: Int, n: Int, k: Int,
+        a: Floats, aAt: Int, lda: Int, b: Floats, bAt: Int, ldb: Int, c: Floats, cAt: Int, ldc: Int, beta: Float = 0f,
+    ) {
+        if (m == 0 || n == 0) return
+        val pa = a.p
+        val pb = b.p
+        val pc = c.p
+        if (pa == null || pb == null || pc == null) {
+            for (i in 0 until m) for (j in 0 until n) {
+                var s = 0f
+                for (q in 0 until k) {
+                    val x = if (transA) a[aAt + q * lda + i] else a[aAt + i * lda + q]
+                    val y = if (transB) b[bAt + j * ldb + q] else b[bAt + q * ldb + j]
+                    s += x * y
+                }
+                c[cAt + i * ldc + j] = s + (if (beta == 0f) 0f else beta * c[cAt + i * ldc + j])
+            }
+            return
+        }
+        openblas_full.cblas_sgemm(
+            openblas_full.CblasRowMajor, if (transA) openblas_full.CblasTrans else openblas_full.CblasNoTrans,
+            if (transB) openblas_full.CblasTrans else openblas_full.CblasNoTrans,
+            m, n, k, 1.0f, FloatPointer(pa).position(aAt.toLong()), lda, FloatPointer(pb).position(bAt.toLong()), ldb,
+            beta, FloatPointer(pc).position(cAt.toLong()), ldc,
+        )
+    }
+
+    /**
+     * `y = op(a) · x + beta · y` — op(a) of [m] × [n] numbers, a row-major of [lda]; transposed
+     * when [trans] (a is then m × n and op(a) n × m) — one call of the whole, as [gemm].
+     */
+    fun gemv(trans: Boolean, m: Int, n: Int, a: Floats, aAt: Int, lda: Int, x: Floats, xAt: Int, y: Floats, yAt: Int, beta: Float = 0f) {
+        if (m == 0 || n == 0) return
+        val pa = a.p
+        val px = x.p
+        val py = y.p
+        if (pa == null || px == null || py == null) {
+            val rows = if (trans) n else m
+            val cols = if (trans) m else n
+            for (i in 0 until rows) {
+                var s = 0f
+                for (q in 0 until cols) s += (if (trans) a[aAt + q * lda + i] else a[aAt + i * lda + q]) * x[xAt + q]
+                y[yAt + i] = s + (if (beta == 0f) 0f else beta * y[yAt + i])
+            }
+            return
+        }
+        openblas_full.cblas_sgemv(
+            openblas_full.CblasRowMajor, if (trans) openblas_full.CblasTrans else openblas_full.CblasNoTrans, m, n,
+            1.0f, FloatPointer(pa).position(aAt.toLong()), lda, FloatPointer(px).position(xAt.toLong()), 1,
+            beta, FloatPointer(py).position(yAt.toLong()), 1,
+        )
+    }
+
+    /** The callers inside [wide] now; the library's threads go back to one when the last leaves. */
+    private var wideCallers = 0
+    private val wideLock = Any()
+
+    /**
+     * [body] run with THE LIBRARY SHARING ITS PRODUCTS OUT AMONG ITS OWN THREADS, one a physical
+     * core: for a caller of one thread whose products are of the whole — the fitting of a facet's
+     * models, ten of them in one product ([gemm]). The setting is the library's, of the whole
+     * process: a product another thread makes meanwhile goes on more threads too — the queue of the
+     * computations lets one heavy work run at a time, so none but a page's small ones.
+     */
+    fun <T> wide(body: () -> T): T {
+        if (!on) return body()
+        synchronized(wideLock) {
+            if (wideCallers++ == 0) openblas_full.openblas_set_num_threads(PARTS)
+        }
+        try {
+            return body()
+        } finally {
+            synchronized(wideLock) {
+                if (--wideCallers == 0) openblas_full.openblas_set_num_threads(THREADS)
+            }
+        }
+    }
+
     /** `body(from, upTo)` over [count] rows in parts on the common pool; one part when there are few rows. */
     private inline fun split(count: Int, want: Int, crossinline body: (Int, Int) -> Unit) {
         val parts = minOf(want, maxOf(1, count / LEAST_ROWS))

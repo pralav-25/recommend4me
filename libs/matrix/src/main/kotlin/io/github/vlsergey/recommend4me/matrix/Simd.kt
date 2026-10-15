@@ -121,39 +121,33 @@ object Simd {
                 }
                 j += width
             }
-            // The last lanes through a lane's worth of scratch: a mask on the registers is cheap, a
-            // mask on memory is not compiled to the wide instructions — and a universe of a few
-            // characters is all tail
-            val rest = n - j
-            if (rest > 0) {
-                val zs = FloatArray(width)
-                MemorySegment.copy(seg, ValueLayout.JAVA_FLOAT, (at + j) * bytes, zs, 0, rest)
-                fun padded(src: FloatArray) = FloatVector.fromArray(sp, FloatArray(width).also { System.arraycopy(src, j, it, 0, rest) }, 0)
-                val z = FloatVector.fromArray(sp, zs, 0).add(padded(shift))
-                val label = y?.let(::padded)
-                val weight = w?.let(::padded)
-                val mask = sp.indexInRange(0, rest)
-                lane(z, label, weight, one, scale) { l, d ->
-                    d.intoArray(zs, 0)
-                    MemorySegment.copy(zs, 0, out, ValueLayout.JAVA_FLOAT, (outAt + j) * bytes, rest)
-                    lossAcc = lossAcc.add(l, mask)
-                    slopeAcc = slopeAcc.add(d, mask)
-                }
-            }
             loss = lossAcc.reduceLanes(VectorOperators.ADD)
             slope = slopeAcc.reduceLanes(VectorOperators.ADD)
+            // The last lanes one at a time: no scratch made for them — a row of a few values is all
+            // tail, and a fitting takes millions of rows a step
+            for (k in full until n) {
+                loss += scalar(seg, at, k, shift, w, y, scale, out, outAt)
+                slope += out.getAtIndex(ValueLayout.JAVA_FLOAT, (outAt + k).toLong())
+            }
         } else for (j in 0 until n) {
-            val z = seg.getAtIndex(ValueLayout.JAVA_FLOAT, (at + j).toLong()) + shift[j]
-            val e = kotlin.math.exp(-kotlin.math.abs(z))
-            val label = y?.get(j) ?: 0f
-            val weight = w?.get(j) ?: 1f
-            loss += weight * (kotlin.math.max(z, 0f) + kotlin.math.ln1p(e) - label * z)
-            val d = weight * ((if (z >= 0) 1 / (1 + e) else e / (1 + e)) - label) * scale
-            out.setAtIndex(ValueLayout.JAVA_FLOAT, (outAt + j).toLong(), d)
-            slope += d
+            loss += scalar(seg, at, j, shift, w, y, scale, out, outAt)
+            slope += out.getAtIndex(ValueLayout.JAVA_FLOAT, (outAt + j).toLong())
         }
         sums[0] += loss
         sums[1] += slope
+    }
+
+    /**
+     * The score at `at + j` one number at a time — [logistic] without the wide registers: its slope
+     * written at `outAt + j` (read in place first: the score and the slope may be one number), its loss answered.
+     */
+    private fun scalar(seg: MemorySegment, at: Int, j: Int, shift: FloatArray, w: FloatArray?, y: FloatArray?, scale: Float, out: MemorySegment, outAt: Int): Float {
+        val z = seg.getAtIndex(ValueLayout.JAVA_FLOAT, (at + j).toLong()) + shift[j]
+        val e = kotlin.math.exp(-kotlin.math.abs(z))
+        val label = y?.get(j) ?: 0f
+        val weight = w?.get(j) ?: 1f
+        out.setAtIndex(ValueLayout.JAVA_FLOAT, (outAt + j).toLong(), weight * ((if (z >= 0) 1 / (1 + e) else e / (1 + e)) - label) * scale)
+        return weight * (kotlin.math.max(z, 0f) + kotlin.math.ln1p(e) - label * z)
     }
 
     /**
@@ -222,6 +216,68 @@ object Simd {
         }
         while (k < x.size) {
             y[k] += c * x[k]
+            k++
+        }
+    }
+
+    /** `y[yAt + k] += c · x[xAt + k]` for k under [n], where the numbers lie: a lane's worth at once. */
+    fun axpy(c: Float, x: Floats, xAt: Int, y: Floats, yAt: Int, n: Int) {
+        var k = 0
+        val bytes = Float.SIZE_BYTES.toLong()
+        if (on) {
+            val sp = FloatVector.SPECIES_PREFERRED
+            val bound = sp.loopBound(n)
+            val cv = FloatVector.broadcast(sp, c)
+            while (k < bound) {
+                FloatVector.fromMemorySegment(sp, x.seg, (xAt + k) * bytes, ORDER)
+                    .fma(cv, FloatVector.fromMemorySegment(sp, y.seg, (yAt + k) * bytes, ORDER))
+                    .intoMemorySegment(y.seg, (yAt + k) * bytes, ORDER)
+                k += sp.length()
+            }
+        }
+        while (k < n) {
+            y[yAt + k] = y[yAt + k] + c * x[xAt + k]
+            k++
+        }
+    }
+
+    /** `Σ f[at + k]` for k under [n], where the numbers lie. */
+    fun sum(f: Floats, at: Int, n: Int): Float {
+        var k = 0
+        var s = 0f
+        val bytes = Float.SIZE_BYTES.toLong()
+        if (on) {
+            val sp = FloatVector.SPECIES_PREFERRED
+            val bound = sp.loopBound(n)
+            var acc = FloatVector.zero(sp)
+            while (k < bound) {
+                acc = acc.add(FloatVector.fromMemorySegment(sp, f.seg, (at + k) * bytes, ORDER))
+                k += sp.length()
+            }
+            s = acc.reduceLanes(VectorOperators.ADD)
+        }
+        while (k < n) {
+            s += f[at + k]
+            k++
+        }
+        return s
+    }
+
+    /** `f[at + k] += c` for k under [n], where the numbers lie. */
+    fun add(c: Float, f: Floats, at: Int, n: Int) {
+        var k = 0
+        val bytes = Float.SIZE_BYTES.toLong()
+        if (on) {
+            val sp = FloatVector.SPECIES_PREFERRED
+            val bound = sp.loopBound(n)
+            val cv = FloatVector.broadcast(sp, c)
+            while (k < bound) {
+                FloatVector.fromMemorySegment(sp, f.seg, (at + k) * bytes, ORDER).add(cv).intoMemorySegment(f.seg, (at + k) * bytes, ORDER)
+                k += sp.length()
+            }
+        }
+        while (k < n) {
+            f[at + k] = f[at + k] + c
             k++
         }
     }

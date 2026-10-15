@@ -885,8 +885,9 @@ class Tags(
     /**
      * The tag [tag] bound to the entry [entry] of [catalogue] besides the ones it is — the entry read
      * of the catalogue now and kept; the label of the one bound first the tag's name unless the user
-     * named it — or, [bound] false, no more to it. The tag's works are read again: its name is what
-     * the model reads.
+     * named it — or, [bound] false, no more to it: its name alone worked out again, of the
+     * statistics kept ([entriesChanged]). The tag's works are read again: its name is what the
+     * model reads.
      */
     fun bindEntry(scope: TagScope, facet: String, tag: String, catalogue: String, entry: String, bound: Boolean): NamedTag? {
         val id = TagRepository.idOf(tag)?.takeIf(scope.tags::exists) ?: return null
@@ -909,7 +910,7 @@ class Tags(
                 log.warn("{}: what {}:{} is a kind of was not read: {}", scope.id, catalogue, read.id, e.message)
             }
         }
-        changed(scope, facet, itemsOf(scope, facet, listOf(tag)))
+        entriesChanged(scope, facet, tag)
         return one(scope, facet, tag)
     }
 
@@ -927,13 +928,31 @@ class Tags(
             readAbove(scope, catalogue, ids, anew = true)
         }
         log.info("{}: the entries of tag {} read again", scope.id, tag)
-        changed(scope, facet, itemsOf(scope, facet, listOf(tag)))
+        entriesChanged(scope, facet, tag)
         return one(scope, facet, tag)
     }
 
     /** The tags changed: their names worked out again now, their works read again — their chances, their search — and the model of the grades trained again. */
     private fun changed(scope: TagScope, facet: String, items: Collection<ItemKey>) {
         rename(scope, facet)
+        told(scope, items)
+    }
+
+    /**
+     * The entries of ONE TAG changed — bound, unbound, read again: ITS NAME ALONE worked out again, of
+     * the statistics kept (user, 2026-10-16) — nothing counted anew, no other tag's name touched, the
+     * queue of the computations not waited for. Its works read again, as of any change of a tag.
+     */
+    private fun entriesChanged(scope: TagScope, facet: String, tag: String) {
+        val n = naming(scope, facet)
+        val id = TagRepository.idOf(tag)
+        val stats = n.stats[tag]
+        if (id != null && stats != null) scope.tags.replaceCalculated(mapOf(id to TagNaming.name(stats, null, n.cataloguedOf(tag))))
+        told(scope, itemsOf(scope, facet, listOf(tag)))
+    }
+
+    /** The works [items] read again — their chances, their search — and the model of the grades trained again. */
+    private fun told(scope: TagScope, items: Collection<ItemKey>) {
         items.groupBy({ it.source }, { it.id }).forEach { (source, ids) -> events.publishEvent(ItemsChanged(source, ids)) }
         scope.types.forEach { events.publishEvent(TagsChanged(it)) }
     }

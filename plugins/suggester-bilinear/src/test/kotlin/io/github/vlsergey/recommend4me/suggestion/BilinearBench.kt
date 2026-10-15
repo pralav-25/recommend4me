@@ -41,6 +41,15 @@ class BilinearBench {
             println("BENCH on the $where: one loss $one ms; a fold from scratch $calls losses in ${(System.nanoTime() - t) / 1_000_000} ms")
         }
         card?.close()
+        // One step of two penalties' five folds each in one product, as a refit takes them
+        val alone = Bilinear(problem, 16)
+        val count = 2 * BilinearSuggester.FOLDS
+        val ensemble = Ensemble(problem, 16, FloatArray(count) { if (it < BilinearSuggester.FOLDS) 1e-6f else 1e-7f }, IntArray(count) { it % BilinearSuggester.FOLDS })
+        val thetas = List(count) { alone.start(it + 1L) }
+        repeat(2) { ensemble.lossesAndGradients(thetas) }
+        val t = System.nanoTime()
+        repeat(5) { ensemble.lossesAndGradients(thetas) }
+        println("BENCH ten models in one product: one step of them all ${(System.nanoTime() - t) / 5 / 1_000_000} ms")
         if (System.getenv("BENCH_WHOLE") == null) return
         started = System.nanoTime()
         val scratch = suggester.fit(task)!!
