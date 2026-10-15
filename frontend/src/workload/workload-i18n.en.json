@@ -66,6 +66,8 @@
   "WorkQueue.state.FAILED.hint": "Ended with an error: see the application's log",
   "WorkQueue.state.FINISHED": "done",
   "WorkQueue.state.FINISHED.hint": "One of the last five done",
+  "WorkQueue.state.GIVEN_UP": "given up",
+  "WorkQueue.state.GIVEN_UP.hint": "New data came while it ran: given up, done again on them — no error",
   "WorkQueue.state.PLANNED": "planned",
   "WorkQueue.state.PLANNED.hint": "Begins once the changes settle",
   "WorkQueue.state.RUNNING": "computing",

@@ -16,7 +16,7 @@ class WorkloadController(private val workload: Workload, private val stores: Sto
 
     override fun listWorkload(): ResponseEntity<List<QueuedWork>> {
         val finished = workload.finished().map { f ->
-            queued(f.work, QueuedWork.State.FINISHED, f.began, f.reasons).copy(ended = f.ended.atOffset(ZoneOffset.UTC), failed = f.failed)
+            queued(f.work, QueuedWork.State.FINISHED, f.began, f.reasons).copy(ended = f.ended.atOffset(ZoneOffset.UTC), failed = f.failed, givenUp = f.givenUp)
         }
         val running = listOfNotNull(workload.running()).map { it.toApi(QueuedWork.State.RUNNING) }
         val waiting = workload.waiting().map { it.toApi(QueuedWork.State.WAITING) }

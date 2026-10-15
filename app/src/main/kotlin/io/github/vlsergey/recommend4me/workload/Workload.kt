@@ -4,6 +4,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ExecutionException
@@ -28,8 +29,11 @@ class HeavyWork(val work: Work, val since: Instant, val reasons: Map<String, Int
 /** A work planned for later: when it is due (it may be put off by newer changes), since when it is planned, and why. */
 class PlannedWork(val work: Work, val due: Instant, val since: Instant, val reasons: Map<String, Int>)
 
-/** A work done: when it began and ended, why it ran, whether it failed. */
-class FinishedWork(val work: Work, val began: Instant, val ended: Instant, val reasons: Map<String, Int>, val failed: Boolean)
+/**
+ * A work done: when it began and ended, why it ran, whether it failed — or was [givenUp]: newer data
+ * came while it ran, and it is done again on them (a [CancellationException]), no failure.
+ */
+class FinishedWork(val work: Work, val began: Instant, val ended: Instant, val reasons: Map<String, Int>, val failed: Boolean, val givenUp: Boolean = false)
 
 /**
  * EVERY COMPUTATION OF THE BACKGROUND, ONE AT A TIME, IN THE ORDER ASKED, EACH WHOLE: the training
@@ -113,16 +117,22 @@ class Workload {
             val running = HeavyWork(work, Instant.now(), entry.reasons)
             current = running
             var failed = true
+            var givenUp = false
             try {
                 return body().also {
                     failed = false
                     entry.result.complete(it)
                 }
+            } catch (e: CancellationException) {
+                failed = false
+                givenUp = true
+                entry.result.completeExceptionally(e)
+                throw e
             } catch (e: Throwable) {
                 entry.result.completeExceptionally(e)
                 throw e
             } finally {
-                done(running, failed)
+                done(running, failed, givenUp)
             }
         } finally {
             current = null
@@ -145,12 +155,12 @@ class Workload {
         val result = CompletableFuture<Any?>()
     }
 
-    /** The work [entry] ended: kept among the works done, with how long it took. */
-    private fun done(entry: HeavyWork, failed: Boolean) {
+    /** The work [entry] ended: kept among the works done, with how long it took — of a work given up, a part of it, no estimate. */
+    private fun done(entry: HeavyWork, failed: Boolean, givenUp: Boolean) {
         val ended = Instant.now()
-        lastMillis[kind(entry.work)] = Duration.between(entry.since, ended).toMillis()
+        if (!givenUp) lastMillis[kind(entry.work)] = Duration.between(entry.since, ended).toMillis()
         synchronized(finished) {
-            finished.addLast(FinishedWork(entry.work, entry.since, ended, entry.reasons, failed))
+            finished.addLast(FinishedWork(entry.work, entry.since, ended, entry.reasons, failed, givenUp))
             while (finished.size > FINISHED) finished.removeFirst()
         }
     }

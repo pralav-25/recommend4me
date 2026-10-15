@@ -4,6 +4,7 @@ import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.web.context.request.RequestContextHolder
 import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.Instant
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -61,6 +62,18 @@ class WorkloadTest {
         val done = workload.finished()
         assertEquals(listOf("t2", "t3", "t4", "t5", "bad"), done.map { it.work.type })
         assertEquals(listOf(false, false, false, false, true), done.map { it.failed })
+    }
+
+    @Test
+    fun `a work given up for newer data is no failure, and leaves the estimate of its kind as it was`() {
+        val workload = Workload()
+        val suggester = Work("suggester", source = "s", facet = "universe")
+        workload.run(suggester, emptyMap()) { Thread.sleep(30) }
+        val estimate = workload.expected(suggester)
+        assertFailsWith<CancellationException> { workload.run(suggester, emptyMap()) { throw CancellationException("newer changes") } }
+        val last = workload.finished().last()
+        assertEquals(false to true, last.failed to last.givenUp)
+        assertEquals(estimate, workload.expected(suggester))
     }
 
     @Test

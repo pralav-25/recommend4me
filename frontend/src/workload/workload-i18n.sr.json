@@ -66,6 +66,8 @@
   "WorkQueue.state.FAILED.hint": "Završeno sa greškom: detalji u dnevniku aplikacije",
   "WorkQueue.state.FINISHED": "gotovo",
   "WorkQueue.state.FINISHED.hint": "Jedno od pet poslednjih završenih",
+  "WorkQueue.state.GIVEN_UP": "prekinuto",
+  "WorkQueue.state.GIVEN_UP.hint": "Dok se računalo, stigli su novi podaci: prekinuto i biće ponovo izračunato na njima — nije greška",
   "WorkQueue.state.PLANNED": "u planu",
   "WorkQueue.state.PLANNED.hint": "Počinje kada se promene smire",
   "WorkQueue.state.RUNNING": "računa se",

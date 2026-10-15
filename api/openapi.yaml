@@ -3250,6 +3250,9 @@ components:
         failed:
           type: boolean
           description: Of a work done, whether it ended with an error
+        givenUp:
+          type: boolean
+          description: Of a work done, whether it was given up - newer data came while it ran, and it is done again on them; no error
         expectedMillis:
           type: integer
           format: int64

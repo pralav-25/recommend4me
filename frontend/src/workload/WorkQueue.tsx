@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckIcon, ClockIcon, ListOrderedIcon, Loader2Icon, PauseIcon, XIcon } from "lucide-react";
+import { CheckIcon, ClockIcon, ListOrderedIcon, Loader2Icon, PauseIcon, RotateCcwIcon, XIcon } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { api, unwrap, type QueuedWork } from "@/api/client";
@@ -117,11 +117,13 @@ function span(millis: number, t: (key: "Span.seconds" | "Span.minutesSeconds", o
   return duration(seconds);
 }
 
-/** The state of a work as a mark: done or failed, computing now, waiting its turn, planned. */
+/** The state of a work as a mark: done, failed or given up for newer data, computing now, waiting its turn, planned. */
 function State({ w }: { w: QueuedWork }) {
   const { t } = useTranslation("workload");
   const look = w.failed
     ? { icon: <XIcon className="size-3.5" />, text: t("WorkQueue.state.FAILED"), hint: t("WorkQueue.state.FAILED.hint"), className: "bg-destructive/15 text-destructive" }
+    : w.givenUp
+    ? { icon: <RotateCcwIcon className="size-3.5" />, text: t("WorkQueue.state.GIVEN_UP"), hint: t("WorkQueue.state.GIVEN_UP.hint"), className: "bg-muted text-muted-foreground" }
     : {
         FINISHED: { icon: <CheckIcon className="size-3.5" />, text: t("WorkQueue.state.FINISHED"), hint: t("WorkQueue.state.FINISHED.hint"), className: "bg-muted text-muted-foreground" },
         RUNNING: { icon: <Loader2Icon className="size-3.5 animate-spin" />, text: t("WorkQueue.state.RUNNING"), hint: t("WorkQueue.state.RUNNING.hint"), className: "bg-yes/15 text-yes" },

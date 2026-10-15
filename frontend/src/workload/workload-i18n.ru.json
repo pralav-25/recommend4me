@@ -66,6 +66,8 @@
   "WorkQueue.state.FAILED.hint": "Закончилось с ошибкой: подробности в журнале приложения",
   "WorkQueue.state.FINISHED": "готово",
   "WorkQueue.state.FINISHED.hint": "Одно из пяти последних законченных",
+  "WorkQueue.state.GIVEN_UP": "прервано",
+  "WorkQueue.state.GIVEN_UP.hint": "Пока считалось, пришли новые данные: прервано и будет посчитано заново на них — не ошибка",
   "WorkQueue.state.PLANNED": "в плане",
   "WorkQueue.state.PLANNED.hint": "Начнётся, когда изменения утихнут",
   "WorkQueue.state.RUNNING": "считается",
