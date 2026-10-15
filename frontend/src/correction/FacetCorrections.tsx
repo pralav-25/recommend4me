@@ -123,6 +123,20 @@ function FacetLine({ facet: f, item, source, corrections }: { facet: ItemFacet; 
         {/* A facet of one value that has it offers no other: one chosen in its place replaces it */}
         {item && corrections && !held && <MoreCandidates item={item} facet={f.facet} shown={f.values} corrections={corrections} tagLink={f.tags === true} />}
         {corrections && addable && <SearchButton onClick={() => setSearching(!searching)} title={t(held ? "FacetLine.change" : "FacetLine.search")} />}
+        {/* "No other values": the work's values of it all named — the others not offered, rejected for the model; pressed again, taken back */}
+        {corrections && f.completable && (
+          <AsyncButton
+            size="xs"
+            variant={f.complete ? "secondary" : "ghost"}
+            className={SMALL_BUTTON}
+            aria-pressed={f.complete === true}
+            onClick={() => corrections.setComplete(f.facet, !f.complete)}
+            icon={f.complete ? <CheckIcon /> : undefined}
+            title={t(f.complete ? "FacetLine.allNamedDone" : "FacetLine.allNamedHint")}
+          >
+            {t("FacetLine.allNamed")}
+          </AsyncButton>
+        )}
       </div>
       {searching && corrections && addable && <AddFacetValue source={addable} corrections={corrections} onClose={() => setSearching(false)} />}
     </div>

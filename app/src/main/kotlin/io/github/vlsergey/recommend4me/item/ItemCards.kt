@@ -152,6 +152,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                 original = original,
                 complete = (def.key in complete).takeIf { it },
                 single = def.single.takeIf { it },
+                completable = def.completable.takeIf { it },
             )
         }
     }

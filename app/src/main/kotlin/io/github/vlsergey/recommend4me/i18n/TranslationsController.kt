@@ -38,7 +38,7 @@ class TranslationsController(private val plugins: Plugins) {
         plugins.sources.firstOrNull { it.id == namespace }
             ?: plugins.scorers.firstOrNull { it.id == namespace }
             ?: plugins.catalogues.firstOrNull { it.id == namespace }
-            ?: plugins.suggester?.takeIf { it.id == namespace }
+            ?: plugins.suggesters.firstOrNull { it.id == namespace }
             ?: plugins.search?.takeIf { it.id == namespace }
             ?: plugins.textEncoders.firstOrNull { it.id == namespace }
             ?: plugins.imageEncoders.firstOrNull { it.id == namespace }

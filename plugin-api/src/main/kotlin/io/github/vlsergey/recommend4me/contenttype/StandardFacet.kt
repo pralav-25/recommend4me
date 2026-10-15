@@ -34,6 +34,8 @@ class StandardFacet(
     val examples: StandardFacet? = null,
     /** A work has one value of it at most ([FacetDef.single]). */
     val single: Boolean = false,
+    /** The user may say the work's values of it are all named ([FacetDef.completable]). */
+    val completable: Boolean = false,
     /** Of the layer: the standard facet of the sites that is their own word on it, shown right above it and not learnt as examples ([FacetDef.originalFacet]). */
     val original: StandardFacet? = null,
 ) {
@@ -44,7 +46,7 @@ class StandardFacet(
     fun asFacet(key: String = this.key) = FacetDef(
         key,
         filter = filter, shared = this.key, searchWeight = searchWeight, onCard = onCard, names = names, suggest = suggest, role = role,
-        standard = this, single = single,
+        standard = this, single = single, completable = completable,
     )
 
     /**
@@ -54,7 +56,7 @@ class StandardFacet(
     fun asLayerFacet(examplesFrom: String?, originalFacet: String? = examplesFrom) = FacetDef(
         key,
         filter = filter, shared = key, searchWeight = searchWeight, onCard = onCard, names = names, suggest = suggest, infer = infer, role = role,
-        standard = this, editable = true, examplesFrom = examplesFrom, originalFacet = originalFacet, single = single,
+        standard = this, editable = true, examplesFrom = examplesFrom, originalFacet = originalFacet, single = single, completable = completable,
     )
 }
 

@@ -17,8 +17,11 @@ object StandardLanguages {
 
     const val KEY = "languages"
 
-    /** The language a work is in: of a book one ([single]), of a game every language it is played in. */
-    fun languages(single: Boolean) = StandardFacet(KEY, filter = true, infer = true, single = single, original = LANGUAGE)
+    /**
+     * The language a work is in: of a book one ([single]), of a game every language it is played in
+     * — and then the user may say they are all named.
+     */
+    fun languages(single: Boolean) = StandardFacet(KEY, filter = true, infer = true, single = single, completable = !single, original = LANGUAGE)
 
     private val RUSSIAN: Locale = Locale.of("ru")
 

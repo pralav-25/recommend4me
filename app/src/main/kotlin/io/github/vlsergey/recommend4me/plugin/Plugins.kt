@@ -42,7 +42,8 @@ class Plugins(
     val rerankers: List<TextReranker> = rerankers.orderedStream().toList()
     val scorers: List<Scorer> = scorers.orderedStream().toList()
     val search: SearchProvider? = searches.orderedStream().toList().firstOrNull()
-    val suggester: FacetSuggester? = suggesters.orderedStream().toList().firstOrNull()
+    /** Every way of working out the values of a facet; each facet of each source learns with one of them ([suggester]). */
+    val suggesters: List<FacetSuggester> = suggesters.orderedStream().toList()
     val catalogues: List<UniverseCatalogue> = catalogues.orderedStream().toList()
 
     /** The catalogues the tags are bound to entries of ([TagCatalogue]). */
@@ -55,9 +56,9 @@ class Plugins(
         }
         require(this.sources.map { it.id }.distinct().size == this.sources.size) { "Two sources of one id: ${this.sources.map { it.id }}" }
         log.info(
-            "sources {}, text encoders {}, picture encoders {}, rerankers {}, scorers {}, search {}, suggester {}, catalogues {}, tag catalogues {}",
+            "sources {}, text encoders {}, picture encoders {}, rerankers {}, scorers {}, search {}, suggesters {}, catalogues {}, tag catalogues {}",
             this.sources.map { it.id }, this.textEncoders.map { it.id }, this.imageEncoders.map { it.id }, this.rerankers.map { it.id },
-            this.scorers.map { it.id }, search?.id, suggester?.id, this.catalogues.map { it.id }, this.tagCatalogues.map { it.id },
+            this.scorers.map { it.id }, search?.id, this.suggesters.map { it.id }, this.catalogues.map { it.id }, this.tagCatalogues.map { it.id },
         )
     }
 
@@ -95,6 +96,15 @@ class Plugins(
             ?: scorers.firstOrNull { it.id == DEFAULT_SCORER }
             ?: scorers.firstOrNull()
 
+    /**
+     * The suggester a facet of a source learns with: the one named by `suggester.<source>.<facet>`,
+     * else the bilinear one, else the first.
+     */
+    fun suggester(source: String, facet: String): FacetSuggester? =
+        suggesters.firstOrNull { it.id == settings.get(suggesterSetting(source, facet)) }
+            ?: suggesters.firstOrNull { it.id == DEFAULT_SUGGESTER }
+            ?: suggesters.firstOrNull()
+
     /** The scorer of a content type's model of interest: the one named by `scorer.<type>.interest`, else the grades' ([scorer]). */
     fun interestScorer(typeId: String): Scorer? =
         scorers.firstOrNull { it.id == settings.get("scorer.$typeId.interest") } ?: scorer(typeId)
@@ -106,5 +116,9 @@ class Plugins(
 
     companion object {
         const val DEFAULT_SCORER = "pairwise-logistic"
+        const val DEFAULT_SUGGESTER = "bilinear-1"
+
+        /** The setting a facet's suggester is named by. */
+        fun suggesterSetting(source: String, facet: String) = "suggester.$source.$facet"
     }
 }

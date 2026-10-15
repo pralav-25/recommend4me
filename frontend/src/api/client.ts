@@ -84,6 +84,8 @@ export type FoundTagEntry = Schemas["FoundTagEntry"];
 export type HierarchyOffer = Schemas["HierarchyOffer"];
 export type ModelState = Schemas["ModelState"];
 export type ModelTrial = Schemas["ModelTrial"];
+export type FacetComparison = Schemas["FacetComparison"];
+export type MethodQuality = Schemas["MethodQuality"];
 
 /**
  * The failure of a call as the user should read it. The backend answers an error as

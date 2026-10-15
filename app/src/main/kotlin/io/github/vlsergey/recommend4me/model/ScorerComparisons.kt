@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.model
 
 import io.github.vlsergey.recommend4me.plugin.Plugins
+import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Component
@@ -36,7 +37,7 @@ class ScorerComparison(val startedAt: Instant, val scorers: List<ScorerMeasure>)
  * A comparison under way is not started again.
  */
 @Component
-class ScorerComparisons(private val recommendations: Recommendations, private val plugins: Plugins) {
+class ScorerComparisons(private val recommendations: Recommendations, private val plugins: Plugins, private val workload: Workload) {
     private val comparisons = ConcurrentHashMap<String, ScorerComparison>()
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "scorer-comparison").apply { isDaemon = true } }
 
@@ -45,7 +46,9 @@ class ScorerComparisons(private val recommendations: Recommendations, private va
 
     fun start(typeId: String, interest: Boolean = false): ScorerComparison = comparisons.compute(keyOf(typeId, interest)) { _, running ->
         if (running != null && running.finishedAt == null) return@compute running
-        ScorerComparison(Instant.now(), plugins.scorers.map { ScorerMeasure(it.id) }).also { c -> executor.submit { run(typeId, interest, c) } }
+        ScorerComparison(Instant.now(), plugins.scorers.map { ScorerMeasure(it.id) }).also { c ->
+            executor.submit { workload.run("$typeId: the scorers compared") { run(typeId, interest, c) } }
+        }
     }!!
 
     private fun keyOf(typeId: String, interest: Boolean) = if (interest) "$typeId/interest" else typeId

@@ -1527,6 +1527,77 @@ paths:
         '404':
           description: No such type, source, or facet the application works out
 
+  /api/types/{type}/models/facets/{source}/{facet}/comparison:
+    get:
+      tags: [models]
+      operationId: getFacetComparison
+      summary: The comparison of the methods of a facet under way or last made, every method's result as soon as it is fitted
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - $ref: '#/components/parameters/Source'
+        - name: facet
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The comparison
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacetComparison'
+        '404':
+          description: No such type, source or facet, or no comparison made since the application started
+    post:
+      tags: [models]
+      operationId: startFacetComparison
+      summary: >
+        Starts fitting every method on the facet from scratch in the background, each judged on the same works held out
+        by the same folds; nothing is kept - the facet goes on with its method till another is chosen
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - $ref: '#/components/parameters/Source'
+        - name: facet
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The comparison as it stands
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacetComparison'
+        '404':
+          description: No such type, source or facet
+
+  /api/types/{type}/models/facets/{source}/{facet}/method:
+    put:
+      tags: [models]
+      operationId: chooseFacetMethod
+      summary: Makes a method the one the facet of the source learns with, and fits it from scratch in the background
+      parameters:
+        - $ref: '#/components/parameters/Type'
+        - $ref: '#/components/parameters/Source'
+        - name: facet
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MethodChoice'
+      responses:
+        '204':
+          description: Chosen; the fitting started
+        '404':
+          description: No such type, source, facet or method
+
   /api/types/{type}/model/worth:
     post:
       tags: [model]
@@ -2152,6 +2223,9 @@ components:
           description: >
             A work has one value of it - the kind of a book's universe, its language: once it has one, no other is
             offered; another one added takes its place
+        completable:
+          type: boolean
+          description: The user may say the work's values of it are all named (complete) - the languages of a game
 
     Prediction:
       type: object
@@ -3022,6 +3096,53 @@ components:
       properties:
         scorer:
           type: string
+
+    MethodChoice:
+      type: object
+      required: [method]
+      properties:
+        method:
+          type: string
+
+    FacetComparison:
+      type: object
+      required: [startedAt, items, methods]
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        items:
+          type: integer
+          description: The works of the facet the methods learnt from
+        methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/MethodQuality'
+
+    MethodQuality:
+      type: object
+      required: [method, state, settings]
+      properties:
+        method:
+          type: string
+        state:
+          type: string
+          enum: [WAITING, MEASURING, DONE, FAILED]
+        error:
+          type: string
+        millis:
+          type: integer
+          format: int64
+        quality:
+          $ref: '#/components/schemas/ModelQuality'
+        settings:
+          type: object
+          description: The settings it chose
+          additionalProperties:
+            type: string
 
     ModelState:
       type: object

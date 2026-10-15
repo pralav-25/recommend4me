@@ -888,7 +888,8 @@
    * again, taken back. Shown with no value too, as in the application: "none" is an answer as well.
    */
   function completeButton(item, facet) {
-    const keys = ALL_NAMED[facet.facet];
+    // Any other facet the user may say is complete — the languages of a game — by the words of any value
+    const keys = ALL_NAMED[facet.facet] || (facet.completable ? { others: "allNamed.valuesOthers", what: "allNamed.valuesWhat" } : null);
     if (!keys || facet.editable === false) return null;
     const names = { others: t(keys.others), what: t(keys.what) };
     const s = item.summary;

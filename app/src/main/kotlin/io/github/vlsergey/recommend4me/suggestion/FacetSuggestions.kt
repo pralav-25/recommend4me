@@ -10,6 +10,7 @@ import io.github.vlsergey.recommend4me.tag.TagRepository
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import io.github.vlsergey.recommend4me.part.PartsSaved
 import io.github.vlsergey.recommend4me.plugin.Plugins
+import io.github.vlsergey.recommend4me.settings.Settings
 import io.github.vlsergey.recommend4me.setvector.SetKind
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.SourceStore
@@ -28,6 +29,7 @@ import io.github.vlsergey.recommend4me.universe.everyName
 import io.github.vlsergey.recommend4me.universe.workPassages
 import io.github.vlsergey.recommend4me.universe.workTexts
 import io.github.vlsergey.recommend4me.vector.Vectors
+import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -82,7 +84,13 @@ class ItemFacetCandidates(val facet: FacetDef, val candidates: List<FacetCandida
  * many changes each had, the works whose chances are being made after answers.
  */
 @Service
-class FacetSuggestions(private val stores: Stores, private val plugins: Plugins, private val events: ApplicationEventPublisher) {
+class FacetSuggestions(
+    private val stores: Stores,
+    private val plugins: Plugins,
+    private val events: ApplicationEventPublisher,
+    private val settings: Settings,
+    private val workload: Workload,
+) {
 
     private val waiting: MutableSet<String> = ConcurrentHashMap.newKeySet()
     private val worker = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "suggestions").apply { isDaemon = true } }
@@ -172,11 +180,13 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
 
     /** [refresh]; [givenUp] — with a [CancellationException] once the source changes again ([changed]): the background's. */
     private fun refresh(store: SourceStore, givenUp: Boolean) {
-        val suggester = plugins.suggester ?: return
         val encoder = plugins.textEncoder() ?: return
         val generation = generationOf(store.id).get()
         val stop = if (givenUp) ({ generationOf(store.id).get() != generation }) else ({ false })
-        facetsOf(store).forEach { facet -> lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
+        facetsOf(store).forEach { facet ->
+            val suggester = plugins.suggester(store.id, facet.key) ?: return@forEach
+            workload.run("${store.id}: the suggester of ${facet.key}") { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, stop) } }
+        }
     }
 
     /**
@@ -186,13 +196,15 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      */
     fun searchAnew(store: SourceStore, facetKey: String): Boolean {
         val facet = facetsOf(store).firstOrNull { it.key == facetKey } ?: return false
-        val suggester = plugins.suggester ?: return false
+        if (plugins.suggester(store.id, facet.key) == null) return false
         val encoder = plugins.textEncoder() ?: return false
         val id = "${store.id}/${facet.key}"
         searching += id
         worker.execute {
             try {
-                lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, anew = true) }
+                // The suggester named when it runs: one chosen meanwhile is the one fitted
+                val suggester = plugins.suggester(store.id, facet.key) ?: return@execute
+                workload.run("${store.id}: the suggester of ${facet.key} anew") { lockOf(store, facet).withLock { refreshFacet(store, facet, suggester, encoder, null, anew = true) } }
             } catch (e: Exception) {
                 log.warn("{}: the suggester of {} was not fitted anew: {}", store.id, facet.key, e.message, e)
             } finally {
@@ -200,6 +212,27 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
             }
         }
         return true
+    }
+
+    /**
+     * The suggester [method] made the one the facet learns with, and the facet fitted with it from
+     * scratch ([searchAnew]); false when there is no such suggester or facet.
+     */
+    fun chooseMethod(store: SourceStore, facetKey: String, method: String): Boolean {
+        if (plugins.suggesters.none { it.id == method } || facetsOf(store).none { it.key == facetKey }) return false
+        settings.set(Plugins.suggesterSetting(store.id, facetKey), method)
+        return searchAnew(store, facetKey)
+    }
+
+    /**
+     * Everything the suggesters of the facet learn from, read now: what a comparison of them fits
+     * every one on ([FacetComparisons]); null when the source has no such facet or nothing to read with.
+     */
+    fun task(store: SourceStore, facetKey: String): SuggestionTask? {
+        val facet = facetsOf(store).firstOrNull { it.key == facetKey } ?: return null
+        val encoder = plugins.textEncoder() ?: return null
+        val vocabulary = universeVocabulary(store, facet, null) ?: examplesVocabulary(store, facet)
+        return load(store, facet, encoder, vocabulary, null).task
     }
 
     /** The facets being fitted anew now ([searchAnew]), by "source/facet": the work under way, nothing of the data. */
@@ -219,9 +252,8 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      * tells they are stale, and they are made again.
      */
     private fun refreshNow(store: SourceStore, itemId: String, facets: List<FacetDef>, stop: () -> Boolean = { false }) {
-        val suggester = plugins.suggester ?: return
         val encoder = plugins.textEncoder() ?: return
-        facets.forEach { facet -> refreshFacet(store, facet, suggester, encoder, itemId, stop) }
+        facets.forEach { facet -> plugins.suggester(store.id, facet.key)?.let { refreshFacet(store, facet, it, encoder, itemId, stop) } }
     }
 
     /** What the model of the facet reads — of the item [only] alone, when given. */
@@ -241,7 +273,7 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
      * gets the rest from here. Null when the facet was never fitted.
      */
     private fun everyChance(store: SourceStore, facet: FacetDef, itemId: String, vocabulary: Vocabulary?): List<Chance>? {
-        val suggester = plugins.suggester ?: return null
+        val suggester = plugins.suggester(store.id, facet.key) ?: return null
         val encoder = plugins.textEncoder() ?: return null
         val data = load(store, facet, encoder, vocabulary, itemId)
         val i = data.ids.indexOf(itemId).takeIf { it >= 0 } ?: return null

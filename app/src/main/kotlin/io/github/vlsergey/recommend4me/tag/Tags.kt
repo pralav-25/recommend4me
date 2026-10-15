@@ -8,6 +8,7 @@ import io.github.vlsergey.recommend4me.rating.Grades
 import io.github.vlsergey.recommend4me.rating.GradesChanged
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
+import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.springframework.beans.factory.annotation.Value
 import org.slf4j.LoggerFactory
@@ -178,6 +179,7 @@ class Tags(
     private val plugins: Plugins,
     /** The languages a tag's entry is asked in, the user's first: its label in the first that has one names the tag. */
     @Value("\${recommend4me.languages:ru,en}") private val languages: List<String>,
+    private val workload: Workload,
 ) {
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "tag-names").apply { isDaemon = true } }
     private val pending = ConcurrentHashMap<String, ScheduledFuture<*>>()
@@ -211,7 +213,9 @@ class Tags(
      * over every work of every source — seconds of a catalogue of games. What the screen of the tags
      * shows is kept of it ([rename]); read now only where the works themselves are wanted.
      */
-    fun countAll(scope: TagScope, facet: String): Map<String, TagStats> {
+    fun countAll(scope: TagScope, facet: String): Map<String, TagStats> = workload.run("tags: every work counted") { counted(scope, facet) }
+
+    private fun counted(scope: TagScope, facet: String): Map<String, TagStats> {
         val bindings = scope.tags.bindings()
         val out = HashMap<String, TagStats>()
         val rejections = HashMap<String, MutableSet<ItemKey>>()
@@ -464,7 +468,9 @@ class Tags(
      *   A tag in one such offer alone, the nearest: one sharing a tag with a nearer one is not offered
      *   till the nearer is said — then it is offered above the new tag.
      */
-    fun hierarchyOffers(scope: TagScope, facet: String): List<HierarchyOffer> {
+    fun hierarchyOffers(scope: TagScope, facet: String): List<HierarchyOffer> = workload.run("tags: the offers of the graph") { offers(scope, facet) }
+
+    private fun offers(scope: TagScope, facet: String): List<HierarchyOffer> {
         val started = System.currentTimeMillis()
         // The graded works of every tag are wanted: counted now
         val n = naming(scope, facet, countAll(scope, facet))
@@ -938,7 +944,9 @@ class Tags(
      * worked out, the works of every tag and of every site's tag, the sources of its sites' tags.
      * The screen of the tags reads them ([stats]), not the works.
      */
-    fun rename(scope: TagScope, facet: String) {
+    fun rename(scope: TagScope, facet: String) = workload.run("tags: named and counted") { renamed(scope, facet) }
+
+    private fun renamed(scope: TagScope, facet: String) {
         val started = System.currentTimeMillis()
         val n = naming(scope, facet, countAll(scope, facet))
         val stats = n.stats

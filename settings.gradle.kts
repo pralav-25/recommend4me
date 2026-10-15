@@ -32,6 +32,8 @@ include(
     "plugins:scorer-boosting",
     "plugins:search-lucene",
     "plugins:suggester-bilinear",
+    "plugins:suggester-bayes",
+    "plugins:suggester-knn",
     "plugins:source-ao3",
     "plugins:source-author-today",
     "plugins:source-ficbook",

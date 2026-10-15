@@ -28,6 +28,7 @@ import io.github.vlsergey.recommend4me.correction.FacetAnswered
 import io.github.vlsergey.recommend4me.suggestion.FacetChancesChanged
 import io.github.vlsergey.recommend4me.tag.TagsChanged
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
+import io.github.vlsergey.recommend4me.workload.Workload
 import io.github.vlsergey.recommend4me.vector.Vectors
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
@@ -41,8 +42,6 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 import kotlin.math.abs
 
 private val log = LoggerFactory.getLogger(Recommendations::class.java)
@@ -82,16 +81,14 @@ class Recommendations(
     private val phrases: PhraseVectors,
     private val settings: Settings,
     private val json: JsonMapper,
+    private val workload: Workload,
 ) {
-    private val locks = ConcurrentHashMap<String, ReentrantLock>()
     private val trainingNow = ConcurrentHashMap.newKeySet<String>()
     private val pending = ConcurrentHashMap<String, PendingTraining>()
 
     /** How long the last training of every type took, ms: how long a stream of background changes is let to settle. */
     private val lastTraining = ConcurrentHashMap<String, Long>()
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "model-training").apply { isDaemon = true } }
-
-    private fun lock(type: String) = locks.computeIfAbsent(type) { ReentrantLock() }
 
     private fun type(id: String): TypeStore = stores.type(id) ?: error("No such content type: $id")
 
@@ -170,7 +167,7 @@ class Recommendations(
         }
     }
 
-    fun retrainAndScore(typeId: String): ModelSummary = lock(typeId).withLock {
+    fun retrainAndScore(typeId: String): ModelSummary = workload.run("$typeId: the models trained") {
         val type = type(typeId)
         trainingNow += typeId
         try {
@@ -194,9 +191,9 @@ class Recommendations(
     }
 
     /** Re-scores every item of the type with its current model. */
-    fun scoreAll(typeId: String) = lock(typeId).withLock {
+    fun scoreAll(typeId: String) = workload.run("$typeId: every work scored") {
         val type = type(typeId)
-        val model = load(type) ?: return@withLock
+        val model = load(type) ?: return@run
         scoreAll(reader.read(type, withLikeness = false), model, loadInterest(type))
     }
 
@@ -432,7 +429,9 @@ class Recommendations(
      * annotation, its cover); this one has not. The score is the one the list sorts the surprises
      * by. Null for a work the user has not graded, or when there are too few works for folds.
      */
-    fun heldOut(key: ItemKey): HeldOut? {
+    fun heldOut(key: ItemKey): HeldOut? = workload.run("${key.source}/${key.id}: the model that had not seen it") { fitHeldOut(key) }
+
+    private fun fitHeldOut(key: ItemKey): HeldOut? {
         val type = stores.typeOf(key.source)
         if (type.source(key.source)?.ratings?.ofItem(key.id).isNullOrEmpty()) return null
         val model = load(type) ?: return null
@@ -781,9 +780,9 @@ class Recommendations(
      * of the model of [interest] — read under the type's lock; the measuring itself needs no lock —
      * it reads nothing more. Null when there are too few.
      */
-    fun measuringInput(typeId: String, interest: Boolean = false): MeasuringInput? = lock(typeId).withLock {
+    fun measuringInput(typeId: String, interest: Boolean = false): MeasuringInput? = workload.run("$typeId: the scorers' input read") {
         val catalogue = reader.read(type(typeId))
-        val p = (if (interest) prepareInterest(catalogue) else prepare(catalogue)) ?: return@withLock null
+        val p = (if (interest) prepareInterest(catalogue) else prepare(catalogue)) ?: return@run null
         MeasuringInput(p.task, p.xFor, p.grades.size)
     }
 
@@ -804,11 +803,11 @@ class Recommendations(
      * everything, by the same cross-validation and the same choice of the parameter. A part whose
      * removal costs nothing, or improves the quality, adds nothing the grades confirm. Nothing is kept.
      */
-    fun worth(typeId: String): ModelWorth? = lock(typeId).withLock {
+    fun worth(typeId: String): ModelWorth? = workload.run("$typeId: the worth of the parts measured") {
         val type = type(typeId)
-        val scorer = plugins.scorer(typeId) ?: return@withLock null
-        val p = prepare(reader.read(type)) ?: return@withLock null
-        if (p.perItem.size < CrossValidation.MIN_WORKS) return@withLock null
+        val scorer = plugins.scorer(typeId) ?: return@run null
+        val p = prepare(reader.read(type)) ?: return@run null
+        if (p.perItem.size < CrossValidation.MIN_WORKS) return@run null
         val full = CrossValidation.choose(CrossValidation.measureAll(p.task, scorer, p.xFor))?.metrics
         val columns = partColumns(p.layout)
         val labels = FeatureNames.partLabels(columns.keys, type.sources)
@@ -844,10 +843,12 @@ class Recommendations(
      * way — and the weights chosen on every grade. The rows are read under the type's lock, the
      * trainings — hundreds of them — run without it. Nothing is kept. [cautious]: [GroupWeights.tune].
      */
-    fun weighing(typeId: String, cautious: Boolean = true): Weighing? {
+    fun weighing(typeId: String, cautious: Boolean = true): Weighing? = workload.run("$typeId: the weights of the parts measured") { weighed(typeId, cautious) }
+
+    private fun weighed(typeId: String, cautious: Boolean): Weighing? {
         val type = type(typeId)
         val scorer = plugins.scorer(typeId) ?: return null
-        val p = lock(typeId).withLock { prepare(reader.read(type)) } ?: return null
+        val p = prepare(reader.read(type)) ?: return null
         if (p.perItem.size < CrossValidation.MIN_WORKS) return null
         val started = System.currentTimeMillis()
         val columns = partColumns(p.layout)

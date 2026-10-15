@@ -109,6 +109,11 @@ class FacetDef(
      * the likeliest alone is given, and a value the user adds takes the place of every other.
      */
     val single: Boolean = false,
+    /**
+     * The user may say the work's values of it are all named — the languages of a game: the others
+     * are then not offered and count as rejected for the model; the button "No other values".
+     */
+    val completable: Boolean = false,
 )
 
 /**

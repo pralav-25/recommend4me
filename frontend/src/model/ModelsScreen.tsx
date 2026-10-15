@@ -9,6 +9,7 @@ import { label, scorerTitle, sourceTitle } from "@/i18n/label";
 import { usePluginNamespaces } from "@/i18n/usePluginNamespaces";
 import { ITEMS } from "@/item/lists";
 import { cn } from "@/lib/utils";
+import { FacetComparisonDialog } from "./FacetComparisonDialog";
 import { GradeModelDetails } from "./GradeModel";
 import { ScorerComparisonDialog } from "./ScorerComparisonDialog";
 import { useModel } from "./useModel";
@@ -163,6 +164,17 @@ function InterestCard({ type, m }: { type: ContentTypeInfo; m: ModelState }) {
 function FacetCard({ type, m }: { type: ContentTypeInfo; m: ModelState }) {
   const { t } = useTranslation("model");
   const queryClient = useQueryClient();
+  const choose = useMutation({
+    mutationFn: async (method: string) => {
+      ensureOk(
+        await api.PUT("/api/types/{type}/models/facets/{source}/{facet}/method", {
+          params: { path: { type: type.id, source: m.source!, facet: m.facet! } },
+          body: { method },
+        }),
+      );
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: modelsKey(type.id) }),
+  });
   const search = async () => {
     ensureOk(
       await api.POST("/api/types/{type}/models/facets/{source}/{facet}/search", {
@@ -181,9 +193,22 @@ function FacetCard({ type, m }: { type: ContentTypeInfo; m: ModelState }) {
       }
       note={m.fromScratch === false ? t("ModelsScreen.walkedOn") : undefined}
       actions={
-        <AsyncButton size="sm" variant="outline" onClick={search} disabled={m.running} icon={<SearchCheckIcon />} title={t("ModelsScreen.searchHint")}>
-          {t("ModelsScreen.search")}
-        </AsyncButton>
+        <>
+          {(m.methods ?? []).length > 1 && (
+            <FacetComparisonDialog
+              type={type}
+              source={m.source!}
+              facet={m.facet!}
+              title={m.labelKey ? label(m.labelKey) : m.facet!}
+              current={m.method}
+              onChoose={(method) => choose.mutate(method)}
+              busy={m.running || choose.isPending}
+            />
+          )}
+          <AsyncButton size="sm" variant="outline" onClick={search} disabled={m.running} icon={<SearchCheckIcon />} title={t("ModelsScreen.searchHint")}>
+            {t("ModelsScreen.search")}
+          </AsyncButton>
+        </>
       }
     />
   );

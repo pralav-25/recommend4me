@@ -8,6 +8,7 @@ import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.source.TypeStore
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import io.github.vlsergey.recommend4me.vector.Vectors
+import io.github.vlsergey.recommend4me.workload.Workload
 import jakarta.annotation.PreDestroy
 import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
@@ -38,6 +39,7 @@ class SetVectors(
     private val phrases: PhraseVectors,
     private val contexts: SourceContexts,
     private val events: ApplicationEventPublisher,
+    private val workload: Workload,
 ) {
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "set-vectors").apply { isDaemon = true } }
 
@@ -170,7 +172,7 @@ class SetVectors(
         // Every source gives its share of the sample, all it has while the catalogue is within it
         val sample = have.filterValues { it > 0 }.flatMap { (s, n) -> sample(s, kind, encoder, if (total <= SAMPLE) n else (SAMPLE.toLong() * n / total).toInt()) }
         if (sample.size < 2) return stored
-        val embedding = SetEmbedding.fit(sample, minOf(SetEmbedding.DIRECTIONS, sample.size - 1))
+        val embedding = workload.run("${type.id}: the directions of ${kind.key} fitted") { SetEmbedding.fit(sample, minOf(SetEmbedding.DIRECTIONS, sample.size - 1)) }
         val id = Vectors.keyOf("${type.id}:${kind.name}:$encoder:${System.nanoTime()}")
         type.embeddings.save(kind, id, encoder, embedding, members, Instant.now())
         log.info("{}: {} directions of {} fitted on {} members", type.id, embedding.directions.size, kind.key, sample.size)

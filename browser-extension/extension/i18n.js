@@ -74,6 +74,8 @@ var R4M_WORDS = {
     "allNamed.secondaryWhat": "secondary characters",
     "allNamed.pairingsOthers": "no other pairings",
     "allNamed.pairingsWhat": "pairings",
+    "allNamed.valuesOthers": "no other values",
+    "allNamed.valuesWhat": "values",
     "allNamed.doneTitle": "All the work's {{what}} are named: the others are not offered and are rejected for the model. Press to take it back",
     "allNamed.title": "All the work's {{what}} are already named: offer no others and count them as rejected",
 
@@ -184,6 +186,8 @@ var R4M_WORDS = {
     "allNamed.secondaryWhat": "второстепенные персонажи",
     "allNamed.pairingsOthers": "других пэйрингов нет",
     "allNamed.pairingsWhat": "пэйринги",
+    "allNamed.valuesOthers": "других значений нет",
+    "allNamed.valuesWhat": "значения",
     "allNamed.doneTitle": "Названы все {{what}} работы: остальные не предлагаются и для модели отклонены. Нажмите, чтобы снять",
     "allNamed.title": "Все {{what}} работы уже названы: остальные не предлагать и считать отклонёнными",
 
@@ -294,6 +298,8 @@ var R4M_WORDS = {
     "allNamed.secondaryWhat": "sporedni likovi",
     "allNamed.pairingsOthers": "nema drugih parova",
     "allNamed.pairingsWhat": "parovi",
+    "allNamed.valuesOthers": "drugih vrednosti nema",
+    "allNamed.valuesWhat": "vrednosti",
     "allNamed.doneTitle": "Navedeni su svi {{what}} dela: ostali se ne nude i za model su odbijeni. Pritisnite da poništite",
     "allNamed.title": "Svi {{what}} dela su već navedeni: ostale ne nuditi i smatrati odbijenim",
 
