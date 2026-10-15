@@ -39,33 +39,54 @@ class TypedRating(val key: ItemKey, val version: String, val grade: Int, val rat
 /**
  * EVERYTHING THE MODEL READS OF EVERY ITEM OF A CONTENT TYPE, loaded in batch for one operation —
  * one pass over each source of each file: the items with their corrected facets and numbers, the
- * texts', pictures' and sets' vectors, the grades, the works — and handed to every step that needs
- * it. Nothing of it outlives the operation. Not the user's signals on the sites: they are the
- * user's verdict, the very thing the grades teach.
+ * grades, the works — and handed to every step that needs it. Nothing of it outlives the operation.
+ * Not the user's signals on the sites: they are the user's verdict, the very thing the grades teach.
+ *
+ * THE VECTORS OF THE WORKS THE TRAINING READS ALONE ([vectors]): the graded, those marked of interest,
+ * those linked to them, and any asked for — a few hundred of 27 718 games, each a few thousand
+ * numbers. Of every work only what the average work is made of is kept ([spreads]); a work's vectors
+ * otherwise are read when it is scored, a chunk at a time ([vectorsOfMany]), and let go.
  */
 class Catalogue(
     val type: TypeStore,
     val items: List<CatalogueItem>,
     val ratings: List<TypedRating>,
-    /** Every block but the likeness to the marks, by item. */
+    /** Every block but the likeness to the marks, of the works the training reads, by item. */
     val vectors: Map<ItemKey, Map<String, FloatArray>>,
     val likeness: TypeLikeness,
     val works: WorkClusters,
     /** The user's marks of interest. */
     val interest: Map<ItemKey, InterestMark> = emptyMap(),
+    /** The mean and the spread of every block but the likeness to the marks, over the vectors of every work. */
+    val spreads: Map<String, VectorSpread> = emptyMap(),
+    /** The vectors of [keys] read now, as [vectors] holds them: of the works whose vectors are not kept. */
+    private val read: (keys: List<ItemKey>) -> Map<ItemKey, Map<String, FloatArray>> = { emptyMap() },
 ) {
     val byKey: Map<ItemKey, CatalogueItem> = items.associateBy { it.key }
 
     fun versionOf(key: ItemKey): String? = byKey[key]?.version
 
+    /** The vectors of a work the training reads, with its likeness to the marks. */
     fun vectorsOf(key: ItemKey): Map<String, FloatArray> = (vectors[key] ?: emptyMap()) + likeness.vectors(key)
+
+    /** The vectors of [keys] with their likeness to the marks: those kept, the rest read now. */
+    fun vectorsOfMany(keys: List<ItemKey>): Map<ItemKey, Map<String, FloatArray>> {
+        val missing = keys.filter { it !in vectors }
+        val fresh = if (missing.isEmpty()) emptyMap() else read(missing)
+        return keys.associateWith { key -> (vectors[key] ?: fresh[key] ?: emptyMap()) + likeness.vectors(key) }
+    }
 }
 
 /** Reads a [Catalogue], and the same of single items for the requests of the interface. */
 @Component
 class CatalogueReader(private val plugins: Plugins, private val works: Works, private val likenesses: Likenesses) {
 
-    fun read(type: TypeStore, withLikeness: Boolean = true): Catalogue {
+    /**
+     * The catalogue of [type]: every work's facets and numbers, the vectors of the works a training
+     * reads — the graded, those marked of interest, those linked, and [also] — and the spreads of
+     * every work's vectors, counted as they stream past.
+     */
+    fun read(type: TypeStore, withLikeness: Boolean = true, also: Collection<ItemKey> = emptyList()): Catalogue {
         val started = System.currentTimeMillis()
         val textEncoder = plugins.textEncoder()
         val imageEncoder = plugins.imageEncoder()
@@ -73,15 +94,30 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
         val severalSources = type.sources.size > 1
         val items = ArrayList<CatalogueItem>()
         val vectors = HashMap<ItemKey, HashMap<String, FloatArray>>()
+        val spreads = VectorSpreads()
         val ratings = ArrayList<TypedRating>()
         val interest = HashMap<ItemKey, InterestMark>()
         val centerSum = imageEncoder?.let { DoubleArray(it.dim) }
         var pictures = 0
+        // The works a training reads, known before the vectors are: of them alone the vectors are kept
+        type.sources.forEach { s ->
+            ratings += s.ratings.all().map { TypedRating(ItemKey(s.id, it.itemId), it.version, it.grade, it.ratedAt) }
+            s.interest.all().forEach { (id, mark) -> interest[ItemKey(s.id, id)] = mark }
+        }
+        val clusters = works.of(type)
+        val kept = HashSet<ItemKey>().apply {
+            ratings.forEach { add(it.key) }
+            addAll(interest.keys)
+            clusters.linkedWorks().forEach(::addAll)
+            addAll(also)
+        }
 
         type.sources.forEach { s ->
             items += readItems(s, severalSources)
             fun put(id: String, block: String, v: FloatArray) {
-                vectors.getOrPut(ItemKey(s.id, id)) { HashMap() }[block] = v
+                spreads.add(block, v)
+                val key = ItemKey(s.id, id)
+                if (key in kept) vectors.getOrPut(key) { HashMap() }[block] = v
             }
             if (textEncoder != null) {
                 // The title and the site's lines too: every text that has vectors
@@ -98,22 +134,22 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
                 }
             }
             s.setVectors.forEach(embeddings) { id, key, v -> put(id, key, v) }
-            ratings += s.ratings.all().map { TypedRating(ItemKey(s.id, it.itemId), it.version, it.grade, it.ratedAt) }
-            s.interest.all().forEach { (id, mark) -> interest[ItemKey(s.id, id)] = mark }
         }
         val read = System.currentTimeMillis()
         val keys = items.map { it.key }.toSet()
         val graded = ratings.map { it.key }.filter { it in keys }.toSet()
         val center = centerSum?.takeIf { pictures > 0 }?.let { sum -> FloatArray(sum.size) { (sum[it] / pictures).toFloat() } }
-        val clusters = works.of(type)
         // The latest grade of every graded item: what the likeness to the graded works reads
         val grades = ratings.filter { it.key in keys }.groupBy { it.key }.mapValues { (_, r) -> r.maxBy { it.ratedAt }.grade }
         val likeness = if (withLikeness) likenesses.forTraining(type, center, graded, grades, clusters::work) else likenesses.stored(type)
         log.info(
-            "{}: catalogue of {} items read in {} ms, likeness in {} ms",
-            type.id, items.size, read - started, System.currentTimeMillis() - read,
+            "{}: catalogue of {} items read in {} ms, the vectors of {} kept, likeness in {} ms",
+            type.id, items.size, read - started, vectors.size, System.currentTimeMillis() - read,
         )
-        return Catalogue(type, items, ratings.filter { it.key in keys }, vectors, likeness, clusters, interest)
+        return Catalogue(
+            type, items, ratings.filter { it.key in keys }, vectors, likeness, clusters, interest,
+            spreads = spreads.spreads(), read = { wanted -> vectorsOfMany(type, wanted) },
+        )
     }
 
     /**
@@ -177,15 +213,26 @@ class CatalogueReader(private val plugins: Plugins, private val works: Works, pr
     }
 
     /** The vectors of one item — texts, pictures, sets — without its likeness to the marks. */
-    fun vectors(type: TypeStore, key: ItemKey): Map<String, FloatArray> {
-        val s = type.source(key.source) ?: return emptyMap()
-        val out = HashMap<String, FloatArray>()
-        plugins.textEncoder()?.let { encoder ->
-            val blocks = TextVectors.blocks(s.id, s.schema).mapValues { it.value.first }
-            s.textVectors.ofMany(listOf(key.id), encoder.id)[key.id]?.forEach { (k, v) -> blocks[k]?.let { out[it] = v } }
+    fun vectors(type: TypeStore, key: ItemKey): Map<String, FloatArray> = vectorsOfMany(type, listOf(key))[key].orEmpty()
+
+    /** The vectors of [keys] — texts, pictures, sets — without their likeness to the marks: a query of each kind a source. */
+    fun vectorsOfMany(type: TypeStore, keys: List<ItemKey>): Map<ItemKey, Map<String, FloatArray>> {
+        val out = HashMap<ItemKey, HashMap<String, FloatArray>>()
+        val embeddings = type.embeddings.ids()
+        keys.groupBy({ it.source }, { it.id }).forEach { (source, ids) ->
+            val s = type.source(source) ?: return@forEach
+            fun put(id: String, block: String, v: FloatArray) {
+                out.getOrPut(ItemKey(source, id)) { HashMap() }[block] = v
+            }
+            plugins.textEncoder()?.let { encoder ->
+                val blocks = TextVectors.blocks(s.id, s.schema).mapValues { it.value.first }
+                s.textVectors.ofMany(ids, encoder.id).forEach { (id, texts) -> texts.forEach { (k, v) -> blocks[k]?.let { put(id, it, v) } } }
+            }
+            plugins.imageEncoder()?.let { encoder ->
+                s.pictures.itemVectorsOf(ids, encoder.id).forEach { (id, blocks) -> blocks.forEach { (b, v) -> put(id, b, v) } }
+            }
+            s.setVectors.ofMany(ids, embeddings).forEach { (id, blocks) -> blocks.forEach { (b, v) -> put(id, b, v) } }
         }
-        plugins.imageEncoder()?.let { encoder -> s.pictures.itemVectorsOf(listOf(key.id), encoder.id)[key.id]?.let(out::putAll) }
-        s.setVectors.ofMany(listOf(key.id), type.embeddings.ids())[key.id]?.let(out::putAll)
         return out
     }
 

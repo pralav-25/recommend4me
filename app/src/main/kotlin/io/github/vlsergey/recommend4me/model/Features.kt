@@ -51,28 +51,41 @@ sealed interface FeatureGroup {
 class VectorSpread(val center: FloatArray, val spread: Float) {
     companion object {
         /** Mean and spread of every block over the vectors of all items, graded or not. */
-        fun of(vectors: (action: (key: String, vector: FloatArray) -> Unit) -> Unit): Map<String, VectorSpread> {
-            val sums = HashMap<String, DoubleArray>()
-            val counts = HashMap<String, Int>()
-            vectors { key, v ->
-                val sum = sums.getOrPut(key) { DoubleArray(v.size) }
-                if (sum.size != v.size) return@vectors
-                for (k in v.indices) sum[k] += v[k].toDouble()
-                counts.merge(key, 1, Int::plus)
-            }
-            val centers = sums.mapValues { (key, sum) -> FloatArray(sum.size) { (sum[it] / counts.getValue(key)).toFloat() } }
-            val squares = HashMap<String, Double>()
-            vectors { key, v ->
-                val c = centers.getValue(key)
-                if (c.size != v.size) return@vectors
-                var d = 0.0
-                for (k in v.indices) d += (v[k] - c[k]).toDouble().let { it * it }
-                squares.merge(key, d, Double::plus)
-            }
-            return centers.mapValues { (key, c) ->
-                VectorSpread(c, sqrt(squares.getValue(key) / counts.getValue(key)).toFloat().coerceAtLeast(1e-6f))
-            }
+        fun of(vectors: (action: (key: String, vector: FloatArray) -> Unit) -> Unit): Map<String, VectorSpread> =
+            VectorSpreads().also { s -> vectors(s::add) }.spreads()
+    }
+}
+
+/**
+ * The spreads of the blocks ([VectorSpread]) summed in ONE PASS over the vectors, none of them kept:
+ * of every block the sum of its vectors and of their squared lengths — the spread is
+ * √(E‖v‖² − ‖E v‖²). The vectors of every work are read as they stream from the files, and only
+ * those of the works a training reads are kept ([Catalogue]).
+ */
+class VectorSpreads {
+    private val sums = HashMap<String, DoubleArray>()
+    private val squares = HashMap<String, Double>()
+    private val counts = HashMap<String, Int>()
+
+    fun add(key: String, v: FloatArray) {
+        val sum = sums.getOrPut(key) { DoubleArray(v.size) }
+        // A block of another length — an encoder changed, the old vectors still kept — counts nothing
+        if (sum.size != v.size) return
+        var square = 0.0
+        for (k in v.indices) {
+            val x = v[k].toDouble()
+            sum[k] += x
+            square += x * x
         }
+        squares.merge(key, square, Double::plus)
+        counts.merge(key, 1, Int::plus)
+    }
+
+    fun spreads(): Map<String, VectorSpread> = sums.mapValues { (key, sum) ->
+        val n = counts.getValue(key)
+        val center = FloatArray(sum.size) { (sum[it] / n).toFloat() }
+        val centerSquare = sum.sumOf { (it / n) * (it / n) }
+        VectorSpread(center, sqrt((squares.getValue(key) / n - centerSquare).coerceAtLeast(0.0)).toFloat().coerceAtLeast(1e-6f))
     }
 }
 

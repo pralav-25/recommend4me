@@ -278,8 +278,8 @@ class Recommendations(
         val perItem = used.map { it.key }.distinct().map { key ->
             CatalogueReader.inputOf(catalogue.byKey.getValue(key), catalogue.vectorsOf(key), previousForCurrent[key])
         }
-        val spreads = VectorSpread.of { action ->
-            catalogue.vectors.values.forEach { blocks -> blocks.forEach { (key, v) -> action(key, v) } }
+        // Of every work: its blocks' as counted when the catalogue was read, the likeness to the marks' counted here
+        val spreads = catalogue.spreads + VectorSpread.of { action ->
             likeness.pictures.forEach { _, v -> action(MarkLikeness.PICTURES, v) }
             likeness.reviews.forEach { _, v -> action(MarkLikeness.REVIEWS, v) }
             likeness.works.forEach { _, v -> action(WorkLikeness.WORKS, v) }
@@ -436,7 +436,8 @@ class Recommendations(
         if (type.source(key.source)?.ratings?.ofItem(key.id).isNullOrEmpty()) return null
         val model = load(type) ?: return null
         val scorer = plugins.scorers.firstOrNull { it.id == model.meta.scorer } ?: return null
-        val catalogue = reader.read(type)
+        // The work's own vectors kept with the graded ones': it is graded, but said so all the same
+        val catalogue = reader.read(type, also = listOf(key))
         val p = prepare(catalogue) ?: return null
         val own = p.used.indices.filter { p.used[it].key == key }.maxByOrNull { p.used[it].ratedAt } ?: return null
         val folds = CrossValidation.folds(p.grades, p.works)
@@ -477,8 +478,10 @@ class Recommendations(
 
     private fun scoreAll(catalogue: Catalogue, model: TrainedModel, interest: TrainedInterest?) {
         val previousForCurrent = CatalogueReader.previousGradesOfCurrentVersions(catalogue.ratings, catalogue::versionOf)
+        // Every work's vectors read with its chunk and let go after it: of the catalogue only the training's are kept
         val predicted = catalogue.items.chunked(SCORE_CHUNK).parallelStream().flatMap { chunk ->
-            val inputs = chunk.map { CatalogueReader.inputOf(it, catalogue.vectorsOf(it.key), previousForCurrent[it.key]) }
+            val vectors = catalogue.vectorsOfMany(chunk.map { it.key })
+            val inputs = chunk.map { CatalogueReader.inputOf(it, vectors.getValue(it.key), previousForCurrent[it.key]) }
             val raw = model.scores(model.layout.matrix(inputs))
             val chances = interest?.chances(inputs)
             chunk.indices.map { i -> chunk[i].key to Predicted(model.scale.score(raw[i].toDouble()), chances?.get(i)) }.stream()
