@@ -32,6 +32,13 @@ and tell the user to update the extension.
 | Marks of reviews and pictures | `review/Reviews.tsx`, `picture/Pictures.tsx` | `marks`, `reviews`, `pictures` |
 | A list's cards: grade, prediction, interest | `item/ItemBoard.tsx`, `item/pieces.tsx` | `cards`, `fillBadge` |
 
+## An area that reads itself again lets the user choose how often
+
+Every part of the web interface that reads its data again by itself has, in its heading, the choice
+of how often — `components/RefreshSelect.tsx` with `lib/useRefresh.ts` (off, 1 s … 1 min). The
+choice is kept in the browser's localStorage under the area's own key (`<area>.refresh`), and the
+query reads `refetchInterval: every || false`. A new area that reads itself again gets one too.
+
 ## A button shows only its own work
 
 A button is busy (spinner, disabled) only while its own press is at work — `AsyncButton` in the web

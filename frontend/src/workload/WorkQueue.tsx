@@ -3,14 +3,15 @@ import { CheckIcon, ClockIcon, ListOrderedIcon, Loader2Icon, PauseIcon, XIcon } 
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { api, unwrap, type QueuedWork } from "@/api/client";
+import { RefreshSelect } from "@/components/RefreshSelect";
 import { typeTitle } from "@/contenttype/types";
 import { ago, duration, formatTime, number } from "@/i18n/format";
 import { label, sourceTitle } from "@/i18n/label";
+import { useRefresh } from "@/lib/useRefresh";
 import { cn } from "@/lib/utils";
 
-/** How often the queue is asked for again while anything runs, waits or is planned, and when it is idle. */
-const BUSY_MS = 2000;
-const IDLE_MS = 10_000;
+/** How often the queue is asked for again till the user chooses ([RefreshSelect]). */
+const EVERY_MS = 2000;
 
 /**
  * THE QUEUE OF THE COMPUTATIONS, as a timeline: the last works done with how long each took, the one
@@ -22,10 +23,11 @@ const IDLE_MS = 10_000;
 export function WorkQueue() {
   const { t } = useTranslation("workload");
   const queryClient = useQueryClient();
+  const [every, setEvery] = useRefresh("workload.refresh", EVERY_MS);
   const queue = useQuery({
     queryKey: ["workload"],
     queryFn: async () => unwrap(await api.GET("/api/workload")),
-    refetchInterval: (q) => (q.state.data?.some((w) => w.state !== "FINISHED") ? BUSY_MS : IDLE_MS),
+    refetchInterval: every || false,
   });
   const works = queue.data ?? [];
   // A work ended: the models it may have fitted read anew, not after their own long pause
@@ -39,6 +41,7 @@ export function WorkQueue() {
     <section className="flex flex-col gap-2 rounded-lg border bg-card p-4">
       <h2 className="flex items-center gap-2 font-semibold">
         <ListOrderedIcon className="size-4" /> {t("WorkQueue.title")}
+        <RefreshSelect every={every} onChange={setEvery} className="ml-auto" />
       </h2>
       <p className="text-xs text-muted-foreground">{t("WorkQueue.hint")}</p>
       {queue.isError && <p className="text-sm text-destructive">{t("WorkQueue.loadError", { error: queue.error.message })}</p>}
