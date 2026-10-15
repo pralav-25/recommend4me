@@ -863,11 +863,15 @@ class Tags(
         return one(scope, facet, TagRepository.key(to))
     }
 
-    /** The name the user gives [tag]; null or blank takes it back — the tag is named by its sites again. */
+    /**
+     * The name the user gives [tag]; null or blank takes it back — the tag is named by its sites
+     * again. Shown over the name worked out, which it is no part of: nothing counted or worked out
+     * anew (user, 2026-10-16); the tag's works read again, its name being what they are found by.
+     */
     fun name(scope: TagScope, facet: String, tag: String, name: String?): NamedTag? {
         val id = TagRepository.idOf(tag)?.takeIf(scope.tags::exists) ?: return null
         scope.tags.name(id, name?.trim()?.takeIf { it.isNotEmpty() })
-        changed(scope, facet, itemsOf(scope, facet, listOf(tag)))
+        told(scope, itemsOf(scope, facet, listOf(tag)))
         return one(scope, facet, tag)
     }
 

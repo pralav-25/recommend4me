@@ -180,6 +180,23 @@ internal class Ensemble(
     /** What a fitting of every model gives: the weights of each, in [Bilinear]'s layout, how many losses each took, when each ended. */
     class Fits(val weights: List<FloatArray>, val losses: IntArray, val endedAt: LongArray)
 
+    // Where a fitting's time went, summed over its rounds: told in the log of the fitting ([timing])
+    private var rounds = 0
+    private var searchNanos = 0L
+    private var featuresNanos = 0L
+    private var pairsNanos = 0L
+    private var restNanos = 0L
+
+    /**
+     * Where the time of the fitting went: its rounds; the searches' own work (the directions, the
+     * steps); the two products of the items' features with what they send and take back; the
+     * pairs and the names; the rest — the values' products, the penalty.
+     */
+    val timing: String
+        get() = "%d rounds: the searches %d ms, the items' features %d ms, the pairs and names %d ms, the rest %d ms".format(
+            rounds, searchNanos / 1_000_000, featuresNanos / 1_000_000, pairsNanos / 1_000_000, restNanos / 1_000_000,
+        )
+
     /** Every model fitted from its start ([starts], each of [Bilinear]'s layout), [maxSteps] steps at most. */
     fun fit(starts: List<FloatArray>, maxSteps: Int, stop: () -> Boolean): Fits = Blas.wide {
         val searches = Array(count) { k -> Search(size, maxSteps).also { it.begin(ordered(starts[k])) } }
@@ -187,9 +204,14 @@ internal class Ensemble(
         val endedAt = LongArray(count)
         while (active > 0) {
             if (stop()) throw CancellationException("the search is given up")
+            var at = System.nanoTime()
             for (slot in 0 until active) searches[slotModel[slot]].propose(points[slot])
+            searchNanos += System.nanoTime() - at
             evaluate(losses)
+            at = System.nanoTime()
             for (slot in 0 until active) searches[slotModel[slot]].answer(losses[slot], points[slot], grads[slot])
+            searchNanos += System.nanoTime() - at
+            rounds++
             // A model whose search ended leaves the products: the last one still searching takes its slot
             var slot = 0
             while (slot < active) {
@@ -228,10 +250,15 @@ internal class Ensemble(
         val k = active
         val kr = k * r
         // Uᵀ = Aᵀ Xᵀ and Vᵀ = Bᵀ Zᵀ + Eᵀ of every model, one product each
+        var at = System.nanoTime()
         itemsCoordinates(kr)
+        featuresNanos += System.nanoTime() - at
+        at = System.nanoTime()
         Blas.gemm(false, true, kr, m, dz, bT, 0, dz, p.z.held, 0, dz, vT, 0, m)
         Simd.axpy(1f, eT, 0, vT, 0, kr * m)
         if (h > 0) namesCoordinates(k)
+        restNanos += System.nanoTime() - at
+        at = System.nanoTime()
         val named = ln(2.0).toFloat()
         for (slot in 0 until k) {
             val model = slotModel[slot]
@@ -241,9 +268,15 @@ internal class Ensemble(
             if (h > 0) loss += names(slot, scale, common, named)
             losses[slot] = loss * scale
         }
+        pairsNanos += System.nanoTime() - at
         // dBᵀ = dVᵀ Z and dAᵀ = dUᵀ X of every model, one product each; the names' part added to dA after
+        at = System.nanoTime()
         Blas.gemm(false, false, kr, dz, m, gE, 0, m, p.z.held, 0, dz, gB, 0, dz)
+        restNanos += System.nanoTime() - at
+        at = System.nanoTime()
         itemsGradient(kr)
+        featuresNanos += System.nanoTime() - at
+        at = System.nanoTime()
         if (h > 0) namesGradient(k)
         // The penalty on every weight, once the products have written the gradient: the pair's own
         // too, but the common bias, the base rate of every value
@@ -260,6 +293,7 @@ internal class Ensemble(
             gPair[slot * Bilinear.PAIR + 2] = gPair[slot * Bilinear.PAIR + 2] - 2 * lambda * common
             losses[slot] += lambda * (penalty - common * common)
         }
+        restNanos += System.nanoTime() - at
     }
 
     /**
