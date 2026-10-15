@@ -32,6 +32,10 @@ class StandardFacet(
     val infer: Boolean = false,
     /** Of the layer: the standard facet of the sites whose values are this one's examples, by their names ([FacetDef.examplesFrom]). */
     val examples: StandardFacet? = null,
+    /** A work has one value of it at most ([FacetDef.single]). */
+    val single: Boolean = false,
+    /** Of the layer: the standard facet of the sites that is their own word on it, shown right above it and not learnt as examples ([FacetDef.originalFacet]). */
+    val original: StandardFacet? = null,
 ) {
     /** The value of the key; null when the facet has no such value, or takes any. */
     fun value(key: String): StandardValue? = values?.firstOrNull { it.key == key }
@@ -40,7 +44,7 @@ class StandardFacet(
     fun asFacet(key: String = this.key) = FacetDef(
         key,
         filter = filter, shared = this.key, searchWeight = searchWeight, onCard = onCard, names = names, suggest = suggest, role = role,
-        standard = this,
+        standard = this, single = single,
     )
 
     /**
@@ -50,7 +54,7 @@ class StandardFacet(
     fun asLayerFacet(examplesFrom: String?, originalFacet: String? = examplesFrom) = FacetDef(
         key,
         filter = filter, shared = key, searchWeight = searchWeight, onCard = onCard, names = names, suggest = suggest, infer = infer, role = role,
-        standard = this, editable = true, examplesFrom = examplesFrom, originalFacet = originalFacet,
+        standard = this, editable = true, examplesFrom = examplesFrom, originalFacet = originalFacet, single = single,
     )
 }
 

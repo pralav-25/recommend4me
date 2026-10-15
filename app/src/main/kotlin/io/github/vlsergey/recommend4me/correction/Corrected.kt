@@ -10,11 +10,16 @@ object Corrected {
     fun textField(key: String) = "text:$key"
     fun numberField(key: String) = "number:$key"
 
-    /** The facets of an item ([site], facet to keys) with the values the user added and without those taken away. */
-    fun facets(site: Map<String, List<String>>, corrections: List<FacetCorrection>): Map<String, List<String>> {
+    /**
+     * The facets of an item ([site], facet to keys) with the values the user added and without those
+     * taken away; of a facet of one value ([single]), a value the user added takes the place of
+     * every other.
+     */
+    fun facets(site: Map<String, List<String>>, corrections: List<FacetCorrection>, single: Set<String> = emptySet()): Map<String, List<String>> {
         if (corrections.isEmpty()) return site
         val out = LinkedHashMap<String, MutableList<String>>()
         site.forEach { (facet, keys) -> out[facet] = keys.toMutableList() }
+        corrections.filter { it.added && it.facet in single }.map { it.facet }.toSet().forEach { out.remove(it) }
         corrections.forEach { c ->
             val list = out.getOrPut(c.facet) { ArrayList() }
             if (c.added) { if (c.key !in list) list += c.key } else list.remove(c.key)

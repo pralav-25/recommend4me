@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.source.ao3
 
 import io.github.vlsergey.recommend4me.contenttype.Books
+import io.github.vlsergey.recommend4me.contenttype.StandardLanguages
 import io.github.vlsergey.recommend4me.contenttype.StandardNumbers
 import io.github.vlsergey.recommend4me.source.CapturedPage
 import io.github.vlsergey.recommend4me.source.CardDecor
@@ -51,7 +52,7 @@ class Ao3 : Source {
             FacetDef(RATING, filter = true, onCard = true, role = FacetRole.CONTENT),
             Books.DIRECTION.asFacet(CATEGORY),
             Books.STATUS.asFacet(STATUS),
-            FacetDef(LANGUAGE, filter = true, onCard = true),
+            StandardLanguages.LANGUAGE.asFacet(LANGUAGE),
             Books.TAG.asFacet(TAG),
             // The relationships and the characters as the site's tags name them, one field: the
             // application works the characters and pairings of the universes out of them

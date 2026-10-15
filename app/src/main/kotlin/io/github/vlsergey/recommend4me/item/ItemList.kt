@@ -213,7 +213,7 @@ class ItemList(
         }
         corrections.forEach { (id, list) ->
             val own = list.filter { it.facet == def.key }
-            if (own.isNotEmpty()) byItem[id] = Corrected.facets(mapOf(def.key to byItem[id].orEmpty()), own)[def.key].orEmpty()
+            if (own.isNotEmpty()) byItem[id] = Corrected.facets(mapOf(def.key to byItem[id].orEmpty()), own, if (def.single) setOf(def.key) else emptySet())[def.key].orEmpty()
         }
         return byItem
     }

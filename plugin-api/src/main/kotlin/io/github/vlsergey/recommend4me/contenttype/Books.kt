@@ -86,8 +86,8 @@ object Books {
     val TYPE = ContentType(
         id = ID,
         universes = true,
-        facets = listOf(AUTHOR, STATUS, DIRECTION, UniverseFacets.KIND_FACET, TAG, FANDOM, PAIRINGS),
-        layer = listOf(TAGS),
+        facets = listOf(AUTHOR, STATUS, DIRECTION, UniverseFacets.KIND_FACET, TAG, FANDOM, PAIRINGS, StandardLanguages.LANGUAGE),
+        layer = listOf(TAGS, StandardLanguages.languages(single = true)),
         signals = listOf(READ, LIKED, SHELF),
         numbers = listOf(PARTS, StandardNumbers.WORDS, StandardNumbers.LIKES, StandardNumbers.VIEWS),
     )

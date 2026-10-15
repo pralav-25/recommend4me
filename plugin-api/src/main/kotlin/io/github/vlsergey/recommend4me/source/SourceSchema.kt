@@ -104,6 +104,11 @@ class FacetDef(
      * of the characters — shown right above it, to answer by; null when the site has none.
      */
     val originalFacet: String? = null,
+    /**
+     * A work has one value of it at most — the language of a book: of the values the model works out
+     * the likeliest alone is given, and a value the user adds takes the place of every other.
+     */
+    val single: Boolean = false,
 )
 
 /**

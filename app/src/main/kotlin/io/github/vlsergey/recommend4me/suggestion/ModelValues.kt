@@ -39,7 +39,8 @@ object ModelValues {
         val out = LinkedHashMap(site)
         worked.forEach { def ->
             val own = site[def.key].orEmpty()
-            val given = given(chances[def.key].orEmpty()).filter { it !in own }
+            // Of a facet of one value, the likeliest alone — and none beside the site's own
+            val given = given(chances[def.key].orEmpty()).filter { it !in own }.let { if (def.single) (if (own.isEmpty()) it.take(1) else emptyList()) else it }
             if (given.isNotEmpty()) out[def.key] = own + given
         }
         return out

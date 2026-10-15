@@ -101,6 +101,10 @@ class CorrectionsController(
             // A name is kept for a value the site does not name: one the user made up
             val known = store.names(c.facet, listOf(key)).isNotEmpty()
             store.corrections.setFacet(item, c.facet, key, c.added, name.takeIf { !known }, Instant.now())
+            // Of a facet of one value — the language of a book — a value added takes the place of the user's others
+            if (c.added && def.single) {
+                store.corrections.facetsOf(item).filter { it.facet == c.facet && it.added && it.key != key }.forEach { store.corrections.unsetFacet(item, c.facet, it.key) }
+            }
             // A character is the work's main one or its secondary one: said to be one, it is the other no more
             UniverseFacet.otherCharacters(c.facet)?.takeIf { c.added && key !in UniverseFacet.ORIGINAL_CHARACTERS }?.let { other ->
                 if (store.corrections.facetsOf(item).any { it.facet == other && it.key == key && it.added }) store.corrections.unsetFacet(item, other, key)

@@ -24,6 +24,9 @@ import io.github.vlsergey.recommend4me.source.Source
 object I18nKeys {
     const val STANDARD = "standard"
 
+    /** The namespace of the languages, shown by their codes ([language]). */
+    const val LANGUAGE = "language"
+
     /** The languages of the interface, by their codes; the first is the fallback. */
     val LANGUAGES = listOf("en", "ru", "sr")
 
@@ -41,6 +44,12 @@ object I18nKeys {
     fun facet(key: String) = "facet.$key"
     fun facetNone(key: String) = "facet.$key.none"
     fun facetValue(facet: String, value: String) = "facet.$facet.value.$value"
+
+    /**
+     * The key a language is shown by, of its ISO 639 code ("language:ru"): the interface names it in
+     * the language it speaks itself (Intl.DisplayNames), no word file holds them.
+     */
+    fun language(code: String) = "$LANGUAGE:$code"
     fun number(key: String) = "number.$key"
     fun text(key: String) = "text.$key"
     fun signal(key: String) = "signal.$key"

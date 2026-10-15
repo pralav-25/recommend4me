@@ -54,10 +54,23 @@
     return serverWords.get(namespace);
   }
 
-  /** The namespace of a key, "<namespace>:<key>": what comes before its ":"; null when it is no key. */
+  /** The namespace of a key, "<namespace>:<key>": what comes before its ":"; null when it is no key, or a language's ([LANGUAGE]). */
   function namespaceOf(key) {
     const match = typeof key === "string" && /^([\w-]+):[^\s:]+$/.exec(key);
-    return match ? match[1] : null;
+    return match && match[1] !== LANGUAGE ? match[1] : null;
+  }
+
+  /** The namespace of a language by its ISO 639 code, "language:ru": named by the browser, no word file holds them. */
+  const LANGUAGE = "language";
+
+  /** A language named in the language spoken — "русский", "Russian" — its code when the browser knows it not. */
+  function languageName(code) {
+    try {
+      const name = new Intl.DisplayNames([r4mLanguage || navigator.language], { type: "language" }).of(code);
+      return name ? name.charAt(0).toLocaleUpperCase() + name.slice(1) : code;
+    } catch (e) {
+      return code;
+    }
   }
 
   /** The words of a namespace when they are read; else undefined. */
@@ -89,6 +102,7 @@
 
   /** The words of the server's [key] in the language spoken, filled from [params]; a key whose words are not read is shown as it is. */
   function said(key, params) {
+    if (typeof key === "string" && key.startsWith(`${LANGUAGE}:`)) return languageName(key.substring(LANGUAGE.length + 1));
     const words = wordsOf(namespaceOf(key));
     const text = words ? words[key.substring(key.indexOf(":") + 1)] : undefined;
     return text !== undefined ? fill(text, params) : key;

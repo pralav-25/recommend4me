@@ -2,6 +2,8 @@ package io.github.vlsergey.recommend4me.source
 
 import io.github.vlsergey.recommend4me.capture.CapturedPageRepository
 import io.github.vlsergey.recommend4me.contenttype.ContentType
+import io.github.vlsergey.recommend4me.contenttype.StandardFacet
+import io.github.vlsergey.recommend4me.contenttype.StandardLanguages
 import io.github.vlsergey.recommend4me.correction.CorrectionRepository
 import io.github.vlsergey.recommend4me.correction.TypeLinkRepository
 import io.github.vlsergey.recommend4me.database.Databases
@@ -58,7 +60,9 @@ class SourceStore(
     val schema: SourceSchema = run {
         val layer = (if (contentType.universes) UniverseFacet.defs(source.schema) else emptyList()) +
             contentType.layer.map { standard ->
-                standard.asLayerFacet(examplesFrom = standard.examples?.let { e -> source.schema.facets.firstOrNull { it.standard === e }?.key })
+                fun keyOf(of: StandardFacet?) = of?.let { o -> source.schema.facets.firstOrNull { it.standard === o }?.key }
+                val examples = keyOf(standard.examples)
+                standard.asLayerFacet(examplesFrom = examples, originalFacet = examples ?: keyOf(standard.original))
             }
         if (layer.isEmpty()) source.schema else SourceSchema(
             facets = source.schema.facets + layer,
@@ -115,6 +119,8 @@ class SourceStore(
      */
     fun names(facet: String, keys: Collection<String>): Map<String, String> {
         if (keys.isEmpty()) return emptyMap()
+        // A language by its code, named as the model reads it ([StandardLanguages])
+        if (facet == StandardLanguages.KEY) return keys.mapNotNull { k -> StandardLanguages.NAMES[k]?.let { k to it } }.toMap()
         if (facet in tagFacets) {
             // The tags as the user and every site name them ([TagRepository]); one the user made up, by the source
             val shown = tags.shown(keys)
@@ -132,6 +138,8 @@ class SourceStore(
     fun names(facet: String): Map<String, String> {
         // The normalized tags alone: the source's names of the facet are of the sites' keys it had before them
         if (facet in tagFacets) return tags.shown(null)
+        // Every language, a work in it or not yet: a value to answer by
+        if (facet == StandardLanguages.KEY) return StandardLanguages.NAMES
         return dictionaryNames?.of(facet, null) { if (it == null) items.facetNames(facet) else items.facetNames(facet, it) } ?: items.facetNames(facet)
     }
 
@@ -142,7 +150,14 @@ class SourceStore(
      * ([names]) keeps one language all the same: the model and the search read it.
      */
     fun nameKey(facet: String, key: String): String? =
-        schema.facet(facet)?.let { I18nKeys.standardValue(it, key) } ?: UniverseFacet.originalCharacterKey(key)
+        schema.facet(facet)?.let { I18nKeys.standardValue(it, key) } ?: UniverseFacet.originalCharacterKey(key) ?: languageKey(facet, key)
+
+    /** Of a language of the layer or of a site, the key it is shown by in the interface's language ([I18nKeys.language]). */
+    private fun languageKey(facet: String, key: String): String? {
+        val standard = schema.facet(facet)?.standard ?: return null
+        val language = standard.key == StandardLanguages.KEY || standard === StandardLanguages.LANGUAGE
+        return if (language && key in StandardLanguages.NAMES) I18nKeys.language(key) else null
+    }
 
     /** The user's word on the sites' free tags of the content type: merged, named, told apart — every source's alike. */
     val tags = TagRepository(databases.dictionaries.dsl)

@@ -67,7 +67,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
         val hierarchies = if (!ofTags) emptyMap() else store.hierarchies()
         // The tags the user ignores: never given or offered to mark — shown only where the user answered on them
         val ignoredTags = if (!ofTags) emptyMap() else store.ignoredTags()
-        val plain = Corrected.facets(base, corrections)
+        val single = schema.facets.filter { it.single }.map { it.key }.toSet()
+        val plain = Corrected.facets(base, corrections, single)
         val corrected = TagHierarchy.corrected(base, corrections, hierarchies)
         val said = corrections.filter { it.added }.groupBy({ it.facet }, { it.key })
         return schema.facets.filter { only(it.key) }.mapNotNull { def ->

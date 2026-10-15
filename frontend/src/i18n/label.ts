@@ -7,7 +7,22 @@ import i18n from "./i18n";
  * run time, `plugins.ts`), so the keys are not typed: a key without words is shown as it is.
  */
 export function label(key: string, params?: Record<string, unknown>): string {
+  // A key the server left out comes as null at run time, whatever the type says
+  if (typeof key === "string" && key.startsWith(LANGUAGE)) return languageName(key.substring(LANGUAGE.length));
   return translate(key, { ...params, defaultValue: key });
+}
+
+/** The namespace of a language by its ISO 639 code, "language:ru": named by the browser, no word file holds them. */
+const LANGUAGE = "language:";
+
+/** A language named in the interface's language — "русский", "Russian" — its code when the browser knows it not. */
+function languageName(code: string): string {
+  try {
+    const name = new Intl.DisplayNames([i18n.language], { type: "language" }).of(code);
+    return name ? name.charAt(0).toLocaleUpperCase(i18n.language) + name.slice(1) : code;
+  } catch {
+    return code;
+  }
 }
 
 /** The name of a value: of the application's own its key's words, of the data as the data has it. */

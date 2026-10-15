@@ -164,8 +164,8 @@ class ScenarioTest {
         assertEquals(3, list(range = listOf("other.parts=1..1")).total)
         assertEquals(mapOf("range" to "test.likes=a..2"), assertThrows<Refused> { list(range = listOf("test.likes=a..2")) }.params)
         assertEquals("A boy finds a dragon egg", items.getItem("test", "w1").body!!.texts.single().content)
-        // The source's filter facet, and the kind and the universe the application gives every book
-        assertEquals(listOf("test.tag", "kind", "universe"), items.listFacets("books").body!!.map { it.id })
+        // The source's filter facet, and the kind, the universe and the language the application gives every book
+        assertEquals(listOf("test.tag", "kind", "universe", "languages"), items.listFacets("books").body!!.map { it.id })
 
         // The user's word on what a search found: one line however typed, taken back when pressed again
         items.judgeSearch("books", SearchJudgment("  Dragons ", "test", "w1", relevant = true))

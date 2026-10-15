@@ -16,12 +16,13 @@ class BuiltInTypes {
     companion object {
         /**
          * Games: their title, grades and verb are the interface's words of "games"; their sites' free
-         * tags normalized into the same dictionary as the books' ([StandardTags]).
+         * tags normalized into the same dictionary as the books' ([StandardTags]); a game is played in
+         * every language it is translated to ([StandardLanguages]).
          */
         val GAMES = ContentType(
             id = "games",
-            facets = listOf(StandardTags.TAG),
-            layer = listOf(StandardTags.TAGS),
+            facets = listOf(StandardTags.TAG, StandardLanguages.LANGUAGE),
+            layer = listOf(StandardTags.TAGS, StandardLanguages.languages(single = false)),
             numbers = listOf(StandardNumbers.LIKES),
         )
     }
