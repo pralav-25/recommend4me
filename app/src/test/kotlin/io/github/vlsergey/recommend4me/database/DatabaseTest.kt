@@ -34,9 +34,19 @@ class DatabaseTest {
                 db.dsl.execute("CHECKPOINT")
                 Thread.sleep(250)
             }
-            // Compacted only when it gives back much: a file of 64 MB or more, mostly unused
-            val (before, after) = assertNotNull(db.compact(60_000), "usage ${db.usage()}")
+            // Compacted only when it gives back much: a file of 64 MB or more, mostly unused. A pass cannot
+            // move the chunk written last: written late, at the end of the file, it stops the cut there.
+            // The application writes on and compacts again in a quarter of an hour — the next chunk written
+            // into the space given back near the start — and so the test, a write between the passes
+            val (before, first) = assertNotNull(db.compact(60_000), "usage ${db.usage()}")
             assertTrue(before > 64L shl 20, "before $before")
+            var after = first
+            var pass = 0
+            while (after >= before / 2 && pass++ < PASSES) {
+                db.dsl.execute("UPDATE junk SET data = ? WHERE id = 0", byteArrayOf(pass.toByte()))
+                db.dsl.execute("CHECKPOINT")
+                after = db.compact(60_000)?.second ?: after
+            }
             assertTrue(after < before / 2, "from $before to $after")
             // What is used is all there, and the file is written to as before
             assertEquals(10, db.dsl.fetchCount(db.dsl.selectFrom("junk")))
@@ -53,5 +63,8 @@ class DatabaseTest {
     private companion object {
         /** The share of live pages in the file's chunks, percent, below which the deleted rows are let go. */
         const val RELEASED = 20
+
+        /** The passes of compaction after the first, at most: as many as the application makes in an hour and a quarter. */
+        const val PASSES = 5
     }
 }
