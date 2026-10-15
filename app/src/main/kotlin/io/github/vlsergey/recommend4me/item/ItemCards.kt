@@ -99,7 +99,8 @@ class ItemCards(private val stores: Stores, private val works: Works) {
             // the site bound to it — it is not shown with and the user has not answered on, whatever its
             // chance: the site's word, none hidden; then the likeliest values the work is not shown with,
             // the user has not answered on and the site does not give — to make at least so many
-            val offered = if (!(def.infer && def.editable) || def.key in complete) emptyList() else {
+            // Of a facet of one value that has it, none: another one added takes its place
+            val offered = if (!(def.infer && def.editable) || def.key in complete || (def.single && keys.isNotEmpty())) emptyList() else {
                 val shown = keys.toSet()
                 val bySite = fromSite.filter { it !in shown && it !in answered && it !in out && it !in negated && it !in ignored }
                     .sortedByDescending { own[it]?.chance ?: -1.0 }
@@ -150,6 +151,7 @@ class ItemCards(private val stores: Stores, private val works: Works) {
                     .let { values -> hierarchy?.parentsFirst(values) { it.key } ?: values },
                 original = original,
                 complete = (def.key in complete).takeIf { it },
+                single = def.single.takeIf { it },
             )
         }
     }

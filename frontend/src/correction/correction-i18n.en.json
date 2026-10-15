@@ -17,6 +17,7 @@
   "FacetCorrections.finishAdding": "Finish adding",
   "FacetCorrections.fromSite": "From the site",
   "FacetCorrections.heading": "Attributes",
+  "FacetLine.change": "Choose another in its place",
   "FacetLine.confirmAll": "✓ all ({{n, number}})",
   "FacetLine.confirmAllHint": "Confirm every value you haven't answered",
   "FacetLine.search": "Find by name and add",

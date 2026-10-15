@@ -45,7 +45,7 @@ object UniverseFacets {
             StandardValue(ALTERNATIVE_HISTORY, "Альтернативная история"),
             StandardValue(ORIGINAL, "Оригинальная вселенная"),
         ),
-        filter = true, onCard = true, suggest = true,
+        filter = true, onCard = true, suggest = true, single = true,
     )
 
     const val UNIVERSE = "universe"

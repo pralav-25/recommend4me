@@ -101,6 +101,8 @@ function FacetLine({ facet: f, item, source, corrections }: { facet: ItemFacet; 
   const addable = source && own.length > 0 ? { ...source, facets: own } : undefined;
   // The work's values the user has not answered on — not those only offered, nor those it has by a tag under them
   const open = f.values.filter((v) => !decided(v) && !v.offered && !v.implied);
+  // A facet of one value that has one: the language of a book, the kind of its universe
+  const held = f.single === true && f.values.some((v) => !v.offered && v.corrected !== "REMOVED");
   const confirmAll = async () => {
     for (const v of open) await corrections!.setFacet(f.facet, { key: v.key }, true);
   };
@@ -118,8 +120,9 @@ function FacetLine({ facet: f, item, source, corrections }: { facet: ItemFacet; 
         {values.map((v) => (
           <FacetValue key={v.key} facet={f.facet} value={v} corrections={corrections} tagLink={f.tags === true} />
         ))}
-        {item && corrections && <MoreCandidates item={item} facet={f.facet} shown={f.values} corrections={corrections} tagLink={f.tags === true} />}
-        {corrections && addable && <SearchButton onClick={() => setSearching(!searching)} title={t("FacetLine.search")} />}
+        {/* A facet of one value that has it offers no other: one chosen in its place replaces it */}
+        {item && corrections && !held && <MoreCandidates item={item} facet={f.facet} shown={f.values} corrections={corrections} tagLink={f.tags === true} />}
+        {corrections && addable && <SearchButton onClick={() => setSearching(!searching)} title={t(held ? "FacetLine.change" : "FacetLine.search")} />}
       </div>
       {searching && corrections && addable && <AddFacetValue source={addable} corrections={corrections} onClose={() => setSearching(false)} />}
     </div>

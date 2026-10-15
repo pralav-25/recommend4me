@@ -17,6 +17,7 @@
   "FacetCorrections.finishAdding": "Završi dodavanje",
   "FacetCorrections.fromSite": "Sa sajta",
   "FacetCorrections.heading": "Obeležja",
+  "FacetLine.change": "Izaberi drugo umesto njega",
   "FacetLine.confirmAll": "✓ sve ({{n, number}})",
   "FacetLine.confirmAllHint": "Potvrdi sve vrednosti na koje niste odgovorili",
   "FacetLine.search": "Pronađi po imenu i dodaj",

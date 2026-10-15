@@ -29,6 +29,7 @@ var R4M_WORDS = {
     "panel.unsaved": "The work is not saved yet: it will appear once the page is sent to the application.",
     "panel.prediction": "Prediction",
     "panel.outOf": "out of 10",
+    "panel.withoutGrade": "without your grade:",
     "panel.noPrediction": "No prediction yet: the model is not trained yet or the work is not parsed yet",
     "panel.why": "Why:",
 
@@ -80,6 +81,7 @@ var R4M_WORDS = {
     "facet.confirmAll": "✓ all ({{count}})",
     "facet.confirmAllTitle": "Confirm every value you have not answered on",
     "facet.works": "works: {{count}}",
+    "facet.change": "change: {{what}}",
     "facet.chooseHint": "Choose one of the list: only what the dictionary knows can be added here",
 
     "mark.plus": "{{what}}: a reason to choose the work",
@@ -137,6 +139,7 @@ var R4M_WORDS = {
     "panel.unsaved": "Работа ещё не сохранена: она появится, когда страница будет отправлена приложению.",
     "panel.prediction": "Прогноз",
     "panel.outOf": "из 10",
+    "panel.withoutGrade": "без вашей оценки:",
     "panel.noPrediction": "Прогноза пока нет: модель ещё не обучена или работа ещё не разобрана",
     "panel.why": "Почему:",
 
@@ -188,6 +191,7 @@ var R4M_WORDS = {
     "facet.confirmAll": "✓ все ({{count}})",
     "facet.confirmAllTitle": "Подтвердить все значения без вашего ответа",
     "facet.works": "работ: {{count}}",
+    "facet.change": "сменить: {{what}}",
     "facet.chooseHint": "Выберите из списка: сюда можно добавить только то, что есть в словаре",
 
     "mark.plus": "{{what}}: повод выбрать работу",
@@ -245,6 +249,7 @@ var R4M_WORDS = {
     "panel.unsaved": "Delo još nije sačuvano: pojaviće se kada stranica bude poslata aplikaciji.",
     "panel.prediction": "Predviđanje",
     "panel.outOf": "od 10",
+    "panel.withoutGrade": "bez vaše ocene:",
     "panel.noPrediction": "Predviđanja još nema: model još nije obučen ili delo još nije raščlanjeno",
     "panel.why": "Zašto:",
 
@@ -296,6 +301,7 @@ var R4M_WORDS = {
     "facet.confirmAll": "✓ sve ({{count}})",
     "facet.confirmAllTitle": "Potvrdi sve vrednosti bez vašeg odgovora",
     "facet.works": "dela: {{count}}",
+    "facet.change": "promeni: {{what}}",
     "facet.chooseHint": "Izaberite sa liste: ovde se može dodati samo ono što rečnik poznaje",
 
     "mark.plus": "{{what}}: razlog da se delo izabere",

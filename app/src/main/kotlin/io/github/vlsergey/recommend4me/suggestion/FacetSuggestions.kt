@@ -667,7 +667,9 @@ class FacetSuggestions(private val stores: Stores, private val plugins: Plugins,
         return facets.filter { it.suggest && !it.infer }.map { facet ->
             val answered = corrections.filter { it.facet == facet.key }.map { it.key }.toSet()
             val current = site[facet.key].orEmpty().toSet()
-            val suggested = chances[facet.key].orEmpty().values
+            // Of a facet of one value the work has — the site's or the user's — none other is suggested
+            val held = facet.single && (current.isNotEmpty() || corrections.any { it.facet == facet.key && it.added })
+            val suggested = if (held) emptyList() else chances[facet.key].orEmpty().values
                 .filter { !it.had && it.key !in answered && it.key !in current && it.chance > ModelValues.LIKELY }.sortedByDescending { it.chance }
             ItemFacetSuggestions(facet, suggested, store.names(facet.key, suggested.map { it.key }))
         }

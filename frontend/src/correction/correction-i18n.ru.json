@@ -17,6 +17,7 @@
   "FacetCorrections.finishAdding": "Закончить добавление",
   "FacetCorrections.fromSite": "С сайта",
   "FacetCorrections.heading": "Признаки",
+  "FacetLine.change": "Выбрать другое вместо него",
   "FacetLine.confirmAll": "✓ все ({{n, number}})",
   "FacetLine.confirmAllHint": "Подтвердить все значения без вашего ответа",
   "FacetLine.search": "Найти по имени и добавить",

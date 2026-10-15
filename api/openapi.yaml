@@ -2070,6 +2070,11 @@ components:
           type: boolean
           nullable: true
           description: The user said the work's values of it are all named - no other is offered, every other counts as rejected; none when not said
+        single:
+          type: boolean
+          description: >
+            A work has one value of it - the kind of a book's universe, its language: once it has one, no other is
+            offered; another one added takes its place
 
     Prediction:
       type: object

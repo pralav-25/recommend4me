@@ -335,11 +335,22 @@
     }, SETTLE_MS);
   }
 
+  /**
+   * What moves the work's prediction; of a graded work, of the model that had not seen it — the one
+   * of every grade has seen the user's grade and partly learnt it by heart — with that model's score
+   * ([heldOut]): the parts are of that score, not of the prediction shown.
+   */
   async function readExplanation(item) {
     const of = keyOf(item);
+    const path = `/api/items/${enc(item.summary.source)}/${enc(item.summary.item)}`;
     try {
-      const parts = await api("GET", `/api/items/${enc(item.summary.source)}/${enc(item.summary.item)}/explanation`);
-      explanation = { of, parts };
+      if (item.summary.grade) {
+        // No content: too few graded works for a model that had not seen it
+        const held = await api("GET", `${path}/held-out`);
+        explanation = { of, parts: held ? held.explanation : [], heldOut: held ? held.score : null };
+      } else {
+        explanation = { of, parts: await api("GET", `${path}/explanation`), heldOut: null };
+      }
     } catch (e) {
       // The panel goes without it
       return;
@@ -588,20 +599,28 @@
     }
     root.appendChild(score);
 
-    root.appendChild(grades(item));
-    root.appendChild(interest(item));
-
-    const parts = explanation && explanation.of === keyOf(item) ? explanation.parts : null;
-    if (parts && parts.length) {
+    // Right under the prediction, what moves it; of a graded work, first the score of the model that
+    // had not seen the grade — the parts are of that one
+    const known = explanation && explanation.of === keyOf(item) ? explanation : null;
+    if (known && known.heldOut != null) {
+      const held = el("r4m-line");
+      held.appendChild(el("span", "r4m-muted", `${t("panel.withoutGrade")} `));
+      held.appendChild(el("r4m-score", scoreClass(known.heldOut), shownScore(known.heldOut)));
+      root.appendChild(held);
+    }
+    if (known && known.parts && known.parts.length) {
       const why = el("r4m-why");
       why.appendChild(el("span", "r4m-muted", `${t("panel.why")} `));
-      parts.slice(0, 6).forEach((c, i) => {
+      known.parts.slice(0, 6).forEach((c, i) => {
         if (i) why.appendChild(el("span", "r4m-muted", " · "));
         const sign = c.contribution >= 0 ? "+" : "−";
         why.appendChild(el("span", c.contribution >= 0 ? "r4m-up" : "r4m-down", `${sign}${Math.abs(c.contribution).toFixed(1)} ${said(c.labelKey)}`));
       });
       root.appendChild(why);
     }
+
+    root.appendChild(grades(item));
+    root.appendChild(interest(item));
 
     // The facets the page does not show, in the panel
     facetsOf(item).forEach(({ facet, suggestions }) => {
@@ -895,6 +914,9 @@
     ), about);
   }
 
+  /** A facet of one value that has one — the language of a book, the kind of its universe ([FacetDef.single]). */
+  const held = (facet) => facet.single === true && (facet.values || []).some((v) => !v.offered && v.corrected !== "REMOVED");
+
   /** The keys of the values a facet's line shows: the work's, the user's, the suggested. */
   function shownKeys(facet, suggestions) {
     return new Set([...(facet.values || []), ...((suggestions && suggestions.suggested) || [])].map((v) => v.key));
@@ -921,14 +943,18 @@
    * at once, slowly, by the value alone — without the chance and the mentions — matching the start
    * of a name only. The list here draws what is scrolled to, a few screens at a time.
    */
-  function addField(item, facet, label) {
+  function addField(item, facet, label, changing = false) {
     const id = `${keyOf(item)}|${facet}`;
+    const placeholder = changing ? t("facet.change", { what: lower(label) }) : `+ ${lower(label)}`;
     const kept = addFields.get(id);
-    if (kept && !kept.isConnected) return kept;
+    if (kept && !kept.isConnected) {
+      kept.querySelector("input").placeholder = placeholder;
+      return kept;
+    }
     const form = el("form", "r4m-add");
     const input = el("input");
     input.type = "text";
-    input.placeholder = `+ ${lower(label)}`;
+    input.placeholder = placeholder;
     input.autocomplete = "off";
     input.setAttribute("role", "combobox");
     input.setAttribute("aria-autocomplete", "list");
@@ -1157,8 +1183,9 @@
     stableOrder(item, facet.facet, values).forEach((v) => line.appendChild(valueChip(item, facet.facet, v, editable)));
     if (editable) {
       ((suggestions && suggestions.suggested) || []).forEach((v) => line.appendChild(suggestedChip(item, facet.facet, v)));
-      if (!facet.complete) moreOf(item, facet.facet, line, shownKeys(facet, suggestions));
-      line.appendChild(addField(item, facet.facet, labelOf(facet)));
+      // A facet of one value that has one offers no other: one chosen in its place replaces it
+      if (!facet.complete && !held(facet)) moreOf(item, facet.facet, line, shownKeys(facet, suggestions));
+      line.appendChild(addField(item, facet.facet, labelOf(facet), held(facet)));
     }
     block.appendChild(line);
     return block;
@@ -1200,8 +1227,8 @@
     const after = el("r4m-chips");
     values.filter((v) => v.corrected === "ADDED" || (v.inferred && v.corrected !== "REMOVED")).forEach((v) => after.appendChild(valueChip(item, decor.facet, v)));
     ((suggestions && suggestions.suggested) || []).forEach((v) => after.appendChild(suggestedChip(item, decor.facet, v)));
-    if (!facet.complete) moreOf(item, decor.facet, after, shownKeys(facet, suggestions));
-    after.appendChild(addField(item, decor.facet, labelOf(facet)));
+    if (!facet.complete && !held(facet)) moreOf(item, decor.facet, after, shownKeys(facet, suggestions));
+    after.appendChild(addField(item, decor.facet, labelOf(facet), held(facet)));
     const allNamed = completeButton(item, facet);
     if (allNamed) after.appendChild(allNamed);
     const last = elements[elements.length - 1];
