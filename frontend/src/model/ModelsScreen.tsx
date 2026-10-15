@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { api, ensureOk, unwrap, type ContentTypeInfo, type ModelState, type ModelTrial } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { typeTitle } from "@/contenttype/types";
-import { duration, formatDate } from "@/i18n/format";
+import { duration, formatDate, number } from "@/i18n/format";
 import { label, scorerTitle, sourceTitle } from "@/i18n/label";
 import { usePluginNamespaces } from "@/i18n/usePluginNamespaces";
 import { ITEMS } from "@/item/lists";
@@ -177,7 +177,7 @@ function FacetCard({ type, m }: { type: ContentTypeInfo; m: ModelState }) {
       m={m}
       method={m.method ? scorerTitle(m.method) : undefined}
       examples={
-        m.items !== undefined ? t("ModelsScreen.facetExamples", { count: m.items, values: m.values ?? 0 }) : undefined
+        m.items !== undefined ? `${t("ModelsScreen.works", { count: m.items })}, ${t("ModelsScreen.values", { count: m.values ?? 0 })}` : undefined
       }
       note={m.fromScratch === false ? t("ModelsScreen.walkedOn") : undefined}
       actions={
@@ -234,7 +234,7 @@ function ModelCard({
           {method && <span className="text-muted-foreground">{method}</span>}
           {examples && <span className="text-muted-foreground">{examples}</span>}
           <span className="text-muted-foreground">{t("ModelsScreen.fittedAt", { date: formatDate(m.fittedAt) })}</span>
-          {m.millis !== undefined && <span className="text-muted-foreground">{t("ModelsScreen.took", { duration: duration(m.millis / 1000) })}</span>}
+          {m.millis !== undefined && <span className="text-muted-foreground">{t("ModelsScreen.took", { duration: took(m.millis, t) })}</span>}
           {note && <span className="text-muted-foreground">{note}</span>}
         </div>
       ) : (
@@ -245,6 +245,14 @@ function ModelCard({
       {children}
     </section>
   );
+}
+
+/** How long a fitting took, to the second — a minute or more as minutes and seconds, a long one as the coarse duration. */
+function took(millis: number, t: (key: "ModelsScreen.seconds" | "ModelsScreen.minutesSeconds", options: Record<string, unknown>) => string): string {
+  const seconds = millis / 1000;
+  if (seconds < 60) return t("ModelsScreen.seconds", { value: number(Number(seconds.toPrecision(seconds < 10 ? 2 : 3))) });
+  if (seconds < 3600) return t("ModelsScreen.minutesSeconds", { minutes: Math.floor(seconds / 60), seconds: Math.round(seconds % 60) });
+  return duration(seconds);
 }
 
 /** The settings by their names: "parameter 0.01", "r = 16 · λ = 0.1" — the scorer's one parameter by the interface's word. */
@@ -305,7 +313,7 @@ function Tried({ m }: { m: ModelState }) {
               <tr key={i} className={cn("border-t", chosen(r) && "bg-yes/10 font-medium")}>
                 <td className="px-3 py-1 tabular-nums">{settingsText(r.settings, t("ModelsScreen.parameter"))}</td>
                 <td className="px-3 py-1 text-right tabular-nums">{loss ? qualityNumber(r.value, r.error, 4) : qualityPercent(r.value, r.error)}</td>
-                {r.millis !== undefined && <td className="px-3 py-1 text-right tabular-nums">{duration(r.millis / 1000)}</td>}
+                {r.millis !== undefined && <td className="px-3 py-1 text-right tabular-nums">{took(r.millis, t)}</td>}
               </tr>
             ))}
           </tbody>
