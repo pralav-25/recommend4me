@@ -268,6 +268,9 @@ function TagList({ selected }: { selected?: string }) {
 /** How many offers of the tags' graph are shown, and added by "more". */
 const OFFERS_PAGE = 20;
 
+/** The quiet after the user's last mark on the offers before they are read anew: as an answer's on a work. */
+const QUIET_MS = 2000;
+
 /** A tag's name, a link to its page. */
 function TagLink({ tag }: { tag: TagRef }) {
   return (
@@ -288,11 +291,22 @@ function HierarchyOffers() {
   const [limit, setLimit] = useState(OFFERS_PAGE);
   // The offers the user said are too general: hidden unless asked for
   const [showRejected, setShowRejected] = useState(false);
+  const queryClient = useQueryClient();
+  const offersKey = [TAGS, "hierarchy-offers"];
   const offers = useQuery({
-    queryKey: [TAGS, "hierarchy-offers"],
+    queryKey: offersKey,
     placeholderData: keepPreviousData,
-    queryFn: async () => unwrap(await api.GET("/api/tags/hierarchy-offers")),
+    // A reading given up for a newer one is broken off: it does not hold a connection of the
+    // browser while the queue of the computations works it out
+    queryFn: async ({ signal }) => unwrap(await api.GET("/api/tags/hierarchy-offers", { signal })),
   });
+  // The offers read anew once the user's marks have gone quiet for a while: one reading for a row of them
+  const quiet = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(quiet.current), []);
+  const readLater = () => {
+    clearTimeout(quiet.current);
+    quiet.current = setTimeout(() => void queryClient.invalidateQueries({ queryKey: offersKey }), QUIET_MS);
+  };
   const act = async (o: HierarchyOffer) => {
     const [first, second] = o.tags;
     if (o.kind === "LINK") unwrap(await api.PUT("/api/tags/relation", { body: { tag: first.key, other: second.key, relation: "PARENT" } }));
@@ -306,10 +320,17 @@ function HierarchyOffers() {
       );
     await changed();
   };
-  /** The user's word that the entry is too general to be a tag above others — or its taking back. */
+  /**
+   * The user's word that the entry is too general to be a tag above others — or its taking back:
+   * the button waits for its writing alone, the offers of the entry shown so at once; the list read
+   * anew after the quiet ([readLater]), not waited for — several of them said one after another.
+   */
   const tooGeneral = async (o: HierarchyOffer, said: boolean) => {
     ensureOk(await api.PUT("/api/tags/too-general", { body: { catalogue: o.catalogue!, entry: o.entry!, tooGeneral: said } }));
-    await offers.refetch();
+    queryClient.setQueryData<HierarchyOffer[]>(offersKey, (list) =>
+      list?.map((x) => (x.catalogue === o.catalogue && x.entry === o.entry ? { ...x, rejected: said } : x)),
+    );
+    readLater();
   };
   const rejected = (offers.data ?? []).filter((o) => o.rejected).length;
   const list = (offers.data ?? []).filter((o) => showRejected || !o.rejected);
