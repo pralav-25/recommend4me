@@ -136,6 +136,15 @@ class Onnx(
     }
 
     /**
+     * The folder of the CUDA libraries, loaded ([cudaReady]), when the launch asks for the card and
+     * they are there: for whoever calls them besides the runtime — the matrix products of a fitting
+     * on the card (cuBLAS) — the very libraries the runtime has, not those of a toolkit on PATH.
+     * Null on the CPU.
+     */
+    @Synchronized
+    fun cudaLibraries(): Path? = cuda.takeIf { gpu && cudaReady() }
+
+    /**
      * Loads every library of [cuda], once. A library is loaded only after those it needs, which
      * are found among the loaded ones by name: the folder is gone through again while that loads
      * more. What never loads (a part of cuDNN that needs a library not fetched) is left out — the

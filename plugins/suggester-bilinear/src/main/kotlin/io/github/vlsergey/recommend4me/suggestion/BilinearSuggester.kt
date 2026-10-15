@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.suggestion
 
 import io.github.vlsergey.recommend4me.matrix.Blas
+import io.github.vlsergey.recommend4me.matrix.Cublas
 import io.github.vlsergey.recommend4me.matrix.Floats
 import io.github.vlsergey.recommend4me.onnx.Onnx
 import org.slf4j.LoggerFactory
@@ -62,26 +63,32 @@ class BilinearSuggester internal constructor(
         val lambdas = if (last == null) grid else grid.indices.minBy { abs(ln(grid[it] / last.lambda)) }.let { at ->
             grid.subList(maxOf(0, at - 1), minOf(grid.size, at + 2))
         }
-        var onCard = false
+        var where = "on the processor"
         // The card found slower last time at as many groups of names or fewer: not opened again — its
         // graph of hundreds of groups takes tens of seconds to open, only to be closed. More groups
         // are more launches on the card, slower still; fewer may be faster, and are measured again
         var slowerAt = (previous as? Fitted)?.cardSlowerAt?.takeIf { problem.hintGroups.size >= it }
+        // cuBLAS on the card, when the launch asks for it: every model in one product, the items'
+        // features on the card ([Ensemble]) — the step of ONNX Runtime's graph not tried then
+        val cublas = onnx?.cudaLibraries()?.let(Cublas::open)
         for (rank in ranks) {
             // The task put on the card once for every fold and penalty of the rank, when there is a
             // card: closed with the fitting, and the card's memory given back. Kept only where its
             // step is the faster: a node of the graph is a launch on the card, and names in hundreds
             // of small groups — the pairings' 301 — are thousands of launches, slower than the
             // processor's whole step
-            val card = onnx?.takeIf { slowerAt == null }?.let { StepOnCard.open(it, problem, rank) }?.let { opened ->
+            val card = onnx?.takeIf { cublas == null && slowerAt == null }?.let { StepOnCard.open(it, problem, rank) }?.let { opened ->
                 if (faster(problem, rank, opened)) opened else {
                     opened.close()
                     slowerAt = problem.hintGroups.size
                     null
                 }
             }
-            onCard = onCard || card != null
-            card.use { tried += fitRank(problem, rank, lambdas, last, card, stop) }
+            card.use {
+                val (fitted, place) = fitRank(problem, rank, lambdas, last, card, cublas, stop)
+                tried += fitted
+                where = place
+            }
         }
         // The one-standard-error rule (Breiman et al.): of the penalties that hold out no worse than
         // the best by more than its standard error, the strongest — the data cannot tell them apart,
@@ -92,7 +99,7 @@ class BilinearSuggester internal constructor(
             "{} items × {} values, {} features of an item, {} of a value, {} names against {} values, {}: {}; chosen r={} λ={} — in {} ms; " +
                 "of the values no item of the other folds has: {}",
             task.itemCount, task.valueCount, design.itemWidth, design.valueWidth, problem.hints.size, problem.hintPairs,
-            (if (last == null) "from scratch" else "from the last state") + (if (onCard) ", on the card" else ", on the processor"),
+            (if (last == null) "from scratch" else "from the last state") + ", " + where,
             tried.joinToString("; ") { "r=${it.rank} λ=${it.lambda}: %.4f ± %.4f (losses %s in %d ms)".format(it.held.mean, it.held.error, it.losses, it.millis) },
             chosen.rank, chosen.lambda, System.currentTimeMillis() - started,
             tried.joinToString("; ") { "λ=${it.lambda}: " + if (it.unseen.weight > 0) "%.4f ± %.4f".format(it.unseen.mean, it.unseen.error) else "none" },
@@ -133,11 +140,14 @@ class BilinearSuggester internal constructor(
     }
 
     /**
-     * Every penalty of [lambdas] at [rank], every fold of each: on the processor ALL OF THEM IN ONE
-     * PRODUCT ([Ensemble]), on one thread, the library sharing the products out among its own; on
-     * the [card], when there is one, a model after another.
+     * Every penalty of [lambdas] at [rank], every fold of each: ALL OF THEM IN ONE PRODUCT
+     * ([Ensemble]), on one thread — the items' features and their products on the card through
+     * [cublas] when there is one, else OpenBLAS sharing the products out among its own threads; on
+     * the [card] of ONNX Runtime, when it is the one, a model after another. With where it was fitted.
      */
-    private fun fitRank(problem: Problem, rank: Int, lambdas: List<Double>, last: Fitted?, card: StepOnCard?, stop: () -> Boolean): List<Tried> {
+    private fun fitRank(
+        problem: Problem, rank: Int, lambdas: List<Double>, last: Fitted?, card: StepOnCard?, cublas: Cublas?, stop: () -> Boolean,
+    ): Pair<List<Tried>, String> {
         // The model of one penalty and fold: its start, and on the card the model it is fitted by
         val helper = Bilinear(problem, rank, card)
 
@@ -158,14 +168,18 @@ class BilinearSuggester internal constructor(
         val endedAt: LongArray
         val held = List(lambdas.size) { Bilinear.Held() }
         val unseen = List(lambdas.size) { Bilinear.Held() }
+        val where: String
         if (card == null) {
-            val ensemble = Ensemble(problem, rank, FloatArray(count) { lambdas[it / FOLDS].toFloat() }, IntArray(count) { it % FOLDS })
-            val fits = ensemble.fit(starts, Bilinear.MAX_STEPS, stop)
-            weights = fits.weights
-            losses = fits.losses
-            endedAt = fits.endedAt
-            ensemble.heldOut(weights, List(count) { held[it / FOLDS] }, List(count) { unseen[it / FOLDS] })
+            Ensemble(problem, rank, FloatArray(count) { lambdas[it / FOLDS].toFloat() }, IntArray(count) { it % FOLDS }, cublas).use { ensemble ->
+                val fits = ensemble.fit(starts, Bilinear.MAX_STEPS, stop)
+                weights = fits.weights
+                losses = fits.losses
+                endedAt = fits.endedAt
+                ensemble.heldOut(weights, List(count) { held[it / FOLDS] }, List(count) { unseen[it / FOLDS] })
+                where = if (ensemble.featuresOnCard) "the items' features on the card (cuBLAS)" else "on the processor (OpenBLAS)"
+            }
         } else {
+            where = "on the card (ONNX Runtime), a model at a time"
             // On the card a model after another, on this thread: the card takes one step at a time
             endedAt = LongArray(count)
             losses = IntArray(count)
@@ -184,7 +198,7 @@ class BilinearSuggester internal constructor(
                 rank, lambda, held[j], unseen[j], Fitted(problem.design, rank, lambda, own.map { helper.weights(weights[it]) }),
                 own.map { losses[it] }, own.maxOf { endedAt[it] } - begun,
             )
-        }
+        } to where
     }
 
     override fun unpack(bytes: ByteArray, task: SuggestionTask): FittedSuggester? = runCatching {

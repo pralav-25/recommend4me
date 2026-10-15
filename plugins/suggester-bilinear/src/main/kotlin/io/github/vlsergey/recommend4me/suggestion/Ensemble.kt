@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.suggestion
 
 import io.github.vlsergey.recommend4me.matrix.Blas
+import io.github.vlsergey.recommend4me.matrix.Cublas
 import io.github.vlsergey.recommend4me.matrix.Floats
 import io.github.vlsergey.recommend4me.matrix.Simd
 import java.util.concurrent.CancellationException
@@ -27,7 +28,11 @@ import kotlin.math.ln
  * at the point every one of them asks for. A model whose search has ended leaves the product; the
  * last one takes its place, so the products are of the models still searching alone.
  */
-internal class Ensemble(private val p: Problem, val rank: Int, private val lambdas: FloatArray, private val heldOut: IntArray) {
+internal class Ensemble(
+    private val p: Problem, val rank: Int, private val lambdas: FloatArray, private val heldOut: IntArray,
+    /** The card, when the launch asks for it: the items' features kept there and both their products made there. */
+    card: Cublas? = null,
+) : AutoCloseable {
     private val n = p.n
     private val m = p.m
     private val dx = p.design.itemWidth
@@ -107,6 +112,67 @@ internal class Ensemble(private val p: Problem, val rank: Int, private val lambd
         intArrayOf(r * dx, r * dz, r * m, m, Bilinear.PAIR),
     )
 
+    /**
+     * THE ITEMS' FEATURES ON THE CARD, and the sides of their two products: put there once for the
+     * fitting, the gigabyte and a half of a catalogue of games read there at the card's speed, not
+     * the main memory's. A step sends the models' A there and takes U back, sends dU and takes dA
+     * back — tens of megabytes, not the features. Null on the processor: no card, or no room on it.
+     */
+    private class OnCard(
+        val cublas: Cublas, val x: Cublas.DeviceFloats, val aT: Cublas.DeviceFloats, val uT: Cublas.DeviceFloats,
+        val duT: Cublas.DeviceFloats, val gA: Cublas.DeviceFloats,
+    ) : AutoCloseable {
+        override fun close() = listOf(x, aT, uT, duT, gA).forEach { it.close() }
+    }
+
+    private val onCard: OnCard? = card?.let { c ->
+        val made = ArrayList<Cublas.DeviceFloats>()
+        fun room(count: Long) = c.allocate(count)?.also { made += it }
+        val x = room(n.toLong() * dx)
+        val a = room(count.toLong() * r * dx)
+        val u = room(count.toLong() * r * n)
+        val du = room(count.toLong() * r * n)
+        val g = room(count.toLong() * r * dx)
+        if (x == null || a == null || u == null || du == null || g == null) {
+            made.forEach { it.close() }
+            null
+        } else {
+            x.upload(p.x.held, 0, 0, n * dx)
+            OnCard(c, x, a, u, du, g)
+        }
+    }
+
+    /** Whether the items' features and their products are on the card. */
+    val featuresOnCard: Boolean get() = onCard != null
+
+    override fun close() {
+        onCard?.close()
+    }
+
+    /** Uᵀ = Aᵀ Xᵀ of the first [kr] rows of Aᵀ — every model still searching: on the card when the features are there. */
+    private fun itemsCoordinates(kr: Int) {
+        val c = onCard
+        if (c == null) {
+            Blas.gemm(false, true, kr, n, dx, aT, 0, dx, p.x.held, 0, dx, uT, 0, n)
+            return
+        }
+        c.aT.upload(aT, 0, 0, kr * dx)
+        c.cublas.gemm(false, true, kr, n, dx, c.aT, 0, dx, c.x, 0, dx, c.uT, 0, n)
+        c.uT.download(uT, 0, 0, kr * n)
+    }
+
+    /** dAᵀ = dUᵀ X of the first [kr] rows: on the card when the features are there. */
+    private fun itemsGradient(kr: Int) {
+        val c = onCard
+        if (c == null) {
+            Blas.gemm(false, false, kr, dx, n, duT, 0, n, p.x.held, 0, dx, gA, 0, dx)
+            return
+        }
+        c.duT.upload(duT, 0, 0, kr * n)
+        c.cublas.gemm(false, false, kr, dx, n, c.duT, 0, n, c.x, 0, dx, c.gA, 0, dx)
+        c.gA.download(gA, 0, 0, kr * dx)
+    }
+
     /** Of every slot, its pieces of the point and of the gradient: told once. */
     private val points = Array(count) { pieces(it, gradient = false) }
     private val grads = Array(count) { pieces(it, gradient = true) }
@@ -162,7 +228,7 @@ internal class Ensemble(private val p: Problem, val rank: Int, private val lambd
         val k = active
         val kr = k * r
         // Uᵀ = Aᵀ Xᵀ and Vᵀ = Bᵀ Zᵀ + Eᵀ of every model, one product each
-        Blas.gemm(false, true, kr, n, dx, aT, 0, dx, p.x.held, 0, dx, uT, 0, n)
+        itemsCoordinates(kr)
         Blas.gemm(false, true, kr, m, dz, bT, 0, dz, p.z.held, 0, dz, vT, 0, m)
         Simd.axpy(1f, eT, 0, vT, 0, kr * m)
         if (h > 0) namesCoordinates(k)
@@ -177,7 +243,7 @@ internal class Ensemble(private val p: Problem, val rank: Int, private val lambd
         }
         // dBᵀ = dVᵀ Z and dAᵀ = dUᵀ X of every model, one product each; the names' part added to dA after
         Blas.gemm(false, false, kr, dz, m, gE, 0, m, p.z.held, 0, dz, gB, 0, dz)
-        Blas.gemm(false, false, kr, dx, n, duT, 0, n, p.x.held, 0, dx, gA, 0, dx)
+        itemsGradient(kr)
         if (h > 0) namesGradient(k)
         // The penalty on every weight, once the products have written the gradient: the pair's own
         // too, but the common bias, the base rate of every value
@@ -376,7 +442,7 @@ internal class Ensemble(private val p: Problem, val rank: Int, private val lambd
             points[model].write(Floats.of(ordered(fitted[model])))
         }
         val kr = count * r
-        Blas.gemm(false, true, kr, n, dx, aT, 0, dx, p.x.held, 0, dx, uT, 0, n)
+        itemsCoordinates(kr)
         Blas.gemm(false, true, kr, m, dz, bT, 0, dz, p.z.held, 0, dz, vT, 0, m)
         Simd.axpy(1f, eT, 0, vT, 0, kr * m)
         for (model in 0 until count) {

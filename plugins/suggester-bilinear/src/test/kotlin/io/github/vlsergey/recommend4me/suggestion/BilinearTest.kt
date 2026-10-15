@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.suggestion
 
+import io.github.vlsergey.recommend4me.matrix.Cublas
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import io.github.vlsergey.recommend4me.onnx.Onnx
 import io.github.vlsergey.recommend4me.onnx.defaultModelsDir
@@ -79,16 +80,26 @@ class BilinearTest {
     @Test
     fun `every model in one product has the loss and the gradient it has alone`() = compareTogether(task())
 
-    private fun compareTogether(task: SuggestionTask) {
+    @Test
+    fun `every model in one product on the card has the loss and the gradient it has alone`() {
+        val dir = Onnx(defaultModelsDir(), gpu = true).cudaLibraries()
+        assumeTrue(dir != null, "no CUDA libraries")
+        val cublas = Cublas.open(dir!!)
+        assumeTrue(cublas != null, "no cuBLAS to run on")
+        compareTogether(task(), cublas)
+    }
+
+    private fun compareTogether(task: SuggestionTask, card: Cublas? = null) {
         val problem = Problem(task, Design.of(task), BilinearSuggester.FOLDS)
         val rank = 3
         val lambdas = floatArrayOf(0.1f, 0.01f, 0.001f, 0.01f)
         val folds = intArrayOf(0, 1, 2, 4)
-        val ensemble = Ensemble(problem, rank, lambdas, folds)
+        val ensemble = Ensemble(problem, rank, lambdas, folds, card)
+        if (card != null) assertTrue(ensemble.featuresOnCard, "the features not on the card")
         val alone = Bilinear(problem, rank)
         val random = Random(17)
         val thetas = List(lambdas.size) { FloatArray(alone.size) { (random.nextGaussian() * 0.3).toFloat() } }
-        val (losses, gradients) = ensemble.lossesAndGradients(thetas)
+        val (losses, gradients) = ensemble.use { it.lossesAndGradients(thetas) }
         thetas.forEachIndexed { k, theta ->
             val grad = FloatArray(alone.size)
             val loss = alone.lossAndGradient(theta, grad, lambdas[k]) { problem.foldOf[it] != folds[k] }
