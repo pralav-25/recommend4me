@@ -40,7 +40,7 @@ type Props = {
   index: number | null;
   total: number;
   onIndex: (index: number | null) => void;
-  onRate: (summary: ItemSummary, grade: Grade | null) => void;
+  onRate: (summary: ItemSummary, grade: Grade | null) => unknown;
   /** The graded work leaves the list, so the next one takes its place under the same index. */
   ratedLeaves: boolean;
 };
@@ -71,8 +71,9 @@ export function ItemDialog({ items, index, total, onIndex, onRate, ratedLeaves }
 
   const rate = (grade: Grade | null) => {
     if (!summary || index === null) return;
-    onRate(summary, grade);
+    const saved = onRate(summary, grade);
     if (grade !== null && !ratedLeaves) onIndex(Math.min(index + 1, items.length - 1));
+    return saved;
   };
 
   useEffect(() => {
@@ -148,7 +149,7 @@ function Shell({
   count: number;
   total: number;
   onIndex: (index: number | null) => void;
-  onRate: (grade: Grade | null) => void;
+  onRate: (grade: Grade | null) => unknown;
   marking: boolean;
   onMarking: (marking: boolean) => void;
 }) {
@@ -253,8 +254,10 @@ function Shell({
           {marking ? t("ItemDialog.done") : t("ItemDialog.mark")}
         </Button>
         <PreviousRating type={type} summary={summary} />
-        <InterestButtons summary={summary} size="lg" labels className="ml-auto" />
+        {/* Keyed by the work: a press at work on one is not shown on the next the dialog moves to */}
+        <InterestButtons key={`interest:${summary.source}/${summary.item}`} summary={summary} size="lg" labels className="ml-auto" />
         <RatingButtons
+          key={`grade:${summary.source}/${summary.item}`}
           type={type}
           value={summary.grade as Grade | undefined}
           onRate={onRate}

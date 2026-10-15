@@ -18,7 +18,7 @@ import {
   type SourceInfo,
 } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { AsyncButton } from "@/components/AsyncButton";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ALL_GRADES, gradeLabel, typeIcon } from "@/contenttype/types";
 import { shownChance, unlikely } from "@/facet/FacetValueMarks";
@@ -65,6 +65,7 @@ export const GRADE_TEXT: Record<Grade, string> = {
 /**
  * The five grades; pressing the chosen one again takes the grade back. [labels] adds the
  * content type's words to the digits where there is room (the item dialog), cards show digits only.
+ * A grade pressed is at work till [onRate]'s promise settles: that button alone ([AsyncButton]).
  */
 export function RatingButtons({
   type,
@@ -76,7 +77,7 @@ export function RatingButtons({
 }: {
   type: ContentTypeInfo;
   value?: Grade;
-  onRate: (grade: Grade | null) => void;
+  onRate: (grade: Grade | null) => unknown;
   size?: "sm" | "default" | "lg";
   labels?: boolean;
   className?: string;
@@ -89,14 +90,11 @@ export function RatingButtons({
         <Tooltip key={g}>
           <TooltipTrigger
             render={
-              <Button
+              <AsyncButton
                 variant="outline"
                 size={size}
                 className={cn("w-full min-w-0 px-1", value === g ? ACTIVE[g] : HOVER[g])}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRate(value === g ? null : g);
-                }}
+                onClick={() => onRate(value === g ? null : g)}
               />
             }
           >
@@ -142,16 +140,15 @@ export function InterestButtons({
   const { t } = useTranslation("item");
   const mark = useMarkInterest();
   const chance = summary.interest == null ? summary.interestChance : undefined;
-  const press = (value: boolean) => (e: React.MouseEvent) => {
-    e.stopPropagation();
-    mark.mutate({ summary, interesting: summary.interest === value ? null : value });
-  };
+  // At work while its own press is: the face gives way to a spinner. A failure is told by the mutation
+  const press = (value: boolean) => () =>
+    mark.mutateAsync({ summary, interesting: summary.interest === value ? null : value }).catch(() => undefined);
   return (
     <div className={cn("flex items-center gap-1", className)}>
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button
+            <AsyncButton
               variant="outline"
               size={size}
               aria-pressed={summary.interest === true}
@@ -161,11 +158,11 @@ export function InterestButtons({
                 summary.interest === true ? "border-emerald-600! bg-emerald-600! text-white! hover:bg-emerald-600/90!" : "hover:border-emerald-600 hover:text-emerald-600",
               )}
               onClick={press(true)}
+              icon={<span>🤔</span>}
             />
           }
         >
           {/* Not a thumb: a thumb says liked or not, and interest is another thing */}
-          <span aria-hidden>🤔</span>
           {labels && <span>{t("InterestButtons.interesting")}</span>}
         </TooltipTrigger>
         <TooltipContent>
@@ -175,7 +172,7 @@ export function InterestButtons({
       <Tooltip>
         <TooltipTrigger
           render={
-            <Button
+            <AsyncButton
               variant="outline"
               size={size}
               aria-pressed={summary.interest === false}
@@ -185,10 +182,10 @@ export function InterestButtons({
                 summary.interest === false ? "border-grade-1! bg-grade-1! text-white! hover:bg-grade-1/90!" : "hover:border-grade-1 hover:text-grade-1",
               )}
               onClick={press(false)}
+              icon={<span>🥱</span>}
             />
           }
         >
-          <span aria-hidden>🥱</span>
           {labels && <span>{t("InterestButtons.dull")}</span>}
         </TooltipTrigger>
         <TooltipContent>

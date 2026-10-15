@@ -116,7 +116,7 @@ export function ItemBoard({ type, view, sort, search, facets, sources, ranges, l
     setOpened(null);
   }, [view, sort, search, facets, sources]);
 
-  const onRate = useCallback((summary: ItemSummary, grade: Grade | null) => rate.mutate({ summary, grade }), [rate]);
+  const onRate = useCallback((summary: ItemSummary, grade: Grade | null) => rate.mutateAsync({ summary, grade }).catch(() => undefined), [rate]);
 
   /** How many cards stand in a row of the grid, for the up and down arrows. */
   const columns = () => {

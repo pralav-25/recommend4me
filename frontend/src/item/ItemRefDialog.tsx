@@ -21,7 +21,7 @@ export function ItemRefDialog({ item, onClose }: { item: ItemRef | null; onClose
     queryFn: async () => unwrap(await api.GET("/api/items/{source}/{item}", { params: { path: { source: item!.source, item: item!.item } } })),
   });
   const rate = useRateItem();
-  const onRate = useCallback((summary: ItemSummary, grade: Grade | null) => rate.mutate({ summary, grade }), [rate]);
+  const onRate = useCallback((summary: ItemSummary, grade: Grade | null) => rate.mutateAsync({ summary, grade }).catch(() => undefined), [rate]);
   const summary = item && details.data ? details.data.summary : undefined;
 
   // An item the application does not know opens nothing: say so instead of staying silent

@@ -23,7 +23,7 @@ export type ItemViewProps = {
   selected: boolean;
   onOpen: () => void;
   onSelect: () => void;
-  onRate: (grade: Grade | null) => void;
+  onRate: (grade: Grade | null) => unknown;
   /** Found by a search: the user's word on whether it answers the line. */
   onJudge?: (relevant: boolean | null) => Promise<unknown>;
 };

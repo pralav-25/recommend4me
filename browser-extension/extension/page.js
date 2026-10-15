@@ -138,7 +138,10 @@
   /** What the application said of this page; null until it answers. */
   let view = null;
   let server = "";
+  /** Why the last change not about a value failed; kept until the next change. */
   let message = null;
+  /** Why the work could not be read as the application knows it; gone once it is read. */
+  let unread = null;
   let cardsTimer = null;
   let loadedAt = 0;
 
@@ -191,6 +194,11 @@
   }
 
   /** A button running [onClick] as a change ([act]); [shown] and [about] as there. */
+  /** [element] with the failure of the last change of any of [abouts], when one failed. */
+  function withFailures(element, abouts) {
+    return withFailure(element, abouts.find((a) => failed.has(a)) || abouts[0]);
+  }
+
   /** [element] with the failure of the last change [about] it after it, when that failed: the element alone else. */
   function withFailure(element, about) {
     const error = failed.get(about);
@@ -211,6 +219,37 @@
       act(onClick, shown, about);
     });
     return b;
+  }
+
+  /**
+   * A button whose change is [about] it alone: busy — marked and not pressed again — while its own
+   * press is at work, as the web interface's AsyncButton; never by another button's.
+   */
+  function ownButton(text, title, onClick, className, shown, about) {
+    const b = button(text, title, onClick, className, shown, about);
+    if (saving.has(about)) {
+      b.classList.add("r4m-saving");
+      b.disabled = true;
+    }
+    return b;
+  }
+
+  /**
+   * A change run APART FROM THE QUEUE of the answers ([act]): a long one — the catalogue asked for
+   * a universe's characters, seconds — does not hold the answers given after it. Marked by its
+   * [about] while at work, its failure told there; the work read anew after it, once the answers are quiet.
+   */
+  function apart(change, about) {
+    saving.add(about);
+    failed.delete(about);
+    render();
+    change()
+      .catch((e) => failed.set(about, e.message))
+      .finally(() => {
+        saving.delete(about);
+        render();
+        if (pending === 0) loadLater();
+      });
   }
 
   /**
@@ -333,13 +372,14 @@
       }
       server = await browser.runtime.sendMessage({ type: "server" });
       view = await api("GET", `/api/pages?url=${enc(location.href)}`);
+      unread = null;
       // The work read anew: the candidates the fields offer may be others now
       addFields.forEach((form) => form.r4mStale());
       // What moves the prediction is read apart, not waited for: a work seen first gets it at once
       if (view.item && (!explanation || explanation.of !== keyOf(view.item))) readExplanation(view.item);
     } catch (e) {
       // What was shown stays, with why it is not current
-      message = e.message;
+      unread = e.message;
     }
     render();
     // The candidates asked for are read anew too, after the work is shown: an answer changes which
@@ -348,7 +388,7 @@
       try {
         for (const facet of more.keys()) await readCandidates(view.item, facet);
       } catch (e) {
-        message = e.message;
+        unread = e.message;
       }
       render();
     }
@@ -515,7 +555,7 @@
       head.appendChild(open);
     }
     root.appendChild(head);
-    if (message) root.appendChild(el("r4m-error", null, message));
+    [unread, message].filter(Boolean).forEach((m) => root.appendChild(el("r4m-error", null, m)));
     if (!item) {
       root.appendChild(el("r4m-line", "r4m-muted", t("panel.unsaved")));
       place(root);
@@ -587,17 +627,17 @@
     GRADES.forEach((grade) => {
       const label = gradeLabel(grade);
       const current = s.grade === grade;
-      const b = button(
+      const b = ownButton(
         `${grade}`,
         current ? t("common.pressAgain", { what: label }) : label,
         () => current
           ? api("DELETE", `/api/items/${enc(s.source)}/${enc(s.item)}/rating`)
           : api("PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/rating`, { grade }),
-        `r4m-grade${current ? " r4m-current" : ""}${saving.has("grade") ? " r4m-saving" : ""}`,
+        `r4m-grade${current ? " r4m-current" : ""}`,
         (shown) => {
           shown.summary.grade = current ? null : grade;
         },
-        "grade",
+        `grade|${grade}`,
       );
       line.appendChild(b);
     });
@@ -605,7 +645,7 @@
     else if (s.previousGrade) {
       line.appendChild(el("span", "r4m-muted", ` ${t("grade.previous", { version: s.previousGradeVersion, grade: s.previousGrade })}`));
     }
-    return withFailure(line, "grade");
+    return withFailures(line, GRADES.map((grade) => `grade|${grade}`));
   }
 
   /**
@@ -619,23 +659,23 @@
     // Not thumbs: a thumb says liked or not, and interest is another thing
     [[true, `🤔 ${t("interest.yes")}`], [false, `🥱 ${t("interest.no")}`]].forEach(([value, label]) => {
       const current = s.interest === value;
-      line.appendChild(button(
+      line.appendChild(ownButton(
         label,
         current ? t("common.pressAgainAlone") : null,
         () => current
           ? api("DELETE", `/api/items/${enc(s.source)}/${enc(s.item)}/interest`)
           : api("PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/interest`, { interesting: value }),
-        `r4m-mark${current ? " r4m-current" : ""}${saving.has("interest") ? " r4m-saving" : ""}`,
+        `r4m-mark${current ? " r4m-current" : ""}`,
         (shown) => {
           shown.summary.interest = current ? null : value;
         },
-        "interest",
+        `interest|${value}`,
       ));
     });
     if (s.interest == null && s.interestChance != null) {
       line.appendChild(el("span", "r4m-muted", ` ${t("interest.byModel", { percent: Math.round(s.interestChance * 100) })}`));
     }
-    return withFailure(line, "interest");
+    return withFailures(line, ["interest|true", "interest|false"]);
   }
 
   // --- Facets ---
@@ -724,11 +764,22 @@
     chip.appendChild(el("span", null, nameOf(v)));
     if (editable) answers(item, facet, v).forEach((e) => chip.appendChild(e));
     const at = v.key.indexOf(":");
+    let refreshed = null;
     if (facet === UNIVERSE && v.corrected !== "REMOVED" && at > 0) {
-      chip.appendChild(button("↻", t("universe.refresh"), () =>
-        api("POST", "/api/universes", { catalogue: v.key.substring(0, at), universe: v.key.substring(at + 1) }), "r4m-button"));
+      const on = `refresh|${v.key}`;
+      refreshed = on;
+      const b = el("button", `r4m-button${saving.has(on) ? " r4m-saving" : ""}`, "↻");
+      b.type = "button";
+      b.title = t("universe.refresh");
+      b.disabled = saving.has(on);
+      b.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        apart(() => api("POST", "/api/universes", { catalogue: v.key.substring(0, at), universe: v.key.substring(at + 1) }), on);
+      });
+      chip.appendChild(b);
     }
-    return withFailure(chip, about(facet, v.key));
+    return withFailure(chip, refreshed && failed.has(refreshed) ? refreshed : about(facet, v.key));
   }
 
   /** A suggested value: a dashed chip with its chance, ✓ to add it and ✕ to say the work has it not. */
@@ -807,11 +858,11 @@
     const s = item.summary;
     const complete = facet.complete === true;
     const about = `complete|${facet.facet}`;
-    return withFailure(button(
+    return withFailure(ownButton(
       complete ? `✓ ${names.others}` : names.others,
       t(complete ? "allNamed.doneTitle" : "allNamed.title", { what: names.what }),
       () => api(complete ? "DELETE" : "PUT", `/api/items/${enc(s.source)}/${enc(s.item)}/corrections/complete?facet=${enc(facet.facet)}`),
-      `r4m-button r4m-complete${complete ? " r4m-current" : ""}${saving.has(about) ? " r4m-saving" : ""}`,
+      `r4m-button r4m-complete${complete ? " r4m-current" : ""}`,
       (shown) => {
         const f = (shown.facets || []).find((x) => x.facet === facet.facet);
         if (!f) return;
@@ -1076,9 +1127,10 @@
     // The work's values the user has not answered on — not those only offered, nor those it has by a tag under them
     const open = values.filter((v) => !v.corrected && !v.offered && !v.implied);
     if (editable && open.length > 1) {
-      label.appendChild(button(t("facet.confirmAll", { count: open.length }), t("facet.confirmAllTitle"), async () => {
+      const all = `all|${facet.facet}`;
+      label.appendChild(withFailure(ownButton(t("facet.confirmAll", { count: open.length }), t("facet.confirmAllTitle"), async () => {
         for (const v of open) await correct(item, facet.facet, { key: v.key }, true);
-      }, "r4m-button r4m-all", (shown) => open.forEach((v) => answeredShown(facet.facet, v, true)(shown))));
+      }, "r4m-button r4m-all", (shown) => open.forEach((v) => answeredShown(facet.facet, v, true)(shown)), all), all));
     }
     const allNamed = completeButton(item, facet);
     if (allNamed) label.appendChild(allNamed);
@@ -1277,40 +1329,39 @@
     }
     badge.appendChild(cardInterest(badge, k, true, "🤔"));
     badge.appendChild(cardInterest(badge, k, false, "🥱"));
+    // A mark that could not be saved: why, in the badge's title
+    const error = [true, false].map((value) => failed.get(`card|${k.source}/${k.item}|${value}`)).find(Boolean);
+    badge.title = error ? t("card.notSaved", { error }) : "";
     badge.classList.toggle("r4m-pending", waiting);
     return waiting;
   }
 
   /**
-   * A mark of interest on a card of a list — quicker to give than a grade, so given right there.
-   * Shown marked at once; the badge is filled again with the application's answer, or back as it
-   * was with the error in its title.
+   * A mark of interest on a card of a list — quicker to give than a grade, so given right there. A
+   * change as any other ([act]): the button busy while its press is at work, the mark shown once the
+   * application has kept it, the error in the badge's title.
    */
   function cardInterest(badge, k, value, icon) {
     const current = k.interest === value;
     const word = t(value ? "interest.yesTitle" : "interest.noTitle");
-    const b = el("button", `r4m-interest-mark${current ? " r4m-current" : ""}`, icon);
+    const on = `card|${k.source}/${k.item}|${value}`;
+    const busy = saving.has(on);
+    const b = el("button", `r4m-interest-mark${current ? " r4m-current" : ""}${busy ? " r4m-saving" : ""}`, icon);
     b.type = "button";
+    b.disabled = busy;
     const chance = k.interest == null && k.interestChance != null
       ? ` ${t("card.interestChance", { percent: Math.round(k.interestChance * 100) })}`
       : "";
     b.title = current ? t("common.pressAgain", { what: word }) : `${word}${chance}`;
-    b.addEventListener("click", async (e) => {
+    b.addEventListener("click", (e) => {
       e.preventDefault();
       e.stopPropagation();
-      const before = { ...k };
       const path = `/api/items/${enc(k.source)}/${enc(k.item)}/interest`;
-      k.interest = current ? null : value;
-      fillBadge(badge, k);
-      try {
+      act(async () => {
         const s = current ? await api("DELETE", path) : await api("PUT", path, { interesting: value });
         Object.assign(k, { interest: s.interest, interestChance: s.interestChance });
-        fillBadge(badge, k);
-      } catch (error) {
-        Object.assign(k, before);
-        fillBadge(badge, k);
-        badge.title = t("card.notSaved", { error: error.message });
-      }
+      }, null, on).then(() => fillBadge(badge, k));
+      fillBadge(badge, k);
     });
     return b;
   }
