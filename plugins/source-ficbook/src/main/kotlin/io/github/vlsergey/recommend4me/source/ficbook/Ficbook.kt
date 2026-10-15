@@ -80,9 +80,9 @@ class Ficbook : Source {
      * statuses; the user's marks of a work — liked, read, followed. 6: the pairings and the
      * characters alone in one field, every entry of the line as written; the fandom a standard one.
      * 7: what a tag's own page says the tag means. 8: the direction a standard one, with AO3's category.
-     * 9: the cover of a work's own page, not only of a card of a list.
+     * 9: the covers as the site draws them now: of a work's own page, and of a card of a list as a picture.
      */
-    override val parserVersion = 9
+    override val parserVersion = 10
 
     override val signals = listOf(
         Books.READ.asSignal(),

@@ -77,18 +77,28 @@ class FicbookPages(private val context: SourceContext) {
         described(id, info.mapValues { it.value })
         card.select(".tags a.tag").takeIf { it.isNotEmpty() }?.let { tags(id, it) }
         card.selectFirst(".fanfic-description-text")?.let { items.setTexts(id, mapOf(ANNOTATION to PageText.of(it))) }
-        card.selectFirst("img.fic-cover")?.attr("src")?.takeIf { it.isNotBlank() }?.let { items.setPictures(id, listOf(it)) }
+        pictured(card)?.let { items.setPictures(id, listOf(it)) }
         id
     }
 
     /**
      * The cover of a work's header, of the size a card of a list shows — one picture, whichever page
      * it is read of: as the site sends it, the attribute of its component; as the browser drew it,
-     * the picture. None when the header has none: a work without a cover, or a markup changed.
+     * the picture ([pictured]). None when the header has none: a work without a cover, or a markup changed.
      */
     private fun cover(hat: Element): String? =
-        (hat.selectFirst("fanfic-cover[src-desktop]")?.attr("src-desktop") ?: hat.selectFirst(".fanfic-hat-cover img[src]")?.attr("src"))
-            ?.takeIf { it.isNotBlank() }
+        hat.selectFirst("fanfic-cover[src-desktop]")?.attr("src-desktop")?.takeIf { it.isNotBlank() } ?: hat.selectFirst(".fanfic-hat-cover")?.let(::pictured)
+
+    /**
+     * A cover drawn as a picture — of a card, of a header — at the size of a wide screen: the source
+     * the picture gives for it, else the picture's own; a cover of the older markup (img.fic-cover)
+     * as it is. The size of a card and of a header is one: one picture of a work.
+     */
+    private fun pictured(at: Element): String? {
+        val picture = at.selectFirst("picture.fanfic-hat-cover-picture") ?: return at.selectFirst("img.fic-cover[src]")?.attr("src")?.takeIf { it.isNotBlank() }
+        val wide = picture.selectFirst("source[media*=min-width][srcset]")?.attr("srcset")?.trim()?.substringBefore(' ')
+        return wide?.takeIf { it.isNotBlank() } ?: picture.selectFirst("img[src]")?.attr("src")?.takeIf { it.isNotBlank() }
+    }
 
     /** The direction, the rating and the status a card or a header shows as labels. */
     private fun badges(id: String, badges: Element?) {

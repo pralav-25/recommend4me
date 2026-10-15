@@ -140,6 +140,21 @@ class FicbookPagesTest {
     }
 
     @Test
+    fun `a card's cover is the picture's source of a wide screen, the size of the header's`() {
+        val covers = "https://assets.teinon.net/fanfic-covers"
+        val doc = Jsoup.parse(page("fandom-originals.html"))
+        val card = doc.selectFirst("article.fanfic-inline")!!
+        val id = card.selectFirst(".fanfic-inline-title a")!!.attr("href").substringAfter("/readfic/").substringBefore('?')
+        card.selectFirst(".side-section")!!.append(
+            """<a href="/readfic/$id"><picture class="fanfic-hat-cover-picture"><source media="(max-width: 480px)" srcset="$covers/m_Y.webp">""" +
+                """<source media="(min-width: 481px)" srcset="$covers/d_Y.webp"><img src="$covers/m_Y.webp" alt="" width="180px"></picture></a>""",
+        )
+        val context = MemorySourceContext()
+        source.capture(CapturedPage("https://ficbook.net/fanfiction/no_fandom/originals", doc.outerHtml(), now), context)
+        assertEquals(listOf("$covers/d_Y.webp"), context.pictures[id])
+    }
+
+    @Test
     fun `a work's cover is read of its header, as the site sends it and as the browser draws it`() {
         val url = "https://ficbook.net/readfic/$work"
         val covers = "https://assets.teinon.net/fanfic-covers"
