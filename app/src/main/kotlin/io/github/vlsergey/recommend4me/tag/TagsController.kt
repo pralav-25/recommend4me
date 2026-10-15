@@ -22,6 +22,9 @@ import io.github.vlsergey.recommend4me.api.model.TagRef
 import io.github.vlsergey.recommend4me.api.model.TagRelationRequest
 import io.github.vlsergey.recommend4me.api.model.TagRelation as ApiTagRelation
 import io.github.vlsergey.recommend4me.api.model.TagVariantInfo
+import io.github.vlsergey.recommend4me.api.model.TooGeneralRequest
+import org.jooq.exception.IntegrityConstraintViolationException
+import java.time.Instant
 import io.github.vlsergey.recommend4me.refusal.Refusal
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -130,11 +133,24 @@ class TagsController(
                     graded = o.graded,
                     levels = o.levels,
                     existing = o.existing?.let { TagRef(it, names[it] ?: it) },
+                    rejected = o.rejected,
                     entry = o.entry?.entry,
                     url = o.entry?.let { kept[it]?.url },
                 )
             },
         )
+    }
+
+    override fun judgeTagEntryTooGeneral(tooGeneralRequest: TooGeneralRequest): ResponseEntity<Unit> {
+        val (t, _) = scope()
+        val r = tooGeneralRequest
+        return try {
+            t.tags.setTooGeneral(TagEntryRef(r.catalogue, r.entry), r.tooGeneral, Instant.now())
+            ResponseEntity.noContent().build()
+        } catch (e: IntegrityConstraintViolationException) {
+            // An entry never read is none the offers are of
+            ResponseEntity.notFound().build()
+        }
     }
 
     override fun createTagAbove(tagAboveRequest: TagAboveRequest): ResponseEntity<TagInfo> {

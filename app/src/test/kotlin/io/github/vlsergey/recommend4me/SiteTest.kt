@@ -55,6 +55,7 @@ import io.github.vlsergey.recommend4me.tag.TagsController
 import io.github.vlsergey.recommend4me.api.model.TagEntryRequest
 import io.github.vlsergey.recommend4me.api.model.HierarchyOfferKind
 import io.github.vlsergey.recommend4me.api.model.TagAboveRequest
+import io.github.vlsergey.recommend4me.api.model.TooGeneralRequest
 import io.github.vlsergey.recommend4me.tag.TagCatalogue
 import io.github.vlsergey.recommend4me.tag.TagEntry
 import io.github.vlsergey.recommend4me.universe.CatalogueLookup
@@ -840,6 +841,11 @@ class SiteTest {
         tagsApi.bindTagEntry(TagEntryRequest(cargo, "fake", "E4", true))
         val above = tagsApi.listHierarchyOffers().body!!.single()
         assertEquals(Triple(HierarchyOfferKind.NEW_PARENT, "E3", setOf(hulls, cargo)), Triple(above.kind, above.entry, above.tags.map { it.key }.toSet()))
+        // Said too general: still listed, as rejected — the screen hides it unless asked — and taken back
+        tagsApi.judgeTagEntryTooGeneral(TooGeneralRequest("fake", "E3", true))
+        assertEquals(listOf(true), tagsApi.listHierarchyOffers().body!!.map { it.rejected })
+        tagsApi.judgeTagEntryTooGeneral(TooGeneralRequest("fake", "E3", false))
+        assertEquals(listOf(false), tagsApi.listHierarchyOffers().body!!.map { it.rejected })
         val craft = tagsApi.createTagAbove(TagAboveRequest("fake", "E3", above.tags.map { it.key })).body!!
         assertEquals("Аппарат", craft.name)
         assertEquals(setOf(hulls, cargo), craft.children.map { it.key }.toSet())

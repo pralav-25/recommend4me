@@ -298,6 +298,8 @@ function HierarchyOffers() {
   const { t } = useTranslation("tag");
   const changed = useTagsChanged();
   const [limit, setLimit] = useState(OFFERS_PAGE);
+  // The offers the user said are too general: hidden unless asked for
+  const [showRejected, setShowRejected] = useState(false);
   const offers = useQuery({
     queryKey: [TAGS, "hierarchy-offers"],
     placeholderData: keepPreviousData,
@@ -316,7 +318,13 @@ function HierarchyOffers() {
       );
     await changed();
   };
-  const list = offers.data ?? [];
+  /** The user's word that the entry is too general to be a tag above others — or its taking back. */
+  const tooGeneral = async (o: HierarchyOffer, said: boolean) => {
+    unwrap(await api.PUT("/api/tags/too-general", { body: { catalogue: o.catalogue!, entry: o.entry!, tooGeneral: said } }));
+    await offers.refetch();
+  };
+  const rejected = (offers.data ?? []).filter((o) => o.rejected).length;
+  const list = (offers.data ?? []).filter((o) => showRejected || !o.rejected);
   return (
     <section className="flex flex-col gap-2 text-sm">
       <div className="flex items-center gap-2">
@@ -327,12 +335,21 @@ function HierarchyOffers() {
         </AsyncButton>
       </div>
       <p className="text-xs text-muted-foreground">{t("Hierarchy.hint")}</p>
+      {rejected > 0 && (
+        <label className="flex items-center gap-1 text-xs" title={t("Hierarchy.showRejectedTitle")}>
+          <input type="checkbox" checked={showRejected} onChange={() => setShowRejected(!showRejected)} className="size-3.5" />
+          {t("Hierarchy.showRejected", { count: rejected })}
+        </label>
+      )}
       {offers.isError && <p className="text-destructive">{t("Hierarchy.loadError", { error: offers.error.message })}</p>}
       {offers.data && list.length === 0 && <p className="text-muted-foreground">{t("Hierarchy.none")}</p>}
       {list.length > 0 && (
         <ul className="flex flex-col divide-y rounded-lg border">
           {list.slice(0, limit).map((o) => (
-            <li key={`${o.kind}/${o.tags.map((r) => r.key).join("/")}/${o.entry ?? ""}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5">
+            <li
+              key={`${o.kind}/${o.tags.map((r) => r.key).join("/")}/${o.entry ?? ""}`}
+              className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5", o.rejected && "text-muted-foreground")}
+            >
               <div className="flex min-w-0 flex-1 flex-col">
                 <span>
                   {o.kind === "LINK" && (
@@ -390,12 +407,26 @@ function HierarchyOffers() {
                     {sourceTitle(o.catalogue!)}: {o.kind === "MERGE" ? t("Hierarchy.sameEntry", { entry: `${o.path[0]} (${o.entry})` }) : o.path.join(" → ")} ·{" "}
                     {o.kind !== "MERGE" && <>{t("Hierarchy.levels", { count: o.levels })} · </>}
                     {t("Hierarchy.graded", { count: o.graded })}
+                    {o.rejected && <> · {t("Hierarchy.rejected")}</>}
                   </span>
                 )}
               </div>
-              <AsyncButton variant="outline" size="sm" onClick={() => act(o)} title={t(`Hierarchy.${o.kind}.title`)}>
-                {t(`Hierarchy.${o.kind}.label`)}
-              </AsyncButton>
+              {o.rejected ? (
+                <AsyncButton variant="outline" size="sm" onClick={() => tooGeneral(o, false)} title={t("Hierarchy.takeBack.title")}>
+                  {t("Hierarchy.takeBack.label")}
+                </AsyncButton>
+              ) : (
+                <>
+                  {(o.kind === "NEW_PARENT" || o.kind === "BIND_PARENT") && (
+                    <AsyncButton variant="ghost" size="sm" onClick={() => tooGeneral(o, true)} title={t("Hierarchy.tooGeneral.title")}>
+                      {t("Hierarchy.tooGeneral.label")}
+                    </AsyncButton>
+                  )}
+                  <AsyncButton variant="outline" size="sm" onClick={() => act(o)} title={t(`Hierarchy.${o.kind}.title`)}>
+                    {t(`Hierarchy.${o.kind}.label`)}
+                  </AsyncButton>
+                </>
+              )}
             </li>
           ))}
         </ul>

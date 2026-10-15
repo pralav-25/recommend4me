@@ -111,6 +111,8 @@ class HierarchyOffer(
     val kind: HierarchyKind, val catalogue: String?, val tags: List<String>, val entry: TagEntryRef?, val way: List<TagEntryRef>, val graded: Int, val levels: Int,
     /** Of [HierarchyKind.BIND_PARENT], the tag of the entry's name to bind and put above. */
     val existing: String? = null,
+    /** Of a tag above ([HierarchyKind.NEW_PARENT], [HierarchyKind.BIND_PARENT]), the user said its entry is too general. */
+    val rejected: Boolean = false,
 )
 
 /** The entry of a catalogue a tag is bound to, as the catalogue gave it when last asked. */
@@ -470,6 +472,7 @@ class Tags(
         fun graded(key: String) = n.stats[key]?.graded.orEmpty()
         fun rejected(key: String) = n.stats[key]?.rejected.orEmpty()
         val distinct = scope.tags.distinct()
+        val tooGeneral = scope.tags.tooGeneral()
         val out = ArrayList<HierarchyOffer>()
         // Under another
         graph.links().forEach { l ->
@@ -543,20 +546,21 @@ class Tags(
                 val tags = roots.filter { it !in related }.sortedByDescending { graded(it).size }
                 if (tags.isEmpty()) return@forEach
                 val gets = all.flatMap(::graded).toSet() - graded(named)
-                out += HierarchyOffer(HierarchyKind.BIND_PARENT, ref.catalogue, tags, ref, listOf(ref), gets.size, levels.getValue(ref), named)
+                out += HierarchyOffer(HierarchyKind.BIND_PARENT, ref.catalogue, tags, ref, listOf(ref), gets.size, levels.getValue(ref), named, ref in tooGeneral)
                 return@forEach
             }
             if (roots.size < 2) return@forEach
             val children = roots.sortedByDescending { graded(it).size }
-            out += HierarchyOffer(HierarchyKind.NEW_PARENT, ref.catalogue, children, ref, listOf(ref), all.flatMap(::graded).toSet().size, levels.getValue(ref))
+            out += HierarchyOffer(HierarchyKind.NEW_PARENT, ref.catalogue, children, ref, listOf(ref), all.flatMap(::graded).toSet().size, levels.getValue(ref), rejected = ref in tooGeneral)
         }
         log.info("{}: {} offers of the tags' graph worked out in {} ms", scope.id, out.size, System.currentTimeMillis() - started)
         // The nearest first — what the entries are right above, not "process" all of them are far up — then the ones changing most
         val sorted = out.sortedWith(compareBy<HierarchyOffer> { it.levels }.thenByDescending { it.graded }.thenBy { it.kind }.thenBy { it.tags.joinToString() })
-        // A tag in one new tag alone, the most precise: one sharing a tag with a nearer is left till that is said
+        // A tag in one new tag alone, the most precise: one sharing a tag with a nearer is left till that is said.
+        // One the user said is too general holds no tag: shown when asked, it leaves its tags to the others
         val placed = HashSet<String>()
         return sorted.filter { o ->
-            if (o.kind != HierarchyKind.NEW_PARENT && o.kind != HierarchyKind.BIND_PARENT) return@filter true
+            if (o.kind != HierarchyKind.NEW_PARENT && o.kind != HierarchyKind.BIND_PARENT || o.rejected) return@filter true
             (o.tags.none { it in placed }).also { if (it) placed += o.tags }
         }
     }

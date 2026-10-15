@@ -11,6 +11,7 @@ import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.S
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_ABOVE
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_TEXT
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_TOO_GENERAL
 import io.github.vlsergey.recommend4me.vector.Vectors
 import org.jooq.DSLContext
 import org.jooq.exception.IntegrityConstraintViolationException
@@ -229,6 +230,19 @@ class TagRepository(private val db: DSLContext) {
     fun distinct(): Set<Pair<Long, Long>> =
         db.select(NORMALIZED_TAG_DISTINCT.FIRST_TAG, NORMALIZED_TAG_DISTINCT.OTHER_TAG).from(NORMALIZED_TAG_DISTINCT)
             .fetch { it.value1()!! to it.value2()!! }.toSet()
+
+    /** The entries the user said are too general to be a tag above others. */
+    fun tooGeneral(): Set<TagEntryRef> {
+        val g = TAG_ENTRY_TOO_GENERAL
+        return db.select(g.CATALOGUE, g.ENTRY).from(g).fetch { TagEntryRef(it.value1()!!, it.value2()!!) }.toSet()
+    }
+
+    /** The user's word that [entry] is too general to be a tag above others — or, [tooGeneral] false, its taking back. */
+    fun setTooGeneral(entry: TagEntryRef, tooGeneral: Boolean, now: Instant) {
+        val g = TAG_ENTRY_TOO_GENERAL
+        if (tooGeneral) db.insertInto(g).set(g.CATALOGUE, entry.catalogue).set(g.ENTRY, entry.entry).set(g.SAID_AT, now).onDuplicateKeyIgnore().execute()
+        else db.deleteFrom(g).where(g.CATALOGUE.eq(entry.catalogue), g.ENTRY.eq(entry.entry)).execute()
+    }
 
     /** The user's word that [a] and [b] are different tags — or, [different] false, its taking back. */
     fun setDistinct(a: Long, b: Long, different: Boolean, now: Instant) {

@@ -1306,6 +1306,25 @@ paths:
                 items:
                   $ref: '#/components/schemas/HierarchyOffer'
 
+  /api/tags/too-general:
+    put:
+      tags: [tags]
+      operationId: judgeTagEntryTooGeneral
+      summary: >
+        The user's word that an entry of a catalogue is too general to be a tag above others - a tag of it is offered
+        above the tags no more (the offers said so are rejected) - or, tooGeneral false, its taking back
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TooGeneralRequest'
+      responses:
+        '204':
+          description: Kept, or taken back
+        '404':
+          description: No such entry kept
+
   /api/tags/above:
     post:
       tags: [tags]
@@ -3754,7 +3773,7 @@ components:
 
     HierarchyOffer:
       type: object
-      required: [kind, tags, path, graded, levels]
+      required: [kind, tags, path, graded, levels, rejected]
       properties:
         kind:
           $ref: '#/components/schemas/HierarchyOfferKind'
@@ -3785,11 +3804,25 @@ components:
 
         existing:
           $ref: '#/components/schemas/TagRef'
+        rejected:
+          type: boolean
+          description: Of NEW_PARENT and BIND_PARENT, the user said the entry is too general to be a tag above others
         levels:
           type: integer
           description: >
             How many levels up the catalogue the tags meet - LINK - from the child's entry to the parent's; MERGE - 0;
             NEW_PARENT - the farther of the two of its nearest pair. The nearest come first
+
+    TooGeneralRequest:
+      type: object
+      required: [catalogue, entry, tooGeneral]
+      properties:
+        catalogue:
+          type: string
+        entry:
+          type: string
+        tooGeneral:
+          type: boolean
 
     TagAboveRequest:
       type: object

@@ -15,6 +15,7 @@
 | `tag_entry` | an entry of a catalogue as it was read |
 | `tag_entry_text` | the labels, aliases and descriptions of an entry by language |
 | `tag_entry_above` | the entries an entry is a kind of |
+| `tag_entry_too_general` | an entry the user said is too general to be a tag above others: offered so no more |
 | `universe` | a universe of the dictionary: an entry of a catalogue the user added |
 | `universe_property` | what else the catalogue says of a universe |
 | `universe_character` | a character of a universe |
@@ -88,6 +89,11 @@ erDiagram
         CHAR kind PK
         INTEGER position PK
         VARCHAR text
+    }
+    tag_entry_too_general {
+        VARCHAR catalogue PK, FK
+        VARCHAR entry PK, FK
+        TIMESTAMPTZ said_at
     }
     tag_stat {
         BIGINT tag PK, FK
@@ -179,6 +185,7 @@ erDiagram
     tag_entry ||--o{ tag_entry_above : "catalogue, above"
     tag_entry ||--o{ tag_entry_above : "catalogue, entry"
     tag_entry ||--o{ tag_entry_text : "catalogue, entry"
+    tag_entry ||--o{ tag_entry_too_general : "catalogue, entry"
     universe ||--o{ universe_character : "catalogue, universe_id"
     universe ||--o{ universe_character_choice : "catalogue, universe_id"
     universe ||--o{ universe_class_choice : "catalogue, universe_id"
