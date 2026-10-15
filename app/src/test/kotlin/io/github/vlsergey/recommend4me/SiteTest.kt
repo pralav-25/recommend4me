@@ -131,10 +131,13 @@ class SiteTest {
 
         private val sail = TagEntry("E4", mapOf("en" to "Sail", "ru" to "Парус"), emptyMap(), emptyMap(), "https://fake.example/E4")
 
-        override fun entries(ids: Collection<String>, languages: List<String>) = listOf(hull, vessel, craft, sail).filter { it.id in ids }
+        private val keel = TagEntry("E6", mapOf("en" to "Keel", "ru" to "Киль"), emptyMap(), emptyMap(), "https://fake.example/E6")
 
-        /** A hull is a kind of vessel, a vessel a kind of craft; a sail a kind of craft too. */
-        override fun above(ids: Collection<String>) = mapOf("E1" to listOf("E2"), "E2" to listOf("E3"), "E4" to listOf("E3")).filterKeys { it in ids }
+        override fun entries(ids: Collection<String>, languages: List<String>) = listOf(hull, vessel, craft, sail, keel).filter { it.id in ids }
+
+        /** A hull is a kind of vessel, a vessel a kind of craft; a sail a kind of craft too; a keel a kind of vessel. */
+        override fun above(ids: Collection<String>) =
+            mapOf("E1" to listOf("E2"), "E2" to listOf("E3"), "E4" to listOf("E3"), "E6" to listOf("E2")).filterKeys { it in ids }
         private fun entries(languages: List<String>) = listOf(
             UniverseEntry("U1", en("Space opera"), en("Ships and pilots"), "https://fake.example/U1", languages),
             UniverseEntry("U2", en("Fleet"), en("More ships"), "https://fake.example/U2", languages),
@@ -869,8 +872,27 @@ class SiteTest {
         tagsApi.relateTags(TagRelationRequest(craft.key, hulls, TagRelation.NONE))
         tagsApi.relateTags(TagRelationRequest(craft.key, cargo, TagRelation.NONE))
         tagsApi.bindTagEntry(TagEntryRequest(craft.key, "fake", "E3", false))
-        tagsApi.bindTagEntry(TagEntryRequest(hulls, "fake", "E1", false))
+
+        // A vessel said too general: the craft, more general still, offered above the hull and the sail no more
+        fun newAbove() = tagsApi.listHierarchyOffers().body!!.filter { it.kind == HierarchyOfferKind.NEW_PARENT || it.kind == HierarchyOfferKind.BIND_PARENT }
+        assertEquals(listOf("E3"), newAbove().map { it.entry })
+        tagsApi.judgeTagEntryTooGeneral(TooGeneralRequest("fake", "E2", true))
+        assertEquals(emptyList(), newAbove())
+        tagsApi.judgeTagEntryTooGeneral(TooGeneralRequest("fake", "E2", false))
+        assertEquals(listOf("E3"), newAbove().map { it.entry })
+
+        // A hull and a keel meet at the vessel: offered above them — but not once the craft, above the
+        // vessel, is above the two already: the vessel would say nothing the craft does not
         tagsApi.bindTagEntry(TagEntryRequest(cargo, "fake", "E4", false))
+        tagsApi.bindTagEntry(TagEntryRequest(cargo, "fake", "E6", true))
+        assertEquals(listOf("E2" to setOf(hulls, cargo)), newAbove().map { it.entry to it.tags.map { t -> t.key }.toSet() })
+        tagsApi.createTagAbove(TagAboveRequest("fake", "E3", listOf(hulls, cargo), craft.key))
+        assertEquals(emptyList(), newAbove())
+        tagsApi.relateTags(TagRelationRequest(craft.key, hulls, TagRelation.NONE))
+        tagsApi.relateTags(TagRelationRequest(craft.key, cargo, TagRelation.NONE))
+        tagsApi.bindTagEntry(TagEntryRequest(craft.key, "fake", "E3", false))
+        tagsApi.bindTagEntry(TagEntryRequest(hulls, "fake", "E1", false))
+        tagsApi.bindTagEntry(TagEntryRequest(cargo, "fake", "E6", false))
 
         // Both site's tags merged rows of it; one taken out, to a new tag of its own; the answer stays with the tag
         fun rows() = tagsApi.listSimilarTags(hulls, null, 0, 50, null, null).body!!.tags

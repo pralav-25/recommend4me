@@ -560,6 +560,20 @@ class Tags(
             val children = roots.sortedByDescending { graded(it).size }
             out += HierarchyOffer(HierarchyKind.NEW_PARENT, ref.catalogue, children, ref, listOf(ref), all.flatMap(::graded).toSet().size, levels.getValue(ref), rejected = ref in tooGeneral)
         }
+        // NO TAG ABOVE MORE GENERAL THAN ONE THE USER SAID IS TOO GENERAL: an entry above it in the
+        // catalogue is more general still — never offered (user, 2026-10-16). The one said stays,
+        // shown when asked, for its word to be taken back
+        val aboveTooGeneral = graph.up(tooGeneral.toList()).keys - tooGeneral
+        // NOR AN ENTRY UNDER ONE A TAG IS BOUND TO, ABOVE THE VERY TAGS THAT TAG IS ABOVE ALREADY: it
+        // says nothing the tag does not (user, 2026-10-16) — one above some of them alone is offered
+        fun repeats(o: HierarchyOffer): Boolean {
+            val entry = o.entry ?: return false
+            val tags = o.tags.toSet()
+            return (graph.up(listOf(entry)).keys - entry).any { above ->
+                graph.tagsOf[above].orEmpty().any { t -> n.hierarchy.childrenOf(t).let { it.isNotEmpty() && it == tags } }
+            }
+        }
+        out.removeAll { o -> (o.kind == HierarchyKind.NEW_PARENT || o.kind == HierarchyKind.BIND_PARENT) && (o.entry in aboveTooGeneral || repeats(o)) }
         log.info("{}: {} offers of the tags' graph worked out in {} ms", scope.id, out.size, System.currentTimeMillis() - started)
         // The nearest first — what the entries are right above, not "process" all of them are far up — then the ones changing most
         val sorted = out.sortedWith(compareBy<HierarchyOffer> { it.levels }.thenByDescending { it.graded }.thenBy { it.kind }.thenBy { it.tags.joinToString() })

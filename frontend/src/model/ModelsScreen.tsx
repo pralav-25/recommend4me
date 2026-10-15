@@ -3,11 +3,13 @@ import { BrainCircuitIcon, Loader2Icon, RefreshCwIcon, SearchCheckIcon } from "l
 import { useTranslation } from "react-i18next";
 import { api, ensureOk, unwrap, type ContentTypeInfo, type ModelState, type ModelTrial } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
+import { RefreshSelect } from "@/components/RefreshSelect";
 import { typeTitle } from "@/contenttype/types";
 import { duration, formatDate, number } from "@/i18n/format";
 import { label, scorerTitle, sourceTitle } from "@/i18n/label";
 import { usePluginNamespaces } from "@/i18n/usePluginNamespaces";
 import { ITEMS } from "@/item/lists";
+import { useRefresh } from "@/lib/useRefresh";
 import { cn } from "@/lib/utils";
 import { WorkQueue } from "@/workload/WorkQueue";
 import { FacetComparisonDialog } from "./FacetComparisonDialog";
@@ -17,9 +19,8 @@ import { useModel } from "./useModel";
 
 const modelsKey = (type: string) => ["models", type];
 
-/** How often the models are asked for again while one is being fitted, and otherwise. */
-const RUNNING_MS = 2000;
-const IDLE_MS = 30_000;
+/** How often the models are asked for again till the user chooses ([RefreshSelect]); a work of the queue ended reads them at once besides ([WorkQueue]). */
+const EVERY_MS = 5000;
 
 /**
  * THE MODELS OF A CONTENT TYPE, ONE CARD EACH: the model of the grades, the model of interest, and
@@ -29,10 +30,11 @@ const IDLE_MS = 30_000;
  */
 export function ModelsScreen({ type }: { type: ContentTypeInfo }) {
   const { t } = useTranslation("model");
+  const [every, setEvery] = useRefresh("models.refresh", EVERY_MS);
   const models = useQuery({
     queryKey: modelsKey(type.id),
     queryFn: async () => unwrap(await api.GET("/api/types/{type}/models", { params: { path: { type: type.id } } })),
-    refetchInterval: (q) => (q.state.data?.some((m) => m.running) ? RUNNING_MS : IDLE_MS),
+    refetchInterval: every || false,
   });
   const list = models.data ?? [];
   // The methods' and the sources' titles are their own words: drawn anew once they are read
@@ -47,6 +49,7 @@ export function ModelsScreen({ type }: { type: ContentTypeInfo }) {
       <header className="flex flex-col gap-1">
         <h1 className="flex items-center gap-2 text-xl font-semibold">
           <BrainCircuitIcon className="size-5" /> {t("ModelsScreen.title", { type: typeTitle(type.id).toLowerCase() })}
+          <RefreshSelect every={every} onChange={setEvery} className="ml-auto" />
         </h1>
         <p className="text-sm text-muted-foreground">{t("ModelsScreen.description")}</p>
       </header>
