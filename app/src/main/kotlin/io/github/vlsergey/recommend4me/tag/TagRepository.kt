@@ -13,6 +13,7 @@ import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.T
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_TEXT
 import io.github.vlsergey.recommend4me.vector.Vectors
 import org.jooq.DSLContext
+import org.jooq.exception.IntegrityConstraintViolationException
 import org.jooq.impl.DSL
 import java.time.Instant
 
@@ -171,6 +172,22 @@ class TagRepository(private val db: DSLContext) {
     }
 
     /** The name a new tag is shown by until the names are worked out again: of the site's tag it is made for. */
+    /**
+     * THE TAGS THAT STILL ARE: a pass of the background counts the works for seconds, and a tag
+     * merged or taken out meanwhile is gone — its statistics are not written.
+     */
+    private fun alive(tx: DSLContext): Set<Long> = tx.select(NORMALIZED_TAG.ID).from(NORMALIZED_TAG).fetchSet(NORMALIZED_TAG.ID).filterNotNull().toSet()
+
+    /**
+     * [write] done again once when a tag it writes of was taken out between its reading the tags
+     * that are ([alive]) and its write — milliseconds; not locked, so a merge does not wait on it.
+     */
+    private fun <T> againIfGone(write: () -> T): T = try {
+        write()
+    } catch (e: IntegrityConstraintViolationException) {
+        write()
+    }
+
     fun showAs(id: Long, name: ShownName) {
         db.insertInto(TAG_STAT).set(TAG_STAT.TAG, id).set(TAG_STAT.CALCULATED_NAME, name.name.take(1000)).set(TAG_STAT.CALCULATED_RULE, name.rule.name)
             .onDuplicateKeyIgnore().execute()
@@ -180,18 +197,19 @@ class TagRepository(private val db: DSLContext) {
      * The names the application works the tags out to replaced by [named], kept with their statistics:
      * the label of an entry, else of the sites' names; the user's own name is no part of them.
      */
-    fun replaceCalculated(named: Map<Long, ShownName>) = db.transaction { c ->
+    fun replaceCalculated(named: Map<Long, ShownName>) = againIfGone { db.transaction { c ->
         val tx = DSL.using(c)
+        val alive = alive(tx)
         // Only what changed: a name or its rule changed, a tag new — not the whole table every few seconds
         val stored = tx.select(TAG_STAT.TAG, TAG_STAT.CALCULATED_NAME, TAG_STAT.CALCULATED_RULE).from(TAG_STAT).fetch()
             .associate { it.value1()!! to (it.value2() to it.value3()) }
-        named.entries.filter { (id, s) -> stored[id] != (s.name.take(1000) to s.rule.name) }.chunked(BATCH).forEach { chunk ->
+        named.entries.filter { (id, s) -> id in alive && stored[id] != (s.name.take(1000) to s.rule.name) }.chunked(BATCH).forEach { chunk ->
             tx.batch(chunk.map { (id, s) ->
                 tx.insertInto(TAG_STAT).set(TAG_STAT.TAG, id).set(TAG_STAT.CALCULATED_NAME, s.name.take(1000)).set(TAG_STAT.CALCULATED_RULE, s.rule.name)
                     .onDuplicateKeyUpdate().set(TAG_STAT.CALCULATED_NAME, s.name.take(1000)).set(TAG_STAT.CALCULATED_RULE, s.rule.name)
             }).execute()
         }
-    }
+    } }
 
     // --- The graph and the pairs told apart ---
 
@@ -278,7 +296,7 @@ class TagRepository(private val db: DSLContext) {
      * site's tag counted its name and works — of one not counted, no name and none — and of every tag
      * its works and the sources of its sites' tags.
      */
-    fun keepStats(sites: Map<SiteTagRef, Pair<String, Counts>>, tags: Map<Long, TagCount>) = db.transaction { c ->
+    fun keepStats(sites: Map<SiteTagRef, Pair<String, Counts>>, tags: Map<Long, TagCount>) = againIfGone { db.transaction { c ->
         val tx = DSL.using(c)
         val st = SITE_TAG
         tx.select(st.SOURCE, st.TAG, st.NAME, st.WORKS, st.GRADED, st.LIKED).from(st).fetch().forEach { r ->
@@ -288,16 +306,17 @@ class TagRepository(private val db: DSLContext) {
             tx.update(st).set(st.NAME, name?.take(500)).set(st.WORKS, counts.works).set(st.GRADED, counts.graded).set(st.LIKED, counts.liked)
                 .where(st.SOURCE.eq(site.source), st.TAG.eq(site.tag)).execute()
         }
+        val alive = alive(tx)
         val kept = TagRepository(tx).counts()
         val ts = TAG_STAT
         tags.forEach { (tag, count) ->
-            if (kept[tag] == count) return@forEach
+            if (tag !in alive || kept[tag] == count) return@forEach
             val sources = count.sources.toTypedArray<String?>()
             tx.insertInto(ts).set(ts.TAG, tag).set(ts.WORKS, count.counts.works).set(ts.GRADED, count.counts.graded).set(ts.LIKED, count.counts.liked).set(ts.SOURCES, sources)
                 .onDuplicateKeyUpdate().set(ts.WORKS, count.counts.works).set(ts.GRADED, count.counts.graded).set(ts.LIKED, count.counts.liked).set(ts.SOURCES, sources)
                 .execute()
         }
-    }
+    } }
 
     // --- The vectors of the tags ---
 
