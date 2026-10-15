@@ -152,14 +152,24 @@ class ItemsController(
     override fun getExplanation(source: String, item: String): ResponseEntity<List<ApiContributionGroup>> {
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         if (store.items.find(item) == null) return ResponseEntity.notFound().build()
-        return ResponseEntity.ok(recommendations.explanation(ItemKey(source, item)).map { it.toApi(withFeatures = false) })
+        val key = ItemKey(source, item)
+        // Of a graded work, the model's that had not seen it, once worked out
+        val groups = when (val h = recommendations.heldOut(key)) {
+            is Recommendations.HeldOutRead.Ready -> h.heldOut.explanation
+            Recommendations.HeldOutRead.Planned -> return ResponseEntity.accepted().build()
+            Recommendations.HeldOutRead.None -> recommendations.explanation(key)
+        }
+        return ResponseEntity.ok(groups.map { it.toApi(withFeatures = false) })
     }
 
     override fun getHeldOut(source: String, item: String): ResponseEntity<ApiHeldOut> {
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         if (store.items.find(item) == null) return ResponseEntity.notFound().build()
-        val h = recommendations.heldOut(ItemKey(source, item)) ?: return ResponseEntity.noContent().build()
-        return ResponseEntity.ok(ApiHeldOut(h.score, h.explanation.map { it.toApi() }, h.gradePlace))
+        return when (val h = recommendations.heldOut(ItemKey(source, item))) {
+            is Recommendations.HeldOutRead.Ready -> ResponseEntity.ok(ApiHeldOut(h.heldOut.score, h.heldOut.explanation.map { it.toApi() }, h.heldOut.gradePlace))
+            Recommendations.HeldOutRead.Planned -> ResponseEntity.accepted().build()
+            Recommendations.HeldOutRead.None -> ResponseEntity.noContent().build()
+        }
     }
 
     override fun refreshItem(source: String, item: String): ResponseEntity<ItemDetails> {

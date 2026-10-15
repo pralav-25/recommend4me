@@ -12,6 +12,7 @@ import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.T
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_ABOVE
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_TEXT
 import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_ENTRY_TOO_GENERAL
+import io.github.vlsergey.recommend4me.database.dictionaries.tables.references.TAG_OFFERS
 import io.github.vlsergey.recommend4me.vector.Vectors
 import org.jooq.DSLContext
 import org.jooq.exception.IntegrityConstraintViolationException
@@ -231,6 +232,16 @@ class TagRepository(private val db: DSLContext) {
         db.select(NORMALIZED_TAG_DISTINCT.FIRST_TAG, NORMALIZED_TAG_DISTINCT.OTHER_TAG).from(NORMALIZED_TAG_DISTINCT)
             .fetch { it.value1()!! to it.value2()!! }.toSet()
 
+    /** The offers of the tags' graph as last worked out, as JSON; null before the first. */
+    fun offers(): String? = db.select(TAG_OFFERS.OFFERS).from(TAG_OFFERS).where(TAG_OFFERS.ID.eq(OFFERS_ROW)).fetchOne(TAG_OFFERS.OFFERS)
+
+    /** Keeps the offers of the tags' graph worked out [now], as JSON, over those before. */
+    fun keepOffers(offers: String, now: Instant) {
+        db.insertInto(TAG_OFFERS).set(TAG_OFFERS.ID, OFFERS_ROW).set(TAG_OFFERS.MADE_AT, now).set(TAG_OFFERS.OFFERS, offers)
+            .onDuplicateKeyUpdate().set(TAG_OFFERS.MADE_AT, now).set(TAG_OFFERS.OFFERS, offers)
+            .execute()
+    }
+
     /** The entries the user said are too general to be a tag above others. */
     fun tooGeneral(): Set<TagEntryRef> {
         val g = TAG_ENTRY_TOO_GENERAL
@@ -408,6 +419,9 @@ class TagRepository(private val db: DSLContext) {
 
     companion object {
         private const val BATCH = 1000
+
+        /** The one row of the offers of the tags' graph. */
+        private const val OFFERS_ROW = 1
         private const val LABEL = "L"
         private const val ALIAS = "A"
         private const val DESCRIPTION = "D"

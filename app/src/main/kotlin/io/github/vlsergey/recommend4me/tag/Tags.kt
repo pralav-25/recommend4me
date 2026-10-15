@@ -10,6 +10,8 @@ import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import io.github.vlsergey.recommend4me.workload.Work
 import io.github.vlsergey.recommend4me.workload.Workload
+import tools.jackson.databind.json.JsonMapper
+import tools.jackson.module.kotlin.readValue
 import jakarta.annotation.PreDestroy
 import org.springframework.beans.factory.annotation.Value
 import org.slf4j.LoggerFactory
@@ -181,6 +183,7 @@ class Tags(
     /** The languages a tag's entry is asked in, the user's first: its label in the first that has one names the tag. */
     @Value("\${recommend4me.languages:ru,en}") private val languages: List<String>,
     private val workload: Workload,
+    private val json: JsonMapper,
 ) {
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "tag-names").apply { isDaemon = true } }
     private val pending = ConcurrentHashMap<String, ScheduledFuture<*>>()
@@ -468,13 +471,34 @@ class Tags(
      *   between them and it, never one over its head — nor of a tag above both bound to no entry.
      *   A tag in one such offer alone, the nearest: one sharing a tag with a nearer one is not offered
      *   till the nearer is said — then it is offered above the new tag.
+     *
+     * Worked out with the names of the tags, in the queue of the computations ([rename]) — they want
+     * the graded works of every tag, a pass over every work — and kept: a request reads them as
+     * kept, never waits for them (user, 2026-10-16).
      */
-    fun hierarchyOffers(scope: TagScope, facet: String): List<HierarchyOffer> = workload.run(Work("tagOffers"), mapOf("page" to 1)) { offers(scope, facet) }
+    fun hierarchyOffers(scope: TagScope): KeptOffers {
+        val kept = scope.tags.offers()
+        // None worked out since the tags were made: worked out with their names, soon
+        if (kept == null) schedule("offers")
+        val tooGeneral = scope.tags.tooGeneral()
+        // The user's word that an entry is too general is shown at once, the offers worked out anew after the quiet
+        val offers = kept?.let { json.readValue<List<HierarchyOffer>>(it) }.orEmpty().map { o ->
+            val rejected = o.entry != null && o.entry in tooGeneral
+            if (rejected == o.rejected) o else HierarchyOffer(o.kind, o.catalogue, o.tags, o.entry, o.way, o.graded, o.levels, o.existing, rejected)
+        }
+        return KeptOffers(offers, workload.due(NAMING))
+    }
 
-    private fun offers(scope: TagScope, facet: String): List<HierarchyOffer> {
+    /**
+     * The offers of the tags' graph as kept ([hierarchyOffers]), and whether they are to be worked
+     * out anew — the names and the works of the tags planned, waiting or worked out now: a word
+     * said since is not in them yet.
+     */
+    class KeptOffers(val offers: List<HierarchyOffer>, val pending: Boolean)
+
+    /** The offers of the tags' graph by the names and the works of the tags [n], counted in the same work. */
+    private fun offersOf(scope: TagScope, n: Naming): List<HierarchyOffer> {
         val started = System.currentTimeMillis()
-        // The graded works of every tag are wanted: counted now
-        val n = naming(scope, facet, countAll(scope, facet))
         val graph = CatalogueGraph(scope, n)
         fun graded(key: String) = n.stats[key]?.graded.orEmpty()
         fun rejected(key: String) = n.stats[key]?.rejected.orEmpty()
@@ -1000,7 +1024,8 @@ class Tags(
             sites = stats.values.flatMap { t -> t.variants.values }.associate { v -> v.site to (v.name to Counts(v.uses.works, v.uses.graded, v.uses.liked)) },
             tags = stats.values.associate { t -> t.id to TagCount(t.counts, t.sources) },
         )
-        log.info("{}: names and works of {} tags counted and kept in {} ms", scope.id, stats.size, System.currentTimeMillis() - started)
+        scope.tags.keepOffers(json.writeValueAsString(offersOf(scope, n)), Instant.now())
+        log.info("{}: names, works and offers of {} tags counted and kept in {} ms", scope.id, stats.size, System.currentTimeMillis() - started)
     }
 
     /** The sites' new tags bound, and the names worked out again, shortly after the last of a quick series of changes. */
@@ -1011,9 +1036,9 @@ class Tags(
             scheduler.schedule({
                 try {
                     val scope = scope() ?: return@schedule
-                    val reasons = workload.take(NAMING)
                     normalization.bindNew()
-                    workload.run(NAMING, reasons) { renamed(scope, scope.facet) }
+                    // Planned till it begins: the offers read meanwhile are told to be worked out anew
+                    workload.run(NAMING) { renamed(scope, scope.facet) }
                 } catch (e: Exception) {
                     log.warn("The tags were not bound and named: {}", e.message, e)
                 }

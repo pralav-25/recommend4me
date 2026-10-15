@@ -90,6 +90,7 @@ class Recommendations(
     /** How long the last training of every type took, ms: how long a stream of background changes is let to settle. */
     private val lastTraining = ConcurrentHashMap<String, Long>()
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "model-training").apply { isDaemon = true } }
+    private val heldOutWorker = Executors.newSingleThreadExecutor { r -> Thread(r, "held-out").apply { isDaemon = true } }
 
     private fun type(id: String): TypeStore = stores.type(id) ?: error("No such content type: $id")
 
@@ -108,7 +109,7 @@ class Recommendations(
      * waits for is never put off by it. The [reason] — a key the interface words — is told in the
      * queue of the works ([Workload.plan]) till the training begins.
      */
-    fun scheduleRetrain(type: String, reason: String, byUser: Boolean = true) {
+    fun scheduleRetrain(type: String, reason: String, byUser: Boolean = true, quietMs: Long = USER_QUIET_MS) {
         val now = System.currentTimeMillis()
         pending.compute(type) { _, old ->
             val waiting = old?.takeIf { !it.future.isDone }
@@ -118,7 +119,7 @@ class Recommendations(
             }
             waiting?.future?.cancel(false)
             val first = waiting?.firstAt ?: now
-            val due = if (byUser) now + USER_QUIET_MS else minOf(now + maxOf(MACHINE_QUIET_MS, 2 * (lastTraining[type] ?: 0L)), first + MAX_WAIT_MS)
+            val due = if (byUser) now + quietMs else minOf(now + maxOf(MACHINE_QUIET_MS, 2 * (lastTraining[type] ?: 0L)), first + MAX_WAIT_MS)
             workload.plan(trainingWork(type), Instant.ofEpochMilli(due), reason)
             val future = scheduler.schedule({
                 try {
@@ -131,6 +132,12 @@ class Recommendations(
         }
     }
 
+    /**
+     * The training the user asked for — by the button, or by choosing a scorer — planned to begin at
+     * once, after the works before it; the request that asked does not wait for it ([Requests]).
+     */
+    fun trainSoon(type: String) = scheduleRetrain(type, "asked", quietMs = 0)
+
     /** A training scheduled: since the first change it waits on, when it is due, and whether the user waits for it. */
     private class PendingTraining(val future: ScheduledFuture<*>, val firstAt: Long, val due: Long, val byUser: Boolean)
 
@@ -139,6 +146,7 @@ class Recommendations(
     @EventListener
     fun gradesChanged(event: GradesChanged) {
         settings.set("model.${event.type}.gradesChangedAt", System.currentTimeMillis().toString())
+        heldOutChanged(event.source, event.itemId)
         scheduleRetrain(event.type, "grade")
     }
 
@@ -158,7 +166,10 @@ class Recommendations(
 
     /** The user said what a work has or has not: its features, the user's word over the model's. */
     @EventListener
-    fun answered(event: FacetAnswered) = scheduleRetrain(event.type, "answer")
+    fun answered(event: FacetAnswered) {
+        heldOutChanged(event.source, event.itemId)
+        scheduleRetrain(event.type, "answer")
+    }
 
     /** The model gave works other pairings, characters: features of the works. */
     @EventListener
@@ -438,9 +449,53 @@ class Recommendations(
      * model's parameter, the likeness to the marks of the fold's works not counted — scores it and
      * tells why. The model of every grade has seen the work and partly learnt it by heart (its
      * annotation, its cover); this one has not. The score is the one the list sorts the surprises
-     * by. Null for a work the user has not graded, or when there are too few works for folds.
+     * by. None for a work the user has not graded, or when there are too few works for folds.
+     *
+     * Read as kept: the fitting takes a second or more, in the queue of the computations, and a
+     * request never waits for it ([io.github.vlsergey.recommend4me.workload.Requests]) — not yet
+     * worked out, it is planned, and the request answers so.
      */
-    fun heldOut(key: ItemKey): HeldOut? = workload.run(Work("heldOut", source = key.source, item = key.id), mapOf("page" to 1)) { fitHeldOut(key) }
+    fun heldOut(key: ItemKey): HeldOutRead {
+        val type = stores.typeOf(key.source)
+        if (type.source(key.source)?.ratings?.ofItem(key.id).isNullOrEmpty()) return HeldOutRead.None
+        val kept = type.models.explained(key) ?: return HeldOutRead.Planned.also { planHeldOut(type, key) }
+        val score = kept.score ?: return HeldOutRead.None
+        return HeldOutRead.Ready(HeldOut(score, kept.gradePlace, kept.explanation?.let { json.readValue<List<ContributionGroup>>(it) }.orEmpty()))
+    }
+
+    /** What a request reads of the model that had not seen a graded work: what it says, nothing to say, or being worked out — planned in the queue. */
+    sealed interface HeldOutRead {
+        class Ready(val heldOut: HeldOut) : HeldOutRead
+        data object None : HeldOutRead
+        data object Planned : HeldOutRead
+    }
+
+    /**
+     * The model that had not seen the graded work fitted in the queue of the computations, and what
+     * it says kept ([ModelRepository.keepExplained]); the request that asked does not wait for it.
+     * Asked again before it is worked out, it is worked out once.
+     */
+    private fun planHeldOut(type: TypeStore, key: ItemKey) {
+        val work = Work("heldOut", source = key.source, item = key.id)
+        workload.plan(work, Instant.now(), "page")
+        heldOutWorker.execute {
+            try {
+                if (type.models.explained(key) != null) {
+                    workload.take(work)
+                    return@execute
+                }
+                workload.run(work) {
+                    val h = fitHeldOut(key)
+                    type.models.keepExplained(key, h?.score, h?.gradePlace, h?.let { json.writeValueAsString(it.explanation) })
+                }
+            } catch (e: Exception) {
+                log.warn("{}: what a model that had not seen the work says of it was not worked out", key, e)
+            }
+        }
+    }
+
+    /** A word on a graded work: what the model that had not seen it said is of the work as it was. */
+    private fun heldOutChanged(source: String, itemId: String) = stores.typeOf(source).models.forgetExplained(ItemKey(source, itemId))
 
     private fun fitHeldOut(key: ItemKey): HeldOut? {
         val type = stores.typeOf(key.source)
@@ -532,12 +587,11 @@ class Recommendations(
     )
 
     /**
-     * What moves the prediction of the work, part by part, strongest first — for a page of the site.
-     * Of a graded work, the model's that had not seen it ([heldOut]): the model of every grade
-     * explains it by what it learnt of the work itself.
+     * What moves the prediction of the work, part by part, strongest first, by the model of every
+     * grade — for a page of the site. Of a graded work the page shows the model's that had not seen
+     * it ([heldOut]): the model of every grade explains it by what it learnt of the work itself.
      */
     fun explanation(key: ItemKey): List<ContributionGroup> {
-        heldOut(key)?.let { return it.explanation }
         val type = stores.typeOf(key.source)
         val model = load(type) ?: return emptyList()
         val input = inputOf(type, key, likenesses.stored(type)) ?: return emptyList()
@@ -803,11 +857,12 @@ class Recommendations(
     /** The model of interest as kept: what the page of the models shows of it; null while there is none. */
     fun interestMeta(typeId: String): InterestMeta? = loadInterest(type(typeId))?.meta
 
-    /** Makes [scorerId] the scorer of the type's model of interest and trains the models. */
-    fun chooseInterestScorer(typeId: String, scorerId: String): ModelSummary? {
-        if (plugins.scorers.none { it.id == scorerId }) return null
+    /** Makes [scorerId] the scorer of the type's model of interest and plans the training of the models; false for no such scorer. */
+    fun chooseInterestScorer(typeId: String, scorerId: String): Boolean {
+        if (plugins.scorers.none { it.id == scorerId }) return false
         settings.set("scorer.$typeId.interest", scorerId)
-        return retrainAndScore(typeId)
+        trainSoon(typeId)
+        return true
     }
 
     /**
@@ -885,11 +940,12 @@ class Recommendations(
         )
     }
 
-    /** Makes [scorerId] the scorer of the type and trains it. */
-    fun chooseScorer(typeId: String, scorerId: String): ModelSummary? {
-        if (plugins.scorers.none { it.id == scorerId }) return null
+    /** Makes [scorerId] the scorer of the type and plans its training; false for no such scorer. */
+    fun chooseScorer(typeId: String, scorerId: String): Boolean {
+        if (plugins.scorers.none { it.id == scorerId }) return false
         settings.set("scorer.$typeId", scorerId)
-        return retrainAndScore(typeId)
+        trainSoon(typeId)
+        return true
     }
 
     private fun counts(grades: IntArray) = IntArray(Grades.MAX).apply { grades.forEach { this[it - Grades.MIN]++ } }
@@ -897,6 +953,7 @@ class Recommendations(
     @PreDestroy
     fun shutdown() {
         scheduler.shutdownNow()
+        heldOutWorker.shutdownNow()
     }
 
     companion object {

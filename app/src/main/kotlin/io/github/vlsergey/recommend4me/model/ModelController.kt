@@ -29,6 +29,7 @@ import java.time.ZoneOffset
 class ModelController(
     private val recommendations: Recommendations,
     private val comparisons: ScorerComparisons,
+    private val measurings: ModelMeasurings,
     private val plugins: Plugins,
     private val stores: Stores,
 ) : ModelApi {
@@ -40,14 +41,16 @@ class ModelController(
 
     override fun trainModel(type: String): ResponseEntity<ModelInfo> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        return ResponseEntity.ok(recommendations.retrainAndScore(type).toApi(type))
+        recommendations.trainSoon(type)
+        return ResponseEntity.ok(recommendations.summary(type).toApi(type))
     }
 
     override fun chooseScorer(type: String, scorerChoice: ScorerChoice): ResponseEntity<ModelInfo> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        val summary = recommendations.chooseScorer(type, scorerChoice.scorer)
-            ?: throw Refusal.NO_SCORER.refuse(HttpStatus.BAD_REQUEST, "There is no scorer '${scorerChoice.scorer}'", "scorer" to scorerChoice.scorer)
-        return ResponseEntity.ok(summary.toApi(type))
+        if (!recommendations.chooseScorer(type, scorerChoice.scorer)) {
+            throw Refusal.NO_SCORER.refuse(HttpStatus.BAD_REQUEST, "There is no scorer '${scorerChoice.scorer}'", "scorer" to scorerChoice.scorer)
+        }
+        return ResponseEntity.ok(recommendations.summary(type).toApi(type))
     }
 
     override fun getScorerComparison(type: String, interest: Boolean): ResponseEntity<ApiScorerComparison> {
@@ -63,8 +66,9 @@ class ModelController(
 
     override fun chooseInterestScorer(type: String, scorerChoice: ScorerChoice): ResponseEntity<Unit> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        recommendations.chooseInterestScorer(type, scorerChoice.scorer)
-            ?: throw Refusal.NO_SCORER.refuse(HttpStatus.BAD_REQUEST, "There is no scorer '${scorerChoice.scorer}'", "scorer" to scorerChoice.scorer)
+        if (!recommendations.chooseInterestScorer(type, scorerChoice.scorer)) {
+            throw Refusal.NO_SCORER.refuse(HttpStatus.BAD_REQUEST, "There is no scorer '${scorerChoice.scorer}'", "scorer" to scorerChoice.scorer)
+        }
         return ResponseEntity.noContent().build()
     }
 
@@ -80,9 +84,17 @@ class ModelController(
         finishedAt = finishedAt?.atOffset(ZoneOffset.UTC),
     )
 
-    override fun measurePartWorth(type: String): ResponseEntity<ApiModelWorth> {
+    override fun measurePartWorth(type: String): ResponseEntity<Unit> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        val worth = recommendations.worth(type) ?: return ResponseEntity.notFound().build()
+        measurings.measureWorth(type)
+        return ResponseEntity.accepted().build()
+    }
+
+    override fun getPartWorth(type: String): ResponseEntity<ApiModelWorth> {
+        if (stores.type(type) == null) return ResponseEntity.notFound().build()
+        val measuring = measurings.worthOf(type) ?: return ResponseEntity.notFound().build()
+        if (measuring.finishedAt == null) return ResponseEntity.accepted().build()
+        val worth = measuring.result ?: return ResponseEntity.notFound().build()
         return ResponseEntity.ok(
             ApiModelWorth(
                 scorer = worth.scorer,
@@ -93,9 +105,17 @@ class ModelController(
         )
     }
 
-    override fun measureWeighing(type: String, cautious: Boolean): ResponseEntity<ApiWeighing> {
+    override fun measureWeighing(type: String, cautious: Boolean): ResponseEntity<Unit> {
         if (stores.type(type) == null) return ResponseEntity.notFound().build()
-        val w = recommendations.weighing(type, cautious) ?: return ResponseEntity.notFound().build()
+        measurings.measureWeighing(type, cautious)
+        return ResponseEntity.accepted().build()
+    }
+
+    override fun getWeighing(type: String): ResponseEntity<ApiWeighing> {
+        if (stores.type(type) == null) return ResponseEntity.notFound().build()
+        val measuring = measurings.weighingOf(type) ?: return ResponseEntity.notFound().build()
+        if (measuring.finishedAt == null) return ResponseEntity.accepted().build()
+        val w = measuring.result ?: return ResponseEntity.notFound().build()
         val (baseline, baselineSe) = GroupWeights.meanAndError(w.folds.map { it.baseline })
         val (weighed, weighedSe) = GroupWeights.meanAndError(w.folds.map { it.weighed })
         val (gain, gainSe) = GroupWeights.meanAndError(w.folds.map { it.weighed - it.baseline })

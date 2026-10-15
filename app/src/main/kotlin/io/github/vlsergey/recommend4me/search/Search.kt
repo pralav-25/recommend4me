@@ -26,9 +26,11 @@ import org.slf4j.LoggerFactory
 import org.springframework.boot.context.event.ApplicationReadyEvent
 import org.springframework.context.event.EventListener
 import org.springframework.stereotype.Service
+import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 
 private val log = LoggerFactory.getLogger(Search::class.java)
@@ -37,7 +39,8 @@ private val log = LoggerFactory.getLogger(Search::class.java)
  * The search over the works of a content type, by the search plugin: the documents of the items —
  * their corrected titles, facets and texts with the vectors of the texts — made here, the index
  * the plugin's. The whole index is made again on every start, in the background; an item written
- * since it was indexed is indexed again before the next search (the queue of their keys is all
+ * since it was indexed is indexed again in the background too, shortly after the writes go quiet —
+ * a search never waits for it, it searches the index as it is (the queue of their keys is all
  * that is kept here).
  */
 @Service
@@ -52,6 +55,8 @@ class Search(
     private val pending = ConcurrentHashMap<String, MutableSet<ItemKey>>()
     private val built = ConcurrentHashMap<String, CountDownLatch>()
     private val worker = Executors.newSingleThreadExecutor { r -> Thread(r, "search-index").apply { isDaemon = true } }
+    private val updater = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "search-update").apply { isDaemon = true } }
+    private val updates = ConcurrentHashMap<String, ScheduledFuture<*>>()
 
     @EventListener
     fun itemsChanged(event: ItemsChanged) = queue(event.source, event.ids)
@@ -66,10 +71,24 @@ class Search(
     @EventListener
     fun answered(event: FacetAnswered) = queue(event.source, listOf(event.itemId))
 
+    /** The items written are indexed again in the background, shortly after the last of a quick series of writes. */
     private fun queue(source: String, ids: Collection<String>) {
         val type = stores.typeOf(source).id
         pending.computeIfAbsent(type) { ConcurrentHashMap.newKeySet() } += ids.map { ItemKey(source, it) }
+        updates.compute(type) { _, old ->
+            old?.cancel(false)
+            workload.plan(updating(type), Instant.now().plusMillis(UPDATE_QUIET_MS), "items")
+            updater.schedule({
+                try {
+                    stores.type(type)?.let(::catchUp)
+                } catch (e: Exception) {
+                    log.error("{}: the search index was not updated", type, e)
+                }
+            }, UPDATE_QUIET_MS, TimeUnit.MILLISECONDS)
+        }
     }
+
+    private fun updating(type: String) = Work("searchUpdate", type = type)
 
     @EventListener(ApplicationReadyEvent::class)
     fun build() {
@@ -86,6 +105,8 @@ class Search(
                 } finally {
                     built[type.id]?.countDown()
                 }
+                // What was written while the index was made
+                catchUp(type)
             }
         }
     }
@@ -175,14 +196,15 @@ class Search(
         }.toMap()
     }
 
-    /** The items written since they were indexed, indexed now — once the index of the start is made. */
+    /** The items written since they were indexed, indexed now, in the queue of the computations — once the index of the start is made. */
     private fun catchUp(type: TypeStore) {
         val provider = plugins.search ?: return
         built[type.id]?.let { if (it.count > 0) return }
+        val reasons = workload.take(updating(type.id))
         val keys = pending[type.id]?.let { set -> set.toList().also { set.removeAll(it.toSet()) } }.orEmpty()
         if (keys.isEmpty()) return
         // The works taken here are this update's own: another update is of others
-        workload.run(Work("searchUpdate", type = type.id), mapOf("items" to keys.size), joinAlike = false) {
+        workload.run(updating(type.id), reasons, joinAlike = false) {
             val docs = HashMap<ItemKey, SearchDocument>()
             keys.groupBy { it.source }.forEach { (source, list) ->
                 stores.source(source)?.let { docs += documents(it, list.map { k -> k.id }) }
@@ -211,8 +233,7 @@ class Search(
     fun search(typeId: String, line: String, rerank: Boolean = true): SearchResult? {
         val provider = plugins.search ?: return null
         val type = stores.type(typeId) ?: return null
-        built[typeId]?.await(WAIT_FOR_INDEX_SECONDS, TimeUnit.SECONDS)
-        catchUp(type)
+        // The index as it is: the works written since are indexed in the background, a request never waits for it
         val found = provider.search(typeId, line, context(type))
         return if (rerank) reranked(type, found) else found
     }
@@ -297,13 +318,14 @@ class Search(
     @PreDestroy
     fun shutdown() {
         worker.shutdownNow()
+        updater.shutdownNow()
     }
 
     companion object {
         private const val CHUNK = 500
 
-        /** How long a search waits for the index of the start; the index of the last run serves meanwhile. */
-        private const val WAIT_FOR_INDEX_SECONDS = 0L
+        /** The quiet after the last write of an item before the items written are indexed again: a page is sent several times as it grows. */
+        private const val UPDATE_QUIET_MS = 2000L
 
         /** The field of the title. */
         private const val TITLE = "title"

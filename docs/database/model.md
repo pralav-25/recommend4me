@@ -7,6 +7,7 @@
 | `model` | the current model of the grades: its scorer, description and packed state |
 | `prediction` | the predicted grade of every work, 0..10, and its chance of interest |
 | `held_out` | the prediction of every graded work by a model that had not seen it |
+| `held_out_explained` | what a model that had not seen a graded work says of it — score, where the grade stands, what moves it — worked out in the queue once the work is opened, gone with every training and every word on the work |
 | `set_embedding` | the directions the sets of the works are embedded by |
 | `mark_likeness` | how every work is alike what the user marked |
 | `mark_likeness_strength` | every work's strength of likeness to every mark |
@@ -38,6 +39,13 @@ erDiagram
         VARCHAR source PK
         VARCHAR item_id PK
         DOUBLE score
+    }
+    held_out_explained {
+        VARCHAR source PK
+        VARCHAR item_id PK
+        DOUBLE score "null"
+        DOUBLE grade_place "null"
+        CLOB explanation "null"
     }
     layer_draft {
         VARCHAR source PK

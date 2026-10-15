@@ -1,6 +1,7 @@
 package io.github.vlsergey.recommend4me.model
 
 import io.github.vlsergey.recommend4me.database.model.tables.references.HELD_OUT
+import io.github.vlsergey.recommend4me.database.model.tables.references.HELD_OUT_EXPLAINED
 import io.github.vlsergey.recommend4me.database.model.tables.references.MODEL
 import io.github.vlsergey.recommend4me.database.model.tables.references.PREDICTION
 import io.github.vlsergey.recommend4me.item.ItemKey
@@ -10,6 +11,9 @@ import java.time.Instant
 
 /** A kept model: the scorer that made it, its description and its state. */
 class StoredModel(val scorer: String, val meta: String, val weights: ByteArray)
+
+/** What the model that had not seen a graded work says of it, as kept: no [score] when there were too few works for folds; the [explanation] as JSON. */
+class Explained(val score: Double?, val gradePlace: Double?, val explanation: String?)
 
 /** An item's score on 0..10, and its chance of interest, 0..1, when there is a model of interest. */
 class Predicted(val score: Double, val interest: Double?)
@@ -30,12 +34,38 @@ class ModelRepository(private val db: DSLContext) {
         db.deleteFrom(MODEL).where(MODEL.ID.eq(INTEREST)).execute()
     }
 
+    /** A model saved; of the grades, what the models that had not seen the graded works said of them goes: they were of the model before. */
     private fun save(id: Int, scorer: String, trainedAt: Instant, meta: String, weights: ByteArray) {
-        db.insertInto(MODEL)
-            .set(MODEL.ID, id).set(MODEL.SCORER, scorer).set(MODEL.TRAINED_AT, trainedAt).set(MODEL.META, meta).set(MODEL.WEIGHTS, weights)
+        db.transaction { c ->
+            val tx = DSL.using(c)
+            tx.insertInto(MODEL)
+                .set(MODEL.ID, id).set(MODEL.SCORER, scorer).set(MODEL.TRAINED_AT, trainedAt).set(MODEL.META, meta).set(MODEL.WEIGHTS, weights)
+                .onDuplicateKeyUpdate()
+                .set(MODEL.SCORER, scorer).set(MODEL.TRAINED_AT, trainedAt).set(MODEL.META, meta).set(MODEL.WEIGHTS, weights)
+                .execute()
+            if (id == CURRENT) tx.deleteFrom(HELD_OUT_EXPLAINED).execute()
+        }
+    }
+
+    /** What the model that had not seen the graded work says of it, as worked out; null while it is not. */
+    fun explained(key: ItemKey): Explained? =
+        db.select(HELD_OUT_EXPLAINED.SCORE, HELD_OUT_EXPLAINED.GRADE_PLACE, HELD_OUT_EXPLAINED.EXPLANATION).from(HELD_OUT_EXPLAINED)
+            .where(HELD_OUT_EXPLAINED.SOURCE.eq(key.source), HELD_OUT_EXPLAINED.ITEM_ID.eq(key.id))
+            .fetchOne { Explained(it.value1(), it.value2(), it.value3()) }
+
+    /** Keeps what the model that had not seen the graded work says of it: its [score], none for a work with too few works for folds. */
+    fun keepExplained(key: ItemKey, score: Double?, gradePlace: Double?, explanation: String?) {
+        db.insertInto(HELD_OUT_EXPLAINED)
+            .set(HELD_OUT_EXPLAINED.SOURCE, key.source).set(HELD_OUT_EXPLAINED.ITEM_ID, key.id)
+            .set(HELD_OUT_EXPLAINED.SCORE, score).set(HELD_OUT_EXPLAINED.GRADE_PLACE, gradePlace).set(HELD_OUT_EXPLAINED.EXPLANATION, explanation)
             .onDuplicateKeyUpdate()
-            .set(MODEL.SCORER, scorer).set(MODEL.TRAINED_AT, trainedAt).set(MODEL.META, meta).set(MODEL.WEIGHTS, weights)
+            .set(HELD_OUT_EXPLAINED.SCORE, score).set(HELD_OUT_EXPLAINED.GRADE_PLACE, gradePlace).set(HELD_OUT_EXPLAINED.EXPLANATION, explanation)
             .execute()
+    }
+
+    /** What was worked out of the graded work goes: a word on it changed what it is made of. */
+    fun forgetExplained(key: ItemKey) {
+        db.deleteFrom(HELD_OUT_EXPLAINED).where(HELD_OUT_EXPLAINED.SOURCE.eq(key.source), HELD_OUT_EXPLAINED.ITEM_ID.eq(key.id)).execute()
     }
 
     private fun load(id: Int): StoredModel? =
@@ -48,6 +78,7 @@ class ModelRepository(private val db: DSLContext) {
             DSL.using(c).deleteFrom(MODEL).execute()
             DSL.using(c).deleteFrom(PREDICTION).execute()
             DSL.using(c).deleteFrom(HELD_OUT).execute()
+            DSL.using(c).deleteFrom(HELD_OUT_EXPLAINED).execute()
         }
     }
 
@@ -125,6 +156,7 @@ class ModelRepository(private val db: DSLContext) {
         val tx = DSL.using(c)
         tx.deleteFrom(PREDICTION).where(PREDICTION.SOURCE.eq(key.source), PREDICTION.ITEM_ID.eq(key.id)).execute()
         tx.deleteFrom(HELD_OUT).where(HELD_OUT.SOURCE.eq(key.source), HELD_OUT.ITEM_ID.eq(key.id)).execute()
+        tx.deleteFrom(HELD_OUT_EXPLAINED).where(HELD_OUT_EXPLAINED.SOURCE.eq(key.source), HELD_OUT_EXPLAINED.ITEM_ID.eq(key.id)).execute()
     }
 
     companion object {

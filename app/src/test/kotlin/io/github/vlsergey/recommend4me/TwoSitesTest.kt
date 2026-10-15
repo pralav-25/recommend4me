@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me
 
+import io.github.vlsergey.recommend4me.workload.inBackground
 import com.sun.net.httpserver.HttpServer
 import io.github.vlsergey.recommend4me.api.model.CaptureRequest
 import io.github.vlsergey.recommend4me.api.model.FacetCorrection
@@ -268,7 +269,7 @@ class TwoSitesTest {
 
         tags.relateTags(TagRelationRequest(waves, breakers, TagRelation.MERGED))
         // The names and the counts worked out in the queue after the quiet — here at once
-        tagService.scope()?.let { tagService.rename(it, it.facet) }
+        inBackground { tagService.scope()?.let { tagService.rename(it, it.facet) } }
         val merged = tags.getTag(waves).body!!
         assertEquals(setOf(SiteTagRef("alpha", "waves"), SiteTagRef("beta", "breakers")), merged.variants.map { SiteTagRef(it.source, it.tag) }.toSet())
         assertEquals(404, tags.getTag(breakers).statusCode.value())
@@ -505,8 +506,10 @@ class TwoSitesTest {
             alpha("m$k|Work $k|${if (k % 2 == 0) "sea" else "land"}|${if (k % 2 == 0) "Ships and storms at sea" else "Fields and farms on land"} $k||")
             items.rateItem("alpha", "m$k", RatingRequest(if (k % 2 == 0) 5 else 1))
         }
-        val trained = model.trainModel("books").body!!
-        assertTrue(trained.trained)
+        // Planned at once, not waited for: the request answers with the model as it is
+        assertEquals(200, model.trainModel("books").statusCode.value())
+        assertTrue(waitFor { model.getModel("books").body!!.trained })
+        val trained = model.getModel("books").body!!
         assertTrue(trained.scorers.any { it.id == "pairwise-logistic" })
         assertEquals("pairwise-logistic", model.chooseScorer("books", ScorerChoice("pairwise-logistic")).body!!.scorer)
         assertEquals(Refusal.NO_SCORER, assertThrows<Refused> { model.chooseScorer("books", ScorerChoice("nope")) }.refusal)

@@ -30,7 +30,7 @@ import { itemKey } from "./lists";
 import { Cover, GRADE_TEXT, InterestButtons, KEY_GRADES, LinkedBadges, PreviousRating, RatingButtons, ScoreBadge, SignalBadges } from "./pieces";
 import { RelatedWorks } from "./RelatedWorks";
 import { RemoveItem } from "./RemoveItem";
-import { useHeldOut } from "./useHeldOut";
+import { FITTING, useHeldOut } from "./useHeldOut";
 import { useTakeBackGrade } from "./useRateItem";
 import { useRefreshItem } from "./useRefreshItem";
 import { Byline, ContentFacts, FactLine } from "./WorkFacts";
@@ -295,7 +295,7 @@ function Details({
   const ref = { source: d.summary.source, item: d.summary.item };
   const nothing = d.texts.length === 0 && d.pictures.length === 0 && d.reviews.length === 0 && d.parts.length === 0;
   const except = type.universes ? FANFIC_FACETS : undefined;
-  // A graded work is told by a model that had not seen it: fitted for the asking, read apart
+  // A graded work is told by a model that had not seen it: fitted in the queue of the computations, read apart
   const graded = d.summary.grade != null;
   const heldOut = useHeldOut(ref, graded);
   // What the source calls its reviews and the parts of a text, else the words of every source
@@ -342,11 +342,11 @@ function Details({
         <Part title={t("ItemDialog.seriesAndAuthor")}>
           <RelatedWorks type={type} related={d.related} />
         </Part>
-        {graded && heldOut.data === undefined && !heldOut.isError ? (
+        {graded && (heldOut.data === undefined || heldOut.data === FITTING) && !heldOut.isError ? (
           <Part title={t("ItemDialog.withoutGrade")}>
             <Skeleton className="h-16 w-full" />
           </Part>
-        ) : heldOut.data ? (
+        ) : heldOut.data && heldOut.data !== FITTING ? (
           // A graded work: the model of every grade has seen it and partly learnt it by heart — this one has not
           <Part title={t("ItemDialog.withoutGrade")}>
             <div className={cn("flex flex-col gap-1", heldOut.isFetching && "opacity-60")}>

@@ -29,6 +29,7 @@ import { useLadder } from "@/model/useModel";
 import { cn } from "@/lib/utils";
 import { TagNameLink } from "@/tag/TagNameLink";
 import { useMarkInterest } from "./useMarkInterest";
+import { FITTING, FITTING_POLL_MS } from "./useHeldOut";
 
 /** Keys 1..5 give that grade. */
 export const KEY_GRADES: Record<string, Grade> = { "1": 1, "2": 2, "3": 3, "4": 4, "5": 5 };
@@ -271,10 +272,15 @@ function ScoreWhy({ summary }: { summary: ItemSummary }) {
   const { t } = useTranslation("item");
   const why = useQuery({
     queryKey: ["explanation", summary.source, summary.item],
-    queryFn: async () =>
-      unwrap(await api.GET("/api/items/{source}/{item}/explanation", { params: { path: { source: summary.source, item: summary.item } } })),
+    queryFn: async () => {
+      const result = await api.GET("/api/items/{source}/{item}/explanation", { params: { path: { source: summary.source, item: summary.item } } });
+      // A graded work's model that had not seen it, being fitted in the queue
+      if (result.response.status === 202) return FITTING;
+      return unwrap(result);
+    },
+    refetchInterval: (query) => (query.state.data === FITTING ? FITTING_POLL_MS : false),
   });
-  if (why.isLoading) return <div className="opacity-70">{t("ScoreWhy.loading")}</div>;
+  if (why.isLoading || why.data === FITTING) return <div className="opacity-70">{t("ScoreWhy.loading")}</div>;
   const parts = (why.data ?? []).slice(0, WHY_PARTS);
   if (parts.length === 0) return null;
   return (

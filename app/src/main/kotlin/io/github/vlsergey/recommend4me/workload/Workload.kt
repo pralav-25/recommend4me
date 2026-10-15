@@ -39,7 +39,8 @@ class FinishedWork(val work: Work, val began: Instant, val ended: Instant, val r
  * the index of the search. The heavy ones read 27 718 games with their vectors, a gigabyte and
  * more; eight at once — a training in the background, the held-out models of the pages opened
  * meanwhile — ran the heap out (2026-10-15); and the user wants no computation beside another
- * (2026-10-15). Whoever asks — a background thread, a request — waits its turn here. Only what is
+ * (2026-10-15). Whoever asks waits its turn here — a background thread, never a request of the
+ * browser ([Requests]): a request plans the work and answers with what there is. Only what is
  * not a computation goes outside it: reading pages and pictures from the sites, compacting files.
  *
  * Reentrant: a work asking for another inside it goes on. Taken before any lock of its own — a
@@ -84,6 +85,7 @@ class Workload {
      * more than its [Work] tells — a batch of its own ids — passes [joinAlike] false.
      */
     fun <T> run(work: Work, reasons: Map<String, Int> = take(work), joinAlike: Boolean = true, body: () -> T): T {
+        Requests.refuseWaiting(work)
         if (lock.isHeldByCurrentThread) return body()
         val (entry, own) = synchronized(waiting) {
             val alike = if (joinAlike) waiting.firstOrNull { it.joinable && it.work == work } else null
@@ -181,6 +183,9 @@ class Workload {
 
     /** The works waiting their turn, the longest waiting first. */
     fun waiting(): List<HeavyWork> = synchronized(waiting) { waiting.map { HeavyWork(it.work, it.since, it.reasons) } }.sortedBy { it.since }
+
+    /** Whether the [work] is to be done: planned, waiting its turn or running now — what it makes is not made yet. */
+    fun due(work: Work): Boolean = planned.containsKey(work) || synchronized(waiting) { waiting.any { it.work == work } } || current?.work == work
 
     /** The works planned, the soonest due first. */
     fun planned(): List<PlannedWork> = planned.values.sortedBy { it.due }

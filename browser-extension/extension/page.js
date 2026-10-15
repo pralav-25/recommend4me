@@ -26,6 +26,15 @@
     }
     throw new Error(await problemText(answer));
   };
+  /** A call as [api], whose status tells more than its data: {status, data}. */
+  const apiAnswer = async (method, path, body) => {
+    const answer = await browser.runtime.sendMessage({ type: "api", method, path, body });
+    if (answer && answer.ok) {
+      await need(keysIn(answer.data));
+      return { status: answer.status, data: answer.data };
+    }
+    throw new Error(await problemText(answer));
+  };
   const enc = encodeURIComponent;
 
   // --- The server's words ---
@@ -196,6 +205,8 @@
   let explanation = null;
   let explanationTimer = null;
   const SETTLE_MS = 2000;
+  /** How often a model being fitted is asked for: one answer awaited. */
+  const FITTING_POLL_MS = 1000;
 
   // --- Elements ---
 
@@ -345,8 +356,16 @@
     const path = `/api/items/${enc(item.summary.source)}/${enc(item.summary.item)}`;
     try {
       if (item.summary.grade) {
+        const answer = await apiAnswer("GET", `${path}/held-out`);
+        if (answer.status === 202) {
+          // Being fitted in the queue of the computations: the request never waits for it, so it is asked again
+          setTimeout(() => {
+            if (view && view.item && keyOf(view.item) === of) readExplanation(view.item);
+          }, FITTING_POLL_MS);
+          return;
+        }
         // No content: too few graded works for a model that had not seen it
-        const held = await api("GET", `${path}/held-out`);
+        const held = answer.data;
         explanation = { of, parts: held ? held.explanation : [], heldOut: held ? held.score : null };
       } else {
         explanation = { of, parts: await api("GET", `${path}/explanation`), heldOut: null };

@@ -1,5 +1,8 @@
 package io.github.vlsergey.recommend4me.workload
 
+import org.springframework.mock.web.MockHttpServletRequest
+import org.springframework.web.context.request.RequestContextHolder
+import org.springframework.web.context.request.ServletRequestAttributes
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
@@ -29,6 +32,25 @@ class WorkloadTest {
         assertTrue(workload.planned().isEmpty())
         assertNull(workload.running())
         assertEquals(mapOf("grade" to 2, "answer" to 1), workload.finished().single().reasons)
+    }
+
+    @Test
+    fun `a request of the browser never waits for a computation, nor runs one, where a thread of the background does`() {
+        val workload = Workload()
+        val ran = AtomicInteger()
+        RequestContextHolder.setRequestAttributes(ServletRequestAttributes(MockHttpServletRequest("GET", "/api/items/s/1/held-out")))
+        try {
+            assertFailsWith<IllegalStateException> { workload.run(Work("heldOut", source = "s", item = "1"), emptyMap()) { ran.incrementAndGet() } }
+            assertEquals(0, ran.get())
+            assertTrue(workload.waiting().isEmpty())
+            // The request's attributes are not passed to a thread it starts: the background runs it
+            inBackground { workload.run(Work("heldOut", source = "s", item = "1"), emptyMap()) { ran.incrementAndGet() } }
+            assertEquals(1, ran.get())
+        } finally {
+            RequestContextHolder.resetRequestAttributes()
+        }
+        workload.run(Work("heldOut", source = "s", item = "1"), emptyMap()) { ran.incrementAndGet() }
+        assertEquals(2, ran.get())
     }
 
     @Test

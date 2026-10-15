@@ -39,6 +39,15 @@ of how often — `components/RefreshSelect.tsx` with `lib/useRefresh.ts` (off, 1
 choice is kept in the browser's localStorage under the area's own key (`<area>.refresh`), and the
 query reads `refetchInterval: every || false`. A new area that reads itself again gets one too.
 
+## A request never waits for a computation
+
+A request of the browser never waits for the queue of the computations, nor runs a computation:
+`Workload.run` fails on the thread of a request (`workload/Requests.kt`), in the tests as on the
+user's machine. A request writes what it was told, plans the work that follows (`Workload.plan`) and
+answers with what there is — what the works made and kept, with a mark that more is coming (202,
+`pending`), the interface asking again till it is there. A test standing for the background runs it
+in `inBackground` (the thread of a Spring test is bound to a request).
+
 ## A button shows only its own work
 
 A button is busy (spinner, disabled) only while its own press is at work — `AsyncButton` in the web

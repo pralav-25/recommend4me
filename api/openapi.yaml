@@ -255,7 +255,8 @@ paths:
       summary: What moves the work's prediction, part by part, strongest first - the parts alone, without their features
       description: |
         Of a graded work, the explanation of the model that had not seen it (HeldOut): that model is
-        fitted for the asking and takes a second or more, so a page reads it apart from the work.
+        fitted in the queue of the computations, a second or more; till it is, the answer is 202 and
+        the fitting planned.
       parameters:
         - $ref: '#/components/parameters/Source'
         - $ref: '#/components/parameters/Item'
@@ -268,6 +269,8 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ContributionGroup'
+        '202':
+          description: A graded work whose model that had not seen it is being fitted; asked again, it is there once fitted
         '404':
           description: No such item
 
@@ -277,8 +280,10 @@ paths:
       operationId: getHeldOut
       summary: How a model that had not seen the graded work would grade it, and why
       description: |
-        The model of the fold the work was left out of is fitted for the asking on the catalogue as
-        it is now: it takes a second or more, so it is read apart from the work's details.
+        The model of the fold the work was left out of is fitted on the catalogue as it is, in the
+        queue of the computations - a second or more - and what it says is kept till the next training
+        or the next word on the work. A request never waits for it: not yet fitted, the answer is 202
+        and the fitting planned.
       parameters:
         - $ref: '#/components/parameters/Source'
         - $ref: '#/components/parameters/Item'
@@ -289,6 +294,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HeldOut'
+        '202':
+          description: Being fitted; asked again, it is there once fitted
         '204':
           description: The work is not graded, there is no model, or too few works for folds
         '404':
@@ -1297,15 +1304,16 @@ paths:
       summary: >
         The offers of the tags' graph by the catalogues - a tag under another, two tags of one entry merged, a new tag
         above two or more - the ones that change most of the graded works first
+      description: |
+        As kept: they are worked out with the names of the tags in the queue of the computations, a
+        request never waits for them.
       responses:
         '200':
           description: The offers
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/HierarchyOffer'
+                $ref: '#/components/schemas/HierarchyOffers'
 
   /api/tags/too-general:
     put:
@@ -1432,11 +1440,15 @@ paths:
     post:
       tags: [model]
       operationId: trainModel
+      summary: Plans the training of the content type's models at once, after the works before it in the queue
+      description: |
+        A request never waits for a computation: the training is planned and runs in the background,
+        the queue of the computations tells it (listWorkload).
       parameters:
         - $ref: '#/components/parameters/Type'
       responses:
         '200':
-          description: The model after training
+          description: The model as it is, the training planned
           content:
             application/json:
               schema:
@@ -1446,7 +1458,7 @@ paths:
     put:
       tags: [model]
       operationId: chooseScorer
-      summary: Makes a scorer the one the content type is ranked by, and trains it
+      summary: Makes a scorer the one the content type is ranked by, and plans its training at once
       parameters:
         - $ref: '#/components/parameters/Type'
       requestBody:
@@ -1457,7 +1469,7 @@ paths:
               $ref: '#/components/schemas/ScorerChoice'
       responses:
         '200':
-          description: The model after training
+          description: The model as it is, the training planned
           content:
             application/json:
               schema:
@@ -1469,7 +1481,7 @@ paths:
     put:
       tags: [model]
       operationId: chooseInterestScorer
-      summary: Makes a scorer the one the model of interest of the content type learns with - apart from the grades' - and trains the models
+      summary: Makes a scorer the one the model of interest of the content type learns with - apart from the grades' - and plans the training of the models at once
       parameters:
         - $ref: '#/components/parameters/Type'
       requestBody:
@@ -1480,7 +1492,7 @@ paths:
               $ref: '#/components/schemas/ScorerChoice'
       responses:
         '204':
-          description: Chosen and trained
+          description: Chosen, the training planned
         '400':
           description: No such scorer
         '404':
@@ -1623,11 +1635,23 @@ paths:
     post:
       tags: [model]
       operationId: measurePartWorth
-      summary: Cross-validates the ranking without every part of the input in turn; nothing is kept
+      summary: Starts cross-validating the ranking without every part of the input in turn, in the background; nothing is kept
       description: |
         What every part of a work's input - the annotation, the cover, a facet with all its values,
         a number - is worth to the ranking: the out-of-fold quality of the type's scorer trained
-        without it against trained on everything. Takes a training per part.
+        without it against trained on everything. Takes a training per part: it runs in the queue of
+        the computations, and getPartWorth reads it. A measuring under way is not started again.
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      responses:
+        '202':
+          description: The measuring started, or under way already
+        '404':
+          description: No such type
+    get:
+      tags: [model]
+      operationId: getPartWorth
+      summary: The measuring of what every part of the input is worth, last started, while the application runs
       parameters:
         - $ref: '#/components/parameters/Type'
       responses:
@@ -1637,17 +1661,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ModelWorth'
+        '202':
+          description: The measuring is under way
         '404':
-          description: No such type, or too few grades to cross-validate
+          description: No such type, none started, too few grades to cross-validate, or it failed
 
   /api/types/{type}/model/weighing:
     post:
       tags: [model]
       operationId: measureWeighing
-      summary: Measures whether a weight of every large part of the input chosen by cross-validation would rank better; nothing is kept
+      summary: Starts measuring, in the background, whether a weight of every large part of the input chosen by cross-validation would rank better; nothing is kept
       description: |
         Nested cross-validation: every fold of the works is ranked by a model whose weights of the parts
-        were chosen without it, and by one of every weight 1 the same way. Takes hundreds of trainings
+        were chosen without it, and by one of every weight 1 the same way. Takes hundreds of trainings:
+        they run in the queue of the computations, and getWeighing reads them. A measuring under way
+        is not started again.
       parameters:
         - $ref: '#/components/parameters/Type'
         - name: cautious
@@ -1658,14 +1686,27 @@ paths:
             type: boolean
             default: true
       responses:
+        '202':
+          description: The measuring started, or under way already
+        '404':
+          description: No such type
+    get:
+      tags: [model]
+      operationId: getWeighing
+      summary: The measuring of the weighing last started, while the application runs
+      parameters:
+        - $ref: '#/components/parameters/Type'
+      responses:
         '200':
           description: The quality of both fold by fold, the gain, and the weights chosen on every grade
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Weighing'
+        '202':
+          description: The measuring is under way
         '404':
-          description: No such type, or too few grades to cross-validate
+          description: No such type, none started, too few grades to cross-validate, or it failed
 
   /api/types/{type}/model/comparison:
     get:
@@ -4173,6 +4214,21 @@ components:
         tags; BIND_PARENT - the tag of the entry's name (existing) bound to it and put above the tags; UNLINK - the first
         tag right under the second no more, under it through the third already - of the user's graph, no catalogue's
       enum: [LINK, MERGE, NEW_PARENT, BIND_PARENT, UNLINK]
+
+    HierarchyOffers:
+      type: object
+      description: >
+        The offers of the tags' graph as last worked out, in the queue of the computations with the names of the tags;
+        the user's word that an entry is too general shown in them at once
+      required: [offers, pending]
+      properties:
+        offers:
+          type: array
+          items:
+            $ref: '#/components/schemas/HierarchyOffer'
+        pending:
+          type: boolean
+          description: The offers are to be worked out anew - planned, waiting or worked out now; a word said since is not in them yet
 
     HierarchyOffer:
       type: object

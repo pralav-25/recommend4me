@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, CombineIcon, ExternalLinkIcon, Link2Icon, Loader2Icon, RefreshCwIcon, SearchIcon, TagsIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { api, ensureOk, unwrap, type FoundTagEntry, type HierarchyOffer, type SimilarTag, type SimilarTagPage, type TagInfo, type TagNameRule, type TagRef, type TagRelation, type TagVariantInfo,  } from "@/api/client";
+import { api, ensureOk, unwrap, type FoundTagEntry, type HierarchyOffer, type HierarchyOffers, type SimilarTag, type SimilarTagPage, type TagInfo, type TagNameRule, type TagRef, type TagRelation, type TagVariantInfo,  } from "@/api/client";
 import { AsyncButton } from "@/components/AsyncButton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -271,6 +271,12 @@ const OFFERS_PAGE = 20;
 /** The quiet after the user's last mark on the offers before they are read anew: as an answer's on a work. */
 const QUIET_MS = 2000;
 
+/** How often the offers being worked out anew are asked for. */
+const PENDING_POLL_MS = 2000;
+
+/** An offer as one: its kind, its tags, its entry. */
+const offerKey = (o: HierarchyOffer) => `${o.kind}/${o.tags.map((r) => r.key).join("/")}/${o.entry ?? ""}`;
+
 /** A tag's name, a link to its page. */
 function TagLink({ tag }: { tag: TagRef }) {
   return (
@@ -296,10 +302,16 @@ function HierarchyOffers() {
   const offers = useQuery({
     queryKey: offersKey,
     placeholderData: keepPreviousData,
-    // A reading given up for a newer one is broken off: it does not hold a connection of the
-    // browser while the queue of the computations works it out
     queryFn: async ({ signal }) => unwrap(await api.GET("/api/tags/hierarchy-offers", { signal })),
+    // Worked out anew in the queue of the computations: asked again till they are — one answer awaited, not an area reading itself again
+    refetchInterval: (query) => (query.state.data?.pending ? PENDING_POLL_MS : false),
   });
+  // The offers said here while they are worked out anew: not shown again till they are
+  const [acted, setActed] = useState<ReadonlySet<string>>(new Set());
+  const pending = offers.data?.pending ?? false;
+  useEffect(() => {
+    if (offers.data && !pending) setActed(new Set());
+  }, [offers.data, pending]);
   // The offers read anew once the user's marks have gone quiet for a while: one reading for a row of them
   const quiet = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(quiet.current), []);
@@ -318,6 +330,7 @@ function HierarchyOffers() {
           body: { catalogue: o.catalogue!, entry: o.entry!, children: o.tags.map((r) => r.key), tag: o.existing?.key },
         }),
       );
+    setActed((s) => new Set(s).add(offerKey(o)));
     await changed();
   };
   /**
@@ -327,13 +340,14 @@ function HierarchyOffers() {
    */
   const tooGeneral = async (o: HierarchyOffer, said: boolean) => {
     ensureOk(await api.PUT("/api/tags/too-general", { body: { catalogue: o.catalogue!, entry: o.entry!, tooGeneral: said } }));
-    queryClient.setQueryData<HierarchyOffer[]>(offersKey, (list) =>
-      list?.map((x) => (x.catalogue === o.catalogue && x.entry === o.entry ? { ...x, rejected: said } : x)),
+    queryClient.setQueryData<HierarchyOffers>(offersKey, (kept) =>
+      kept && { ...kept, offers: kept.offers.map((x) => (x.catalogue === o.catalogue && x.entry === o.entry ? { ...x, rejected: said } : x)) },
     );
     readLater();
   };
-  const rejected = (offers.data ?? []).filter((o) => o.rejected).length;
-  const list = (offers.data ?? []).filter((o) => showRejected || !o.rejected);
+  const shown = (offers.data?.offers ?? []).filter((o) => !acted.has(offerKey(o)));
+  const rejected = shown.filter((o) => o.rejected).length;
+  const list = shown.filter((o) => showRejected || !o.rejected);
   return (
     <section className="flex flex-col gap-2 text-sm">
       <div className="flex items-center gap-2">
@@ -344,6 +358,7 @@ function HierarchyOffers() {
         </AsyncButton>
       </div>
       <p className="text-xs text-muted-foreground">{t("Hierarchy.hint")}</p>
+      {pending && <p className="text-xs text-muted-foreground">{t("Hierarchy.pending")}</p>}
       {rejected > 0 && (
         <label className="flex items-center gap-1 text-xs" title={t("Hierarchy.showRejectedTitle")}>
           <input type="checkbox" checked={showRejected} onChange={() => setShowRejected(!showRejected)} className="size-3.5" />
@@ -356,7 +371,7 @@ function HierarchyOffers() {
         <ul className="flex flex-col divide-y rounded-lg border">
           {list.slice(0, limit).map((o) => (
             <li
-              key={`${o.kind}/${o.tags.map((r) => r.key).join("/")}/${o.entry ?? ""}`}
+              key={offerKey(o)}
               className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-1.5", o.rejected && "text-muted-foreground")}
             >
               <div className="flex min-w-0 flex-1 flex-col">

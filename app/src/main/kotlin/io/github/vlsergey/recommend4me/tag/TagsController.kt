@@ -6,6 +6,7 @@ import io.github.vlsergey.recommend4me.api.model.FoundTagEntry
 import io.github.vlsergey.recommend4me.api.model.HierarchyOfferKind
 import io.github.vlsergey.recommend4me.api.model.TagAboveRequest
 import io.github.vlsergey.recommend4me.api.model.HierarchyOffer as ApiHierarchyOffer
+import io.github.vlsergey.recommend4me.api.model.HierarchyOffers as ApiHierarchyOffers
 import io.github.vlsergey.recommend4me.api.model.TagDescription
 import io.github.vlsergey.recommend4me.api.model.TagEntryInfo
 import io.github.vlsergey.recommend4me.api.model.TagEntryRequest
@@ -118,13 +119,15 @@ class TagsController(
         }
     }
 
-    override fun listHierarchyOffers(): ResponseEntity<List<ApiHierarchyOffer>> {
-        val (t, facet) = scope()
-        val offers = tags.hierarchyOffers(t, facet)
+    override fun listHierarchyOffers(): ResponseEntity<ApiHierarchyOffers> {
+        val (t, _) = scope()
+        val read = tags.hierarchyOffers(t)
+        val offers = read.offers
         val (names, kept) = tags.namesOf(t, offers)
         fun label(ref: TagEntryRef) = kept[ref]?.labels?.first() ?: ref.entry
-        return ResponseEntity.ok(
-            offers.map { o ->
+        return ResponseEntity.ok(ApiHierarchyOffers(
+            pending = read.pending,
+            offers = offers.map { o ->
                 ApiHierarchyOffer(
                     kind = HierarchyOfferKind.valueOf(o.kind.name),
                     catalogue = o.catalogue,
@@ -138,7 +141,7 @@ class TagsController(
                     url = o.entry?.let { kept[it]?.url },
                 )
             },
-        )
+        ))
     }
 
     override fun judgeTagEntryTooGeneral(tooGeneralRequest: TooGeneralRequest): ResponseEntity<Unit> {
