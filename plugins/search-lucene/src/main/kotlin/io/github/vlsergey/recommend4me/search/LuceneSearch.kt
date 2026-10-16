@@ -82,7 +82,8 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
 
     override fun search(contentType: String, line: String, language: String, context: SearchContext): SearchResult {
         val q = line.trim().lowercase()
-        val read = Stemmers.of(language)
+        // The interface's language, unless the line is written in letters of another ([LineLanguages])
+        val read = LineLanguages.of(q, language)
         if (q.isEmpty()) return SearchResult(q, emptyList(), State(emptyList(), read, null, emptyMap()))
         val started = System.currentTimeMillis()
         val index = index(contentType)

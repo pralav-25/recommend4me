@@ -43,4 +43,15 @@ class StemmersTest {
         assertEquals("en", TextLanguages.of("Дракон и кузнец", "en"))
         assertEquals("ru", TextLanguages.of("The dragon", "ru"))
     }
+
+    @Test
+    fun `a line is read as the interface's language, unless written in letters of another script`() {
+        assertEquals("ru", LineLanguages.of("драконы", "ru"))
+        assertEquals("en", LineLanguages.of("mermaids", "ru"))
+        assertEquals("ru", LineLanguages.of("драконы", "en"))
+        assertEquals("en", LineLanguages.of("mermaids", "en"))
+        assertEquals("sr", LineLanguages.of("zmajevi", "sr"))
+        assertEquals("sr", LineLanguages.of("змајеви", "sr"))
+        assertEquals("ru", LineLanguages.of("2024", "ru"))
+    }
 }
