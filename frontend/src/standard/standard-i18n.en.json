@@ -61,7 +61,6 @@
   "model.cover": "Cover",
   "model.likePictures": "Likeness to the marked pictures",
   "model.likeReviews": "Likeness to the marked reviews",
-  "model.likeWorks": "Likeness of the description to the graded works",
   "model.pictures": "Cover and pictures",
   "model.previous": "Grade of the previous version",
   "model.rest": "Every other part",

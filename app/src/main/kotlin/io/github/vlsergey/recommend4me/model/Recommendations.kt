@@ -6,8 +6,6 @@ import io.github.vlsergey.recommend4me.item.ItemKey
 import io.github.vlsergey.recommend4me.likeness.Likenesses
 import io.github.vlsergey.recommend4me.likeness.MarkLikeness
 import io.github.vlsergey.recommend4me.likeness.TypeLikeness
-import io.github.vlsergey.recommend4me.likeness.WorkLikeness
-import io.github.vlsergey.recommend4me.likeness.WorkLikenessChanged
 import io.github.vlsergey.recommend4me.mark.MarksChanged
 import io.github.vlsergey.recommend4me.matrix.Matrix
 import io.github.vlsergey.recommend4me.picture.PictureRepository
@@ -160,10 +158,6 @@ class Recommendations(
     @EventListener
     fun tagsChanged(event: TagsChanged) = scheduleRetrain(event.type, "tags")
 
-    /** The reranker read more works against the graded ones: features of the works. */
-    @EventListener
-    fun workLikenessChanged(event: WorkLikenessChanged) = scheduleRetrain(event.type, "likeness", byUser = false)
-
     /** The user said what a work has or has not: its features, the user's word over the model's. */
     @EventListener
     fun answered(event: FacetAnswered) {
@@ -304,7 +298,6 @@ class Recommendations(
         val spreads = catalogue.spreads + VectorSpread.of { action ->
             likeness.pictures.forEach { _, v -> action(MarkLikeness.PICTURES, v) }
             likeness.reviews.forEach { _, v -> action(MarkLikeness.REVIEWS, v) }
-            likeness.works.forEach { _, v -> action(WorkLikeness.WORKS, v) }
         }
         val numbers = FeatureLayout.numberSpreads(catalogue.items.map { ItemInput(it.key, emptyMap(), emptySet(), it.numeric) })
         val layout = FeatureLayout.of(perItem, spreads, numbers)
@@ -981,6 +974,6 @@ class Recommendations(
         private const val TOP_FEATURES = 25
         private const val SCORE_CHUNK = 1024
         private const val MAX_IMPORTANCE_ITEMS = 1500
-        private val MARK_KEYS = setOf(MarkLikeness.PICTURES, MarkLikeness.REVIEWS, WorkLikeness.WORKS)
+        private val MARK_KEYS = setOf(MarkLikeness.PICTURES, MarkLikeness.REVIEWS)
     }
 }

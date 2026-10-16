@@ -18,7 +18,7 @@ neural encoder, every way of turning vectors into scores and the search are plug
 | `plugins/encoder-bge-m3` | Text encoder: bge-m3, the one used when its files are there. |
 | `plugins/encoder-e5` | Text encoder: multilingual-e5-small, without bge-m3's files. |
 | `plugins/encoder-siglip2` | Picture encoder: SigLIP2 NaFlex. |
-| `plugins/reranker-bge` | Reranker: bge-reranker-v2-m3 reads two texts together; the likeness of every work's description to the graded works' (`likeness/WorkLikeness`). |
+| `plugins/reranker-bge` | Reranker: bge-reranker-v2-m3 reads two texts together: the line searched and every work found. |
 | `plugins/scorer-pairwise` | Pairwise logistic ranking (RankNet with a line), C chosen by cross-validation. |
 | `plugins/scorer-knn` | k nearest rated neighbours by cosine — a baseline. |
 | `plugins/scorer-fm` | Pairwise factorization machine: the line and every two features meeting through vectors of rank 8; C chosen by cross-validation. |
@@ -394,8 +394,8 @@ The keys of the standard namespace the server sends:
   chapter without a title, `{{n}}` its number;
 - `model.previous` (the grade of the previous version), `model.source`, `model.pictures`,
   `model.reviews`, `model.cover`, `model.screens`, `model.screensOneByOne`,
-  `model.reviewsOneByOne`, `model.textFragments`, `model.likePictures`, `model.likeReviews`,
-  `model.likeWorks` — the parts and blocks of the model's input;
+  `model.reviewsOneByOne`, `model.textFragments`, `model.likePictures`, `model.likeReviews` — the
+  parts and blocks of the model's input;
 - `error.<code>` — a request refused, its `params` named in the words: `noField` (field),
   `siteField` (field — the key of its label), `noValue`, `noSuchWork`, `joinTypes`, `joinSelf`,
   `badRange` (range), `noDownloads`, `siteSilent` (error), `refreshFailed`, `badGrade` (min, max),

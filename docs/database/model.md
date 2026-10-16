@@ -15,8 +15,6 @@
 | `facet_suggester` | the fitted state of the suggester of a facet — the model the chances of a work's values are made by when the work is read, none of them kept — the values it chooses from, its scoring of them apart from their names (every value's coordinates and bias, read by a page in place of the dictionary), and how it was fitted: the report of what it tried and chose, how long it took, how many works and values it learnt from |
 | `facet_mention` | how many times a work's texts name each value of a facet, counted at the fitting: one line a work, read by a page for its works alone |
 | `layer_draft` | a value a source drafts of a work from its own values through the dictionary of universes |
-| `work_likeness` | how the description of a work answers that of a graded work, by the reranker |
-| `work_likeness_text` | the hash of a work's text all its pairs were last read at |
 | `search_score` | the reranker's score of a work for a line searched |
 
 The diagram is made of the migrations by `SchemaDocsTest`: change it with them.
@@ -109,21 +107,5 @@ erDiagram
         TIMESTAMPTZ fitted_at
         BLOB content
         INTEGER members "null"
-    }
-    work_likeness {
-        VARCHAR reader PK
-        VARCHAR graded_source PK
-        VARCHAR graded_id PK
-        VARCHAR source PK
-        VARCHAR item_id PK
-        BIGINT texts_hash
-        REAL score
-    }
-    work_likeness_text {
-        VARCHAR reader PK
-        VARCHAR source PK
-        VARCHAR item_id PK
-        BIGINT text_hash
-        BOOLEAN graded
     }
 ```

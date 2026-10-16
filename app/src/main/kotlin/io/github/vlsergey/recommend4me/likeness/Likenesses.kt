@@ -15,18 +15,14 @@ import java.time.Instant
 
 private val log = LoggerFactory.getLogger(Likenesses::class.java)
 
-/**
- * The likeness of every item of a content type to the marked pictures and to the marked reviews,
- * and of its description to those of the graded works ([works]).
- */
-class TypeLikeness(val pictures: MarkLikeness, val reviews: MarkLikeness, val works: WorkLikeness = WorkLikeness.none()) {
-    val empty get() = pictures.marks.isEmpty() && reviews.marks.isEmpty() && works.empty
+/** The likeness of every item of a content type to the marked pictures and to the marked reviews. */
+class TypeLikeness(val pictures: MarkLikeness, val reviews: MarkLikeness) {
+    val empty get() = pictures.marks.isEmpty() && reviews.marks.isEmpty()
 
-    /** The axes of every kind of an item, its own marks and work and those of the works [excluded] not counted. */
+    /** The axes of every kind of an item, its own marks and those of the works [excluded] not counted. */
     fun vectors(key: ItemKey, excluded: Set<ItemKey> = emptySet()): Map<String, FloatArray> = buildMap {
         pictures.vector(key, excluded)?.let { put(MarkLikeness.PICTURES, it) }
         reviews.vector(key, excluded)?.let { put(MarkLikeness.REVIEWS, it) }
-        works.vector(key, excluded)?.let { put(WorkLikeness.WORKS, it) }
     }
 }
 
@@ -40,10 +36,9 @@ class TypeLikeness(val pictures: MarkLikeness, val reviews: MarkLikeness, val wo
 class Likenesses(private val plugins: Plugins, private val phrases: PhraseVectors) {
 
     /**
-     * The likeness for a training, made again if it must be; [pictureCenter] the catalogue's mean
-     * picture, [grades] the latest grade of every graded item, [workOf] the work of an item.
+     * The likeness for a training, made again if it must be; [pictureCenter] the catalogue's mean picture.
      */
-    fun forTraining(type: TypeStore, pictureCenter: FloatArray?, graded: Collection<ItemKey>, grades: Map<ItemKey, Int>, workOf: (ItemKey) -> Long): TypeLikeness {
+    fun forTraining(type: TypeStore, pictureCenter: FloatArray?, graded: Collection<ItemKey>): TypeLikeness {
         val imageEncoder = plugins.imageEncoder()
         val textEncoder = plugins.textEncoder()
         val pictures = if (imageEncoder == null || pictureCenter == null) MarkLikeness.none(0) else likenessOf(
@@ -54,9 +49,7 @@ class Likenesses(private val plugins: Plugins, private val phrases: PhraseVector
             type, MarkKind.REVIEW, type.sources.sumOf { it.reviews.countKeyed() }.toLong(),
             fingerprint(type, MarkKind.REVIEW, textEncoder.id), graded,
         ) { makeReviews(type, textEncoder.id) }
-        // The reranker's scores, read in the background as works and grades come: calibrated on every read
-        val works = plugins.reranker()?.let { reranker -> WorkLikeness.of(grades, workOf) { action -> type.workLikeness.forEach(reranker.id, action) } }
-        return TypeLikeness(pictures, reviews, works ?: WorkLikeness.none())
+        return TypeLikeness(pictures, reviews)
     }
 
     /** The stored likeness without the items' rows — what one item is measured with. */

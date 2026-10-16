@@ -43,7 +43,6 @@ class ItemRemoval(private val stores: Stores, private val recommendations: Recom
         type.links.forget(key)
         type.models.forget(key)
         type.likeness.forget(key)
-        type.workLikeness.forget(key)
         type.searchJudgments.forget(key)
         type.searchScores.forget(key)
         log.info("{}: {} removed from the library, with everything of it", key.source, key.id)

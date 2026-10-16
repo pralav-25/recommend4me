@@ -113,7 +113,7 @@ curl -L -o "$LOCALAPPDATA/recommend4me/models/bge-reranker-v2-m3-tokenizer.json"
 ```
 
 SigLIP2 is exported by [`plugins/encoder-siglip2/tools/export_siglip2_naflex.py`](plugins/encoder-siglip2/tools/export_siglip2_naflex.py).
-Without them the model reads no texts or pictures; without the reranker, no likeness of the descriptions to the graded works. With `-Drecommend4me.gpu=true` the encoders run
+Without them the model reads no texts or pictures; without the reranker, the works found are not read again with the line searched. With `-Drecommend4me.gpu=true` the encoders run
 on an NVIDIA card; [`tools/fetch-cuda.ps1`](tools/fetch-cuda.ps1) fetches the CUDA libraries.
 
 ### Access from other devices

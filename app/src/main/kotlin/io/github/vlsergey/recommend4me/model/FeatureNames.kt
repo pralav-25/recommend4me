@@ -4,7 +4,6 @@ import io.github.vlsergey.recommend4me.i18n.I18nKeys
 import io.github.vlsergey.recommend4me.picture.PictureRepository
 import io.github.vlsergey.recommend4me.setvector.SetKind
 import io.github.vlsergey.recommend4me.likeness.MarkLikeness
-import io.github.vlsergey.recommend4me.likeness.WorkLikeness
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.source.FacetDef
 import io.github.vlsergey.recommend4me.source.NumberDef
@@ -121,7 +120,6 @@ object FeatureNames {
         SetKind.PARTS.key to model("textFragments"),
         MarkLikeness.PICTURES to model("likePictures"),
         MarkLikeness.REVIEWS to model("likeReviews"),
-        WorkLikeness.WORKS to model("likeWorks"),
     )
 
     /** Every key of the standard namespace a feature or a part of the model's input is labelled by. */
