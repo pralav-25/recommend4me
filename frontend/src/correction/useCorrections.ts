@@ -1,5 +1,5 @@
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
-import { api, ensureOk, refKey, unwrap, type Candidate, type FacetSuggestions, type FacetValueInfo, type ItemDetails, type ItemRef } from "@/api/client";
+import { api, ensureOk, refKey, unwrap, type Candidate, type CatalogueEntryRef, type FacetSuggestions, type FacetValueInfo, type ItemDetails, type ItemRef } from "@/api/client";
 import { applyDetails, ITEMS, itemKey } from "@/item/lists";
 import { heldOutLater } from "@/item/useHeldOut";
 import { candidatesKey, suggestionsKey, suggestionsLater } from "@/suggestion/useSuggestions";
@@ -123,9 +123,10 @@ export function useCorrections(item: ItemRef, typeId: string) {
 
     /**
      * Adds a value of a facet ([added]) or takes away one the site gives. A value is named by its
-     * key, or by its name alone: the backend finds it among the facet's values or makes it up.
+     * key, or by its name alone: the backend finds it among the facet's values or makes it up; or,
+     * of a facet of tags, by an entry of a catalogue: the tag bound to it, made of it when none is.
      */
-    setFacet: async (facet: string, value: { key?: string; name?: string }, added: boolean) => {
+    setFacet: async (facet: string, value: { key?: string; name?: string; entry?: CatalogueEntryRef }, added: boolean) => {
       const answer = unwrap(await api.PUT("/api/items/{source}/{item}/corrections/facets", { params: { path }, body: { facet, ...value, added } }));
       shownAnswer(facet, answer.key, added, answer.name ? { name: answer.name } : undefined);
     },

@@ -20,6 +20,7 @@ import io.github.vlsergey.recommend4me.suggestion.FacetSuggestions
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
 import org.slf4j.LoggerFactory
 import org.springframework.context.ApplicationEventPublisher
+import io.github.vlsergey.recommend4me.tag.Tags
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
@@ -49,6 +50,7 @@ class CorrectionsController(
     private val events: ApplicationEventPublisher,
     private val linkedGrades: LinkedGrades,
     private val linkedInterest: LinkedInterest,
+    private val tags: Tags,
 ) : CorrectionsApi {
 
     private fun corrected(store: SourceStore, item: String): ResponseEntity<ItemDetails> {
@@ -83,7 +85,16 @@ class CorrectionsController(
         // The site's word is shown and read as it is: only the application's layer over it is corrected
         if (!def.editable) throw siteField(store, def)
         val name = c.name?.trim()?.takeIf { it.isNotEmpty() }
-        val key = c.key?.trim()?.takeIf { it.isNotEmpty() }
+        // An entry of a catalogue offered as a new tag: the tag bound to it, made of it when there is none
+        val ofEntry = c.entry?.takeIf { c.facet in store.tagFacets }?.let { e ->
+            val scope = tags.scope() ?: throw Refusal.NO_VALUE.refuse(HttpStatus.BAD_REQUEST, "No tags to make one of ${e.catalogue}:${e.entry}")
+            try {
+                tags.tagOfEntry(scope, c.facet, e.catalogue, e.entry)
+            } catch (x: NoSuchElementException) {
+                throw Refusal.NO_VALUE.refuse(HttpStatus.BAD_REQUEST, x.message ?: "No entry ${e.catalogue}:${e.entry}")
+            }
+        }
+        val key = ofEntry ?: c.key?.trim()?.takeIf { it.isNotEmpty() }
             ?: name?.let { FacetValues.keyOf(store, c.facet, it) }
             ?: throw Refusal.NO_VALUE.refuse(HttpStatus.BAD_REQUEST, "Neither a key nor a name of a value of '${c.facet}' given")
         // A tag the work has by a tag under it the user confirmed is not said to be not the work's: the answer on that one is
@@ -109,7 +120,7 @@ class CorrectionsController(
                 if (store.corrections.facetsOf(item).any { it.facet == other && it.key == key && it.added }) store.corrections.unsetFacet(item, other, key)
             }
         }
-        return ResponseEntity.ok(FacetAnswer(c.facet, key, name))
+        return ResponseEntity.ok(FacetAnswer(c.facet, key, name ?: ofEntry?.let { store.names(c.facet, listOf(it))[it] }))
     }
 
     override fun uncorrectFacet(source: String, item: String, facet: String, key: String): ResponseEntity<Unit> {

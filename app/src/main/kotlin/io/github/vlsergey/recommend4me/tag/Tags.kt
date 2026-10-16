@@ -770,9 +770,58 @@ class Tags(
      * then one beginning with it, then one holding it; the most used first among them. A tag the user
      * ignores is never found: it is not offered to add.
      */
-    fun find(scope: TagScope, facet: String, source: String, query: String, limit: Int): List<NamedTag> {
-        val wanted = query.trim().lowercase()
+    fun find(scope: TagScope, facet: String, source: String, query: String, limit: Int): List<NamedTag> = find(scope, naming(scope, facet), source, query, limit)
+
+    /** A tag found by its name ([tag]), or an entry of a catalogue no tag is bound to, offered as a new tag ([entry]). */
+    class FoundValue(val tag: NamedTag?, val entry: FoundEntry?)
+
+    /**
+     * The tags [find] finds — and, WHEN NO TAG GOES BY THE [query] ITSELF by any of its names, the
+     * entries of the catalogues found by it after them: of an entry a tag is bound to, that tag; of
+     * one none is, the entry, offered as a new tag (user, 2026-10-16) — made of it when the work is
+     * given it ([tagOfEntry]).
+     */
+    fun findOrNew(scope: TagScope, facet: String, source: String, query: String, limit: Int): List<FoundValue> {
         val n = naming(scope, facet)
+        val found = find(scope, n, source, query, limit)
+        val wanted = folded(query)
+        val named = n.stats.values.any { t -> t.key !in n.ignored && (n.allNames(t) + n.shown(t.key)).any { folded(it) == wanted } }
+        if (named || wanted.length < MIN_ENTRY_QUERY) return found.map { FoundValue(it, null) }
+        val have = found.map { it.stats.key }.toHashSet()
+        val entries = findEntries(scope, query.trim()).mapNotNull { e ->
+            when {
+                e.tags.isEmpty() -> FoundValue(null, e)
+                // An entry a tag is bound to: that tag, not a new one
+                e.tags.first().first in have -> null
+                else -> n.stats[e.tags.first().first]?.takeIf { it.key !in n.ignored }?.let { FoundValue(n.named(it), null) }?.also { have += e.tags.first().first }
+            }
+        }
+        return found.map { FoundValue(it, null) } + entries
+    }
+
+    private fun folded(name: String) = name.trim().lowercase().replace('ё', 'е')
+
+    /**
+     * The tag of the entry [entry] of [catalogue]: the one bound to it, or a new one made of it — named
+     * by its label, bound to it, what it is a kind of read — for a work the user gives it.
+     */
+    fun tagOfEntry(scope: TagScope, facet: String, catalogue: String, entry: String): String {
+        val ref = TagEntryRef(catalogue, entry)
+        scope.tags.entriesOfTags().entries.firstOrNull { (_, refs) -> ref in refs }?.let { return TagRepository.key(it.key) }
+        val made = createAbove(scope, facet, catalogue, entry, emptyList()) ?: throw NoSuchElementException("$catalogue has no $entry")
+        val source = plugins.tagCatalogues.firstOrNull { it.id == catalogue }
+        if (source != null) try {
+            readAbove(scope, source, listOf(entry))
+        } catch (e: Exception) {
+            log.warn("{}: what {}:{} is a kind of was not read: {}", scope.id, catalogue, entry, e.message)
+        }
+        // Named by the entry's label at once, as a binding is: shown so beside the work
+        entriesChanged(scope, facet, made.stats.key)
+        return made.stats.key
+    }
+
+    private fun find(scope: TagScope, n: Naming, source: String, query: String, limit: Int): List<NamedTag> {
+        val wanted = query.trim().lowercase()
         val stats = n.stats.filterKeys { it !in n.ignored }
         val found = LinkedHashMap<String, TagStats>()
         fun step(namesOf: (TagStats) -> List<String>) {
@@ -1084,6 +1133,9 @@ class Tags(
          * "humor" → "creative work" → … — the bound of the reading, not of what is shown of it.
          */
         const val ABOVE_LEVELS = 5
+
+        /** The fewest letters a name typed is looked for in the catalogues by: fewer find everything. */
+        private const val MIN_ENTRY_QUERY = 3
 
         /** A grade above the middle of the scale: of five, 4 and 5. */
         fun liked(grade: Int): Boolean = grade > (Grades.MIN + Grades.MAX) / 2.0

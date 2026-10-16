@@ -2677,6 +2677,26 @@ components:
           description: Of a value of the application's own, the key of its name, shown instead of name (FacetValueInfo.nameKey)
         items:
           type: integer
+        entry:
+          $ref: '#/components/schemas/CatalogueEntryRef'
+          description: >
+            Of a facet of tags, an entry of a catalogue no tag is bound to, offered when no tag goes by the name typed:
+            a new tag, made of the entry when it is answered with (FacetCorrection.entry); its key is no tag's
+
+    CatalogueEntryRef:
+      type: object
+      required: [catalogue, entry]
+      description: An entry of a catalogue of tags (Wikidata), and what is told of it
+      properties:
+        catalogue:
+          type: string
+        entry:
+          type: string
+        url:
+          type: string
+        description:
+          type: string
+          description: The catalogue's description of it, in the first of the user's languages that has one
 
     TextValue:
       type: object
@@ -3047,6 +3067,11 @@ components:
         name:
           type: string
           description: The name of a value the user makes up; required without a key
+        entry:
+          $ref: '#/components/schemas/CatalogueEntryRef'
+          description: >
+            Of a facet of tags, the entry of a catalogue the value is: the tag bound to it, made of it when there is none
+            (FacetValueUse.entry); in place of the key and the name
         added:
           type: boolean
           description: true - the value is added; false - the site's value is taken away

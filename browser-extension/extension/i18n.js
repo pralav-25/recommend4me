@@ -83,6 +83,7 @@ var R4M_WORDS = {
     "facet.confirmAll": "✓ all ({{count}})",
     "facet.confirmAllTitle": "Confirm every value you have not answered on",
     "facet.works": "works: {{count}}",
+    "facet.newTag": "new tag, of the catalogue",
     "facet.change": "change: {{what}}",
     "facet.chooseHint": "Choose one of the list: only what the dictionary knows can be added here",
 
@@ -195,6 +196,7 @@ var R4M_WORDS = {
     "facet.confirmAll": "✓ все ({{count}})",
     "facet.confirmAllTitle": "Подтвердить все значения без вашего ответа",
     "facet.works": "работ: {{count}}",
+    "facet.newTag": "новый тег, из каталога",
     "facet.change": "сменить: {{what}}",
     "facet.chooseHint": "Выберите из списка: сюда можно добавить только то, что есть в словаре",
 
@@ -307,6 +309,7 @@ var R4M_WORDS = {
     "facet.confirmAll": "✓ sve ({{count}})",
     "facet.confirmAllTitle": "Potvrdi sve vrednosti bez vašeg odgovora",
     "facet.works": "dela: {{count}}",
+    "facet.newTag": "novi tag, iz kataloga",
     "facet.change": "promeni: {{what}}",
     "facet.chooseHint": "Izaberite sa liste: ovde se može dodati samo ono što rečnik poznaje",
 

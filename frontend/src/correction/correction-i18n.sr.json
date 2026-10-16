@@ -5,6 +5,8 @@
   "AddFacetValue.heading": "Dodaj vrednost",
   "AddFacetValue.headingOf": "Pronađi po imenu i dodaj: {{facet}}",
   "AddFacetValue.newValue": "Nova vrednost: nijedno delo je još nema",
+  "AddFacetValue.newTag": "novi",
+  "AddFacetValue.newOfEntry": "Novi tag od stavke kataloga:",
   "AddFacetValue.placeholder": "Počnite da kucate…",
   "CorrectedMark.hint": "Ispravili ste ovu vrednost; sajt navodi drugu",
   "CorrectedMark.label": "ispravljeno",

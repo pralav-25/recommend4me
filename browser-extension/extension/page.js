@@ -994,10 +994,24 @@
     let drawn = 0;
     let active = -1;
 
-    /** Adds a value: a hint by its key, a name typed ([key] none) by its name. */
-    function add(name, key, nameKey) {
+    /**
+     * Adds a value: a hint by its key, a name typed ([key] none) by its name; a hint of an entry of a
+     * catalogue ([entry]) by it — the tag made of it, shown by the key the answer tells.
+     */
+    function add(name, key, nameKey, entry) {
       if (!name) return;
       form.r4mStale();
+      if (entry) {
+        let made = null;
+        act(
+          async () => {
+            made = await correct(item, facet, { entry }, true);
+          },
+          (shownItem) => answeredShown(facet, { key: made.key, name: made.name || name, nameKey, offered: true }, true)(shownItem),
+          about(facet, key),
+        );
+        return;
+      }
       act(() => correct(item, facet, key ? { key } : { name }, true), answeredShown(facet, { key: key || name, name, nameKey, offered: true }, true), about(facet, key || name));
     }
 
@@ -1029,7 +1043,7 @@
       r.addEventListener("click", () => {
         close();
         input.value = "";
-        add(h.name, h.key, h.nameKey);
+        add(h.name, h.key, h.nameKey, h.entry);
       });
       return r;
     }
@@ -1121,8 +1135,15 @@
         timer = setTimeout(async () => {
           try {
             const values = await api("GET", `/api/sources/${enc(s.source)}/facets/${enc(facet)}/values?query=${enc(input.value)}&limit=20`);
-            // By its key: a value of the application's own is shown by words the name typed would not match
-            hints = values.map((v) => ({ name: nameOf(v), key: v.key, nameKey: v.nameKey, note: t("facet.works", { count: v.items }) }));
+            // By its key: a value of the application's own is shown by words the name typed would not match.
+            // An entry of a catalogue no tag is bound to, of a facet of tags none of the name typed: a new tag, told so
+            hints = values.map((v) => ({
+              name: nameOf(v),
+              key: v.key,
+              nameKey: v.nameKey,
+              note: v.entry ? [t("facet.newTag"), v.entry.description].filter(Boolean).join(" · ") : t("facet.works", { count: v.items }),
+              entry: v.entry && { catalogue: v.entry.catalogue, entry: v.entry.entry },
+            }));
             narrow();
           } catch (e) {
             // No hints: the value is added by its name all the same
@@ -1159,7 +1180,7 @@
       }
       close();
       input.value = "";
-      if (h) add(h.name, h.key, h.nameKey);
+      if (h) add(h.name, h.key, h.nameKey, h.entry);
       else add(typed, null);
     });
     // Said under the field, not in a title: a finger sees no title

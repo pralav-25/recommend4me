@@ -5,6 +5,8 @@
   "AddFacetValue.heading": "Add a value",
   "AddFacetValue.headingOf": "Find by name and add: {{facet}}",
   "AddFacetValue.newValue": "New value: no work has it yet",
+  "AddFacetValue.newTag": "new",
+  "AddFacetValue.newOfEntry": "A new tag, made of the catalogue's entry:",
   "AddFacetValue.placeholder": "Start typing…",
   "CorrectedMark.hint": "You corrected this value; the site has a different one",
   "CorrectedMark.label": "corrected",

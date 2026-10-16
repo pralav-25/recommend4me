@@ -276,8 +276,10 @@ export function FacetValue({
 /**
  * Adding a value: the facet from the source's facets, the value typed — the facet's values the
  * site or the user gave are offered as it is typed and one picked is taken with its key; a new
- * one is sent by its name alone, and the backend makes its key. Of one facet alone, no choice of
- * it; with [onClose], closed by its ✕ or Escape.
+ * one is sent by its name alone, and the backend makes its key. Of a facet of tags no tag of the
+ * name typed, the entries of the catalogues are offered after the tags, each marked new: picked,
+ * the tag is made of the entry. Of one facet alone, no choice of it; with [onClose], closed by its
+ * ✕ or Escape.
  */
 function AddFacetValue({ source, corrections, onClose }: { source: SourceInfo; corrections: Corrections; onClose?: () => void }) {
   const { t } = useTranslation("correction");
@@ -314,7 +316,7 @@ function AddFacetValue({ source, corrections, onClose }: { source: SourceInfo; c
   const isNew = typed !== "" && query === typed && known.isSuccess && !known.isPlaceholderData && !known.isFetching && !existing;
 
   const add = async () => {
-    await corrections.setFacet(facet.key, existing ? { key: existing.key } : { name: typed }, true);
+    await corrections.setFacet(facet.key, existing?.entry ? { entry: existing.entry } : existing ? { key: existing.key } : { name: typed }, true);
     setName("");
   };
 
@@ -356,12 +358,23 @@ function AddFacetValue({ source, corrections, onClose }: { source: SourceInfo; c
         />
         <datalist id={listId}>
           {values.map((v) => (
-            <option key={v.key} value={valueName(v)} />
+            // An entry of a catalogue no tag is bound to: a new tag, told so beside its name
+            <option key={v.key} value={valueName(v)} label={v.entry ? [t("AddFacetValue.newTag"), v.entry.description].filter(Boolean).join(" · ") : undefined} />
           ))}
         </datalist>
         <AsyncButton size="icon" variant="outline" onClick={add} disabled={!typed} title={existing ? t("AddFacetValue.add") : t("AddFacetValue.addNew")} icon={<PlusIcon />} />
       </div>
       {isNew && <div className="text-xs text-muted-foreground">{t("AddFacetValue.newValue")}</div>}
+      {existing?.entry && (
+        <div className="text-xs text-muted-foreground">
+          {t("AddFacetValue.newOfEntry")}{" "}
+          {existing.entry.url && (
+            <a href={existing.entry.url} target="_blank" rel="noreferrer" className="underline-offset-2 hover:underline">
+              {existing.entry.description ?? existing.entry.entry}
+            </a>
+          )}
+        </div>
+      )}
     </div>
   );
 }

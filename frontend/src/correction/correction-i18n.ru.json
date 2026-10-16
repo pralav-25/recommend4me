@@ -5,6 +5,8 @@
   "AddFacetValue.heading": "Добавить значение",
   "AddFacetValue.headingOf": "Найти по имени и добавить: {{facet}}",
   "AddFacetValue.newValue": "Новое значение: такого ещё нет ни у одной работы",
+  "AddFacetValue.newTag": "новый",
+  "AddFacetValue.newOfEntry": "Новый тег из элемента каталога:",
   "AddFacetValue.placeholder": "Начните вводить…",
   "CorrectedMark.hint": "Значение исправлено вами; сайт даёт другое",
   "CorrectedMark.label": "исправлено",

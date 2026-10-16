@@ -41,6 +41,9 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.core.io.FileSystemResource
 import org.springframework.core.io.Resource
 import org.springframework.http.CacheControl
+import io.github.vlsergey.recommend4me.api.model.CatalogueEntryRef
+import io.github.vlsergey.recommend4me.tag.NamedTag
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -70,7 +73,11 @@ class ItemsController(
     private val linkedInterest: LinkedInterest,
     private val searchQuality: io.github.vlsergey.recommend4me.search.SearchQuality,
     private val tags: Tags,
+    /** The user's languages: of an entry of a catalogue, its label and description in the first that has them. */
+    @Value("\${recommend4me.languages:ru,en}") private val languages: List<String>,
 ) : ItemsApi {
+
+    private fun Map<String, String>.first(): String? = languages.firstNotNullOfOrNull { this[it] }
 
     override fun judgeSearch(type: String, searchJudgment: SearchJudgment): ResponseEntity<Unit> {
         val store = stores.type(type) ?: return ResponseEntity.notFound().build()
@@ -110,12 +117,23 @@ class ItemsController(
         if (store.schema.facet(facet) == null) return ResponseEntity.notFound().build()
         val piece = query?.trim()?.lowercase().orEmpty()
         val wanted = limit.coerceIn(1, 500)
-        // A facet of tags: the normalized tags, found by the names on this site, on any, then by meaning ([Tags.find])
+        // A facet of tags: the normalized tags, found by the names on this site, on any, then by meaning ([Tags.find]);
+        // when none goes by the name typed, the entries of the catalogues after them — a new tag each ([Tags.findOrNew])
         if (facet in store.tagFacets) {
             val scope = tags.scope() ?: return ResponseEntity.notFound().build()
+            fun use(t: NamedTag) = FacetValueUse(t.stats.key, t.name.name, t.stats.counts.works, null)
             // A tag the user ignores is not offered to add
-            val found = if (piece.isEmpty()) tags.list(scope, facet, null, ignored = false).take(wanted) else tags.find(scope, facet, store.id, piece, wanted)
-            return ResponseEntity.ok(found.map { FacetValueUse(it.stats.key, it.name.name, it.stats.counts.works, null) })
+            if (piece.isEmpty()) return ResponseEntity.ok(tags.list(scope, facet, null, ignored = false).take(wanted).map(::use))
+            return ResponseEntity.ok(
+                tags.findOrNew(scope, facet, store.id, piece, wanted).mapNotNull { f ->
+                    f.tag?.let(::use) ?: f.entry?.let { e ->
+                        FacetValueUse(
+                            NEW_TAG + e.catalogue + ":" + e.entry.id, e.entry.labels.first() ?: e.entry.id, 0, null,
+                            CatalogueEntryRef(e.catalogue, e.entry.id, e.entry.url, e.entry.descriptions.first()),
+                        )
+                    }
+                },
+            )
         }
         return ResponseEntity.ok(
             FacetValues.of(store, facet).asSequence()
@@ -299,5 +317,10 @@ class ItemsController(
         )
         events.publishEvent(MarksChanged(store.type))
         return ResponseEntity.noContent().build()
+    }
+
+    private companion object {
+        /** The key a new tag of an entry of a catalogue is offered by: no tag's ([FacetValueUse.entry]). */
+        const val NEW_TAG = "new:"
     }
 }

@@ -3,6 +3,7 @@ package io.github.vlsergey.recommend4me
 import io.github.vlsergey.recommend4me.workload.inBackground
 import io.github.vlsergey.recommend4me.api.model.CaptureRequest
 import io.github.vlsergey.recommend4me.api.model.CardsRequest
+import io.github.vlsergey.recommend4me.api.model.CatalogueEntryRef
 import io.github.vlsergey.recommend4me.api.model.FacetCorrection
 import io.github.vlsergey.recommend4me.api.model.FacetValueInfo
 import io.github.vlsergey.recommend4me.api.model.RatingRequest
@@ -390,6 +391,19 @@ class SiteTest {
         val mag = items.listFacetValues("site", "tags", "mag", 10).body!!.map { it.key }
         assertEquals(tag("magic"), mag.first())
         assertEquals(mag.distinct(), mag)
+        // No tag goes by the name typed: the entries of the catalogue after the tags, each a new tag;
+        // given, the tag is made of the entry, named by its label, bound to it
+        val vessel = items.listFacetValues("site", "tags", "vessel", 10).body!!.single { it.entry != null }
+        assertEquals("fake" to "E2", vessel.entry!!.catalogue to vessel.entry!!.entry)
+        val made = corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, entry = CatalogueEntryRef("fake", "E2"))).body!!
+        assertEquals("Судно", made.name)
+        assertEquals(listOf("E2"), tagsApi.getTag(made.key).body!!.catalogueEntries.map { it.entry })
+        // The entry is a tag's now: offered as that tag, not as a new one; given again, the same tag
+        assertTrue(items.listFacetValues("site", "tags", "vessel", 10).body!!.none { it.entry != null })
+        assertEquals(made.key, corrections.correctFacet("site", "x1", FacetCorrection(facet = "tags", added = true, entry = CatalogueEntryRef("fake", "E2"))).body!!.key)
+        // As it was: the entry is the other tests'
+        corrections.uncorrectFacet("site", "x1", "tags", made.key)
+        tagsApi.bindTagEntry(TagEntryRequest(made.key, "fake", "E2", false))
 
         // The prediction is told part by part, each part with its features; a page of the site gets the parts alone
         (3..8).forEach { k ->
