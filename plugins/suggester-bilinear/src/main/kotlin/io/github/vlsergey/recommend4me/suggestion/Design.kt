@@ -79,9 +79,12 @@ class Design(
     val valueWidth: Int = 2 + nameDim + groupings.sumOf { it.second.size }
 
     /** Whether the task can be read by this layout: its blocks of the same names and its names of the same length. */
-    fun reads(task: SuggestionTask): Boolean {
+    fun reads(task: SuggestionTask): Boolean = task.values.cols == nameDim && readsItems(task)
+
+    /** Whether the items of [task] are read by this layout: every block it knows of the length it knows — whatever its values are. */
+    fun readsItems(task: SuggestionTask): Boolean {
         val dims = blocks.associate { it.name to it.dim }
-        return task.values.cols == nameDim && task.inputs.all { b -> dims[b.name]?.let { it == b.vectors.cols } ?: true }
+        return task.inputs.all { b -> dims[b.name]?.let { it == b.vectors.cols } ?: true }
     }
 
     /** The features of the [rows] of the task, a row each. */
@@ -256,7 +259,7 @@ class Design(
         }
 
         // Strings longer than writeUTF takes (65535 bytes) are not keys; written as bytes all the same
-        private fun writeStrings(out: DataOutputStream, list: List<String>) {
+        fun writeStrings(out: DataOutputStream, list: List<String>) {
             out.writeInt(list.size)
             list.forEach { s ->
                 val bytes = s.toByteArray(Charsets.UTF_8)
@@ -265,7 +268,7 @@ class Design(
             }
         }
 
-        private fun readStrings(input: DataInputStream): List<String> = List(input.readInt()) {
+        fun readStrings(input: DataInputStream): List<String> = List(input.readInt()) {
             val bytes = ByteArray(input.readInt())
             input.readFully(bytes)
             String(bytes, Charsets.UTF_8)

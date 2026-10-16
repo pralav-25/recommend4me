@@ -167,6 +167,14 @@ interface FacetSuggester {
 
     /** A state kept by [FittedSuggester.pack]; null when it does not fit tasks of [task]'s shape — it is fitted again. */
     fun unpack(bytes: ByteArray, task: SuggestionTask): FittedSuggester?
+
+    /**
+     * The scoring kept by [FittedSuggester.scoring] readied for the items of [task]: their inputs,
+     * their context, their mentions and examples are read; its values are the values the scoring was
+     * made of, in its order, without their names, groups or texts — the scoring knows what each is.
+     * Null when the bytes are not of this suggester's making, or not of the task's values.
+     */
+    fun scoring(bytes: ByteArray, task: SuggestionTask): SuggestionScores? = null
 }
 
 interface FittedSuggester {
@@ -181,6 +189,16 @@ interface FittedSuggester {
      * of the same facet: what all the items share is worked out once here.
      */
     fun on(task: SuggestionTask): SuggestionScores
+
+    /**
+     * WHAT SCORING AN ITEM NEEDS, APART FROM THE TASK: what every value of [task] is to the scoring —
+     * its coordinates, its bias — worked out once of the task's names, groups and texts, with what
+     * carries an item's features to the same coordinates. Kept beside the state, it scores the items
+     * read later of their own features alone ([FacetSuggester.scoring]): a page of twenty works reads
+     * no dictionary and no names of every value. Null when the suggester has none: an item is scored
+     * on the whole task ([on]).
+     */
+    fun scoring(task: SuggestionTask): ByteArray? = null
 
     fun pack(): ByteArray
 }

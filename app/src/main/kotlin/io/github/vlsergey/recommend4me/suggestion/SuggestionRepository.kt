@@ -1,5 +1,6 @@
 package io.github.vlsergey.recommend4me.suggestion
 
+import io.github.vlsergey.recommend4me.database.model.tables.references.FACET_MENTION
 import io.github.vlsergey.recommend4me.database.model.tables.references.FACET_SUGGESTER
 import io.github.vlsergey.recommend4me.database.source.tables.references.FACET_VALUE_VECTOR
 import io.github.vlsergey.recommend4me.vector.Vectors
@@ -14,6 +15,9 @@ import tools.jackson.databind.json.JsonMapper
  * the values it chooses from ([values]: empty of a state fitted before they were kept).
  */
 class StoredSuggester(val suggester: String, val fittedAt: Instant, val basis: Long, val content: ByteArray, val values: List<String>)
+
+/** A facet's model as a work read is scored by ([FittedSuggester.scoring]): of the [suggester], of the values [values] in their order. */
+class KeptScoring(val suggester: String, val values: List<String>, val bytes: ByteArray)
 
 /** How a facet's suggester was fitted: what it tried and chose ([FitReport]), how long it took, how many items and values it learnt from. */
 class SuggesterFit(val report: FitReport?, val millis: Long, val items: Int, val values: Int)
@@ -46,25 +50,68 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
         db.selectFrom(FACET_SUGGESTER).where(FACET_SUGGESTER.SOURCE.eq(source), FACET_SUGGESTER.FACET.eq(facet)).fetchOne()
             ?.let { StoredSuggester(it.suggester!!, it.fittedAt!!, it.basis!!, it.content!!, it.valueKeys?.split(LINE)?.filter { k -> k.isNotEmpty() }.orEmpty()) }
 
-    fun saveSuggester(facet: String, suggester: String, fittedAt: Instant, basis: Long, content: ByteArray, values: List<String>, fit: SuggesterFit) {
+    fun saveSuggester(facet: String, suggester: String, fittedAt: Instant, basis: Long, content: ByteArray, values: List<String>, scoring: ByteArray?, fit: SuggesterFit) {
         val s = FACET_SUGGESTER
         val report = fit.report?.let(FitReports::toJson)
         val keys = values.joinToString(LINE)
         db.insertInto(s)
             .set(s.SOURCE, source).set(s.FACET, facet).set(s.SUGGESTER, suggester)
-            .set(s.FITTED_AT, fittedAt).set(s.BASIS, basis).set(s.CONTENT, content).set(s.VALUE_KEYS, keys)
+            .set(s.FITTED_AT, fittedAt).set(s.BASIS, basis).set(s.CONTENT, content).set(s.VALUE_KEYS, keys).set(s.SCORING, scoring)
             .set(s.REPORT, report).set(s.FIT_MILLIS, fit.millis).set(s.ITEMS, fit.items).set(s.VALUE_COUNT, fit.values)
             .onDuplicateKeyUpdate()
             .set(s.SUGGESTER, suggester).set(s.FITTED_AT, fittedAt)
-            .set(s.BASIS, basis).set(s.CONTENT, content).set(s.VALUE_KEYS, keys)
+            .set(s.BASIS, basis).set(s.CONTENT, content).set(s.VALUE_KEYS, keys).set(s.SCORING, scoring)
             .set(s.REPORT, report).set(s.FIT_MILLIS, fit.millis).set(s.ITEMS, fit.items).set(s.VALUE_COUNT, fit.values)
             .execute()
     }
 
-    /** The values the facet's model chooses from kept beside a state fitted before they were. */
-    fun keepValues(facet: String, values: List<String>) {
-        db.update(FACET_SUGGESTER).set(FACET_SUGGESTER.VALUE_KEYS, values.joinToString(LINE))
+    /** The values the facet's model chooses from, and its scoring of them, kept beside a state fitted before they were. */
+    fun keepValues(facet: String, values: List<String>, scoring: ByteArray?) {
+        db.update(FACET_SUGGESTER).set(FACET_SUGGESTER.VALUE_KEYS, values.joinToString(LINE)).set(FACET_SUGGESTER.SCORING, scoring)
             .where(FACET_SUGGESTER.SOURCE.eq(source), FACET_SUGGESTER.FACET.eq(facet)).execute()
+    }
+
+    /** Whether the facet's model has its scoring kept ([KeptScoring]). */
+    fun hasScoring(facet: String): Boolean =
+        db.fetchExists(db.selectOne().from(FACET_SUGGESTER).where(FACET_SUGGESTER.SOURCE.eq(source), FACET_SUGGESTER.FACET.eq(facet), FACET_SUGGESTER.SCORING.isNotNull))
+
+    /** The facet's model as a work read is scored by: the scoring kept and the values it is of — not the state fitted, not read for a page. */
+    fun scoring(facet: String): KeptScoring? {
+        val s = FACET_SUGGESTER
+        return db.select(s.SUGGESTER, s.VALUE_KEYS, s.SCORING).from(s).where(s.SOURCE.eq(source), s.FACET.eq(facet), s.SCORING.isNotNull)
+            .fetchOne { KeptScoring(it.value1()!!, it.value2()?.split(LINE)?.filter { k -> k.isNotEmpty() }.orEmpty(), it.value3()!!) }
+    }
+
+    /**
+     * How many times every work's texts name the facet's values, counted at the fitting: work to
+     * value to count — of every work counted, a work whose texts name none with none. Replaces the
+     * facet's counts of before in one transaction.
+     */
+    fun keepMentions(facet: String, counts: Map<String, Map<String, Int>>) = db.transaction { c ->
+        val tx = DSL.using(c)
+        val m = FACET_MENTION
+        tx.deleteFrom(m).where(m.SOURCE.eq(source), m.FACET.eq(facet)).execute()
+        counts.entries.chunked(BATCH).forEach { chunk ->
+            val batch = tx.batch(tx.insertInto(m, m.SOURCE, m.ITEM_ID, m.FACET, m.COUNTS).values(null as String?, null as String?, null as String?, null as String?))
+            chunk.forEach { (id, named) -> batch.bind(source, id, facet, named.entries.joinToString(LINE) { (key, n) -> "$key$TAB$n" }) }
+            batch.execute()
+        }
+    }
+
+    /** The counts of [keepMentions] of the works [ids] — of every work counted when null; a work never counted is not among them. */
+    fun mentions(facet: String, ids: Collection<String>?): Map<String, Map<String, Int>> {
+        val m = FACET_MENTION
+        fun read(only: Collection<String>?) = db.select(m.ITEM_ID, m.COUNTS).from(m)
+            .where(m.SOURCE.eq(source), m.FACET.eq(facet), only?.let { m.ITEM_ID.`in`(it) } ?: DSL.noCondition())
+            .fetchMap({ it.value1()!! }, { r ->
+                r.value2()!!.split(LINE).filter { it.isNotEmpty() }.associate { line -> line.substringBeforeLast(TAB) to line.substringAfterLast(TAB).toInt() }
+            })
+        return if (ids == null) read(null) else ids.distinct().chunked(BATCH).fold(HashMap()) { out, chunk -> out.apply { putAll(read(chunk)) } }
+    }
+
+    /** The counts of a work gone from the library. */
+    fun forget(itemId: String) {
+        db.deleteFrom(FACET_MENTION).where(FACET_MENTION.SOURCE.eq(source), FACET_MENTION.ITEM_ID.eq(itemId)).execute()
     }
 
     /** Every facet's suggester of the source, without its weights. */
@@ -79,11 +126,17 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
     /** Forgets the models of the facets the model no longer works on: those not in [facets]. */
     fun keepOnly(facets: Collection<String>) {
         db.deleteFrom(FACET_SUGGESTER).where(FACET_SUGGESTER.SOURCE.eq(source), FACET_SUGGESTER.FACET.notIn(facets)).execute()
+        db.deleteFrom(FACET_MENTION).where(FACET_MENTION.SOURCE.eq(source), FACET_MENTION.FACET.notIn(facets)).execute()
     }
 
     private companion object {
         /** The values of a facet kept one a line: a value's key has no line break. */
         const val LINE = "\n"
+
+        /** A value's key and its count, a line of [keepMentions]: a key has no tab. */
+        const val TAB = "\t"
+
+        const val BATCH = 1000
     }
 }
 

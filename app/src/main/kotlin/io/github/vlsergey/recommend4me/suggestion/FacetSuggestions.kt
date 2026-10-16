@@ -310,14 +310,41 @@ class FacetSuggestions(
         for (k in 0 until minOf(upTo, facets.size)) {
             val facet = facets[k]
             val suggester = plugins.suggester(store.id, facet.key) ?: continue
-            val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id } ?: continue
-            val vocabulary = vocabularyOf(store, facet, ids, made)
-            val data = load(store, facet, encoder, vocabulary, ids, made, stored.values)
-            if (data.values.isEmpty()) continue
-            val fitted = suggester.unpack(stored.content, data.task) ?: continue
-            keep(made, facet, data, fitted.on(data.task), vocabulary)
+            val scored = scored(store, facet, suggester, encoder, ids, made) ?: continue
+            keep(made, facet, scored.data, scored.scores, scored.vocabulary)
         }
         return made
+    }
+
+    /** The chances of a facet's works as the model scores them: the task they are of, its scores, the vocabulary read. */
+    private class Scored(val data: FacetData, val scores: SuggestionScores, val vocabulary: Vocabulary?)
+
+    /**
+     * THE FACET'S CHANCES OF THE WORKS [ids] (every work when null), by the model kept. By its scoring
+     * kept apart ([KeptScoring]) where there is one: the works' own features read, their texts' counts
+     * of the values' names as the fitting counted them ([SuggestionRepository.mentions]), the values
+     * those of the scoring — no dictionary, no name of any value (user, 2026-10-16): a page of twenty
+     * works read every character's name and the model whole, and a few of them at once ran the heap
+     * out. Else — of a suggester without one, of a model fitted before scorings were kept, till the
+     * next refresh keeps it — on the whole task. Null when the facet was never fitted.
+     */
+    private fun scored(store: SourceStore, facet: FacetDef, suggester: FacetSuggester, encoder: TextEncoder, ids: Collection<String>?, made: WorkChances): Scored? {
+        store.suggestions.scoring(facet.key)?.takeIf { it.suggester == suggester.id }?.let { kept ->
+            val vocabulary = vocabularyOf(store, facet, ids, made, light = true)
+            val counted = store.suggestions.mentions(facet.key, ids)
+            val data = FacetData.load(
+                store, facet, encoder, imageEncoder = plugins.imageEncoder()?.id, sets = stores.typeOf(store.id).embeddings.ids(), only = ids,
+                modelled = made, mentions = { id -> counted[id] }, allowed = vocabulary?.allowed, examples = vocabulary?.examples, kept = kept.values,
+            )
+            if (data.values.isEmpty()) return null
+            return suggester.scoring(kept.bytes, data.task)?.let { Scored(data, it, vocabulary) }
+        }
+        val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id } ?: return null
+        val vocabulary = vocabularyOf(store, facet, ids, made)
+        val data = load(store, facet, encoder, vocabulary, ids, made, stored.values)
+        if (data.values.isEmpty()) return null
+        val fitted = suggester.unpack(stored.content, data.task) ?: return null
+        return Scored(data, fitted.on(data.task), vocabulary)
     }
 
     /** The drafts of the layer of the works [ids] (every work when null) as their chances: 1, marked so, till the model gives its own. */
@@ -354,9 +381,13 @@ class FacetSuggestions(
         return given
     }
 
-    /** The vocabulary of the facet: of the universes, or of a facet learnt from the sites' facet; null of any other. */
-    private fun vocabularyOf(store: SourceStore, facet: FacetDef, ids: Collection<String>?, made: WorkChances): Vocabulary? =
-        universeVocabulary(store, facet, ids, made) ?: examplesVocabulary(store, facet, ids)
+    /**
+     * The vocabulary of the facet: of the universes, or of a facet learnt from the sites' facet; null
+     * of any other. [light]: what scoring the works by the scoring kept needs alone — the values each
+     * may have, the site's examples — no name of any value, no group: the scoring knows them.
+     */
+    private fun vocabularyOf(store: SourceStore, facet: FacetDef, ids: Collection<String>?, made: WorkChances, light: Boolean = false): Vocabulary? =
+        universeVocabulary(store, facet, ids, made, light) ?: examplesVocabulary(store, facet, ids)
 
     /**
      * What the model of the facet reads — of the works [ids] alone, when given, judged among the
@@ -408,8 +439,8 @@ class FacetSuggestions(
         checkpoint()
         val current = !anew && kept != null && stored.basis == data.basis
         val fitted = if (current) {
-            // Fitted before the values it chooses from were kept: kept now, not fitted again
-            if (stored.values != data.values) store.suggestions.keepValues(facet.key, data.values)
+            // Fitted before the values it chooses from, or its scoring, were kept: kept now, not fitted again
+            if (stored.values != data.values || !store.suggestions.hasScoring(facet.key)) store.suggestions.keepValues(facet.key, data.values, kept.scoring(data.task))
             kept
         } else {
             // From the state fitted last when there is one: the data moved a little since
@@ -417,11 +448,17 @@ class FacetSuggestions(
             val fresh = suggester.fit(data.task, if (anew) null else kept, stop) ?: return emptyList()
             checkpoint()
             val fit = SuggesterFit(fresh.report, System.currentTimeMillis() - fitStarted, data.ids.size, data.values.size)
-            store.suggestions.saveSuggester(facet.key, suggester.id, Instant.now(), data.basis, fresh.pack(), data.values, fit)
+            store.suggestions.saveSuggester(facet.key, suggester.id, Instant.now(), data.basis, fresh.pack(), data.values, fresh.scoring(data.task), fit)
             log.info("{}: the suggester of {} fitted on {} items, {} values in {} ms, {} of them reading", store.id, facet.key, data.ids.size, data.values.size, System.currentTimeMillis() - started, read)
             fresh
         }
         val fittedAt = System.currentTimeMillis() - started
+        // Every work's texts' counts of the values' names, as the fitting read them: what a work read later is scored by
+        if (data.task.mentions.any { it != null }) {
+            store.suggestions.keepMentions(facet.key, data.ids.indices.mapNotNull { i ->
+                data.task.mentions[i]?.let { named -> data.ids[i] to named.entries.associate { (v, n) -> data.values[v] to n } }
+            }.toMap())
+        }
         val after = keep(made, facet, data, fitted.on(data.task), vocabulary)
         val scored = System.currentTimeMillis() - started
         // What the model before the refit gave alone: scored again, nothing of it kept
@@ -560,7 +597,7 @@ class FacetSuggestions(
      * not of every work: of a work of a large universe the chances of thousands of characters each.
      * The values the model gave of the facets before it are [made] in the chain.
      */
-    private fun universeVocabulary(store: SourceStore, facet: FacetDef, ids: Collection<String>?, made: WorkChances): Vocabulary? {
+    private fun universeVocabulary(store: SourceStore, facet: FacetDef, ids: Collection<String>?, made: WorkChances, light: Boolean = false): Vocabulary? {
         val type = stores.typeOf(store.id)
         if (!type.type.universes) return null
         return when (facet.key) {
@@ -578,6 +615,7 @@ class FacetSuggestions(
                 val all = universes.associate { it.value to it.name }
                 // Realism, an alternative history and an original work: our world, ours changed, or a world of its own
                 fun original(id: String) = kinds[id].orEmpty().let { it.isNotEmpty() && it.all { k -> k in UniverseFacets.UNIVERSELESS } }
+                if (light) return Vocabulary(emptyMap(), allowed = { id -> if (original(id)) emptySet() else all.keys })
                 // A universe is named by its characters ("Гарри", "Хогвартс") and by its own name
                 val ofCharacter = HashMap<String, MutableSet<String>>()
                 val names = HashMap<String, List<String>>()
@@ -619,7 +657,7 @@ class FacetSuggestions(
                 read.forEach { u ->
                     val characters = type.universes.characters(u.catalogue, u.id)
                     ofUniverse[u.value] = characters.map { UniverseFacet.valueOf(u.catalogue, it.id) }.toSet()
-                    characters.forEach { c ->
+                    if (!light) characters.forEach { c ->
                         val value = UniverseFacet.valueOf(u.catalogue, c.id)
                         values[value] = c.names.joinToString(" / ")
                         names[value] = c.names
@@ -628,6 +666,7 @@ class FacetSuggestions(
                 }
                 val out = leftOut(store, facet.key, ids, made)
                 fun of(id: String) = universes[id].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet() - out(id)
+                if (light) return Vocabulary(emptyMap(), allowed = { id -> of(id) + UniverseFacet.ORIGINAL_CHARACTERS.keys })
                 // A name of a character names it and none of the other characters of its universes:
                 // judged among them all, one set for every character of the same universes
                 val universesOf = HashMap<String, MutableSet<String>>()
@@ -659,6 +698,7 @@ class FacetSuggestions(
                     val kept = (own + UniverseFacet.ORIGINAL_CHARACTERS.keys - rejected[id].orEmpty().toSet()).distinct().sorted()
                     kept.flatMapIndexed { k, a -> kept.drop(k + 1).map { b -> UniverseFacet.pairing(a, b) } }.toSet()
                 }
+                if (light) return Vocabulary(emptyMap(), allowed = { id -> pairs[id].orEmpty() })
                 val names = UniverseFacet.ORIGINAL_CHARACTERS +
                     store.names(UniverseFacets.CHARACTERS, pairs.values.flatten().flatMap { p -> UniverseFacet.members(p)?.toList().orEmpty() })
                 val values = pairs.values.flatten().toSet().associateWith { p ->
@@ -808,9 +848,10 @@ class FacetSuggestions(
         val corrections = store.corrections.facetsOf(itemId)
         val site = store.items.facets(itemId)
         // Every value made, not those shown alone — of a work's universes, characters and pairings, those it may have
-        val vocabulary = vocabularyOf(store, def, ids, made)
+        val ofModel = scoredOne(store, def, itemId, made)
+        val vocabulary = ofModel?.vocabulary ?: vocabularyOf(store, def, ids, made, light = true)
         val may = vocabulary?.allowed?.invoke(itemId)
-        val every = everyChance(store, facets, k, itemId, vocabulary, made)
+        val every = ofModel?.let { everyChance(def, itemId, it, made) }
         val chances = every?.filter { may == null || it.key in may || it.had } ?: made[itemId].orEmpty()[facet].orEmpty().values
         val answered = corrections.filter { it.facet == facet }.map { it.key }.toSet()
         // The work's values as its card shows them, of the same chances: a value is never both given and offered
@@ -822,11 +863,14 @@ class FacetSuggestions(
         val out = leftOut(store, facet, ids, made)(itemId) +
             corrections.filter { it.facet == facet && !it.added }.flatMap { hierarchy?.descendants(it.key).orEmpty() } +
             store.ignoredTags()[facet].orEmpty()
+        // All named by the user's word: the work has its own values and is offered no other, as on its card
+        val complete = facet in store.corrections.completeOf(itemId)
         // A value the model gives the work is the work's already
-        val scored = chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
+        val scored = if (complete) emptyList() else chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
             .map { FacetCandidate(it.key, it.chance, it.mentions) }
-        val unscored = if (facet !in UniverseFacet.CHARACTER_FACETS || chances.any { !it.had } || facet in store.corrections.completeOf(itemId)) emptyList() else {
-            val named = vocabulary?.mentions(store, ids)?.invoke(itemId)
+        val unscored = if (facet !in UniverseFacet.CHARACTER_FACETS || chances.any { !it.had } || complete) emptyList() else {
+            // As the fitting counted them; of a facet never fitted, counted now — of the work's universes' characters alone
+            val named = store.suggestions.mentions(facet, ids)[itemId] ?: vocabularyOf(store, def, ids, made)?.mentions(store, ids)?.invoke(itemId)
             may.orEmpty()
                 .filter { it !in answered && it !in current && it !in out && chances.none { c -> c.key == it } }
                 .map { FacetCandidate(it, null, named?.let { n -> n[it] ?: 0 }) }
@@ -838,21 +882,23 @@ class FacetSuggestions(
         return ItemFacetCandidates(def, candidates, store.names(facet, candidates.map { it.key }))
     }
 
-    /**
-     * The chance of EVERY value of the [k]-th of the [facets] for the item — of a facet whose values
-     * a work may have are limited ([Vocabulary.allowed]), of those it may have — made now by the model
-     * kept, those shown put among [made]; null when the facet was never fitted.
-     */
-    private fun everyChance(store: SourceStore, facets: List<FacetDef>, k: Int, itemId: String, vocabulary: Vocabulary?, made: MadeChances): List<Chance>? {
-        val facet = facets[k]
+    /** The [facet]'s chances of the item by the model kept ([scored]); null when the facet was never fitted. */
+    private fun scoredOne(store: SourceStore, facet: FacetDef, itemId: String, made: MadeChances): Scored? {
         val suggester = plugins.suggester(store.id, facet.key) ?: return null
         val encoder = plugins.textEncoder() ?: return null
-        val stored = store.suggestions.suggester(facet.key)?.takeIf { it.suggester == suggester.id } ?: return null
-        val data = load(store, facet, encoder, vocabulary, listOf(itemId), made, stored.values)
+        return scored(store, facet, suggester, encoder, listOf(itemId), made)
+    }
+
+    /**
+     * The chance of EVERY value of the [facet] for the item, of its chances [scored] — of a facet whose
+     * values a work may have are limited ([Vocabulary.allowed]), of those it may have — those shown
+     * put among [made]; null when the item is not among them.
+     */
+    private fun everyChance(facet: FacetDef, itemId: String, scored: Scored, made: MadeChances): List<Chance>? {
+        val data = scored.data
+        val scores = scored.scores
         val i = data.ids.indexOf(itemId).takeIf { it >= 0 } ?: return null
-        if (data.values.isEmpty()) return null
-        val scores = (suggester.unpack(stored.content, data.task) ?: return null).on(data.task)
-        keep(made, facet, data, scores, vocabulary)
+        keep(made, facet, data, scores, scored.vocabulary)
         val chances = scores.of(intArrayOf(i)).single()
         val has = data.held[i].toHashSet()
         val named = data.task.mentions[i]
@@ -948,6 +994,10 @@ internal class FacetData(
          *
          * [modelled]: the values the model gives of the facets before this one in the chain, made in
          * the same pass, and the drafts of the layer; of the others the site's and the user's alone.
+         *
+         * [kept]: THE TASK OF THE SCORING KEPT ([FittedSuggester.scoring]) — its values those of the
+         * scoring, in its order, without names, groups or texts of them: the scoring knows each; the
+         * works' own features alone read, of every work or of the works [only]. No [basis].
          */
         fun load(
             store: SourceStore, facet: FacetDef, encoder: TextEncoder, known: Map<String, String> = emptyMap(),
@@ -960,6 +1010,7 @@ internal class FacetData(
             lackWeight: Double = 1.0,
             hintNames: Map<String, List<String>> = emptyMap(),
             hintAmong: (String) -> Collection<String> = { emptyList() },
+            kept: List<String>? = null,
         ): FacetData {
             val schema = store.schema
             // The rows of the task: every work, or the works [only]; their values alone read
@@ -995,7 +1046,7 @@ internal class FacetData(
             // Of works of a facet whose values a work may have are limited ([allowed]: a work's
             // characters are of its universes), those they may have and their own alone: no other is
             // chosen from — of a work of two universes some thousand characters, not every one
-            val values = if (only == null || allowed == null) everyValue else {
+            val values = if (kept != null) kept else if (only == null || allowed == null) everyValue else {
                 val own = HashSet<String>()
                 every.forEach { id ->
                     own += allowed(id)
@@ -1037,8 +1088,9 @@ internal class FacetData(
             val ownLine = facet.original?.takeIf { siteGives }
             val inputs = inputs(store, ids, encoder, imageEncoder, sets, only, leaveOut = setOfNotNull(ownLine))
 
-            val names = Matrix(values.size, d)
-            nameVectors(store, facet.key, values, corrections.values.flatten(), known, encoder, asKept = only != null).forEach { (key, v) ->
+            // Of the scoring kept, no names: it knows every value's coordinates
+            val names = Matrix(values.size, if (kept != null) 0 else d)
+            if (kept == null) nameVectors(store, facet.key, values, corrections.values.flatten(), known, encoder, asKept = only != null).forEach { (key, v) ->
                 index[key]?.let { names.held.put(v, 0, names.row(it), d) }
             }
 
@@ -1048,7 +1100,7 @@ internal class FacetData(
             val allNamed = BooleanArray(ids.size) { facet.key in complete[ids[it]].orEmpty() }
             val assigned = ids.map { indices(corrected[it]?.get(facet.key).orEmpty()) }
             // What is learnt from, not what is judged: no names when the item [only] is judged by the weights fitted last
-            val (hintValues, hintTexts) = if (only != null) emptyList<String>() to Matrix(0, 0) else hints(store, facet.key, hintNames, encoder)
+            val (hintValues, hintTexts) = if (only != null || kept != null) emptyList<String>() to Matrix(0, 0) else hints(store, facet.key, hintNames, encoder)
             // The names of values of the task: every one, but of a dictionary's value the task lacks
             val named = hintValues.indices.filter { index[hintValues[it]] != null }
             val task = SuggestionTask(
@@ -1090,8 +1142,8 @@ internal class FacetData(
             val held = if (examples == null && drafted.isEmpty()) task.assigned else ids.map { id ->
                 indices(TagHierarchy.corrected(site[id].orEmpty(), corrections[id].orEmpty(), within)[facet.key].orEmpty())
             }
-            // The task of some works tells nothing of what the weights were fitted on
-            if (only != null) return FacetData(ids, values, task, held, allNamed, NO_BASIS)
+            // The task of some works, or of the scoring kept, tells nothing of what the weights were fitted on
+            if (only != null || kept != null) return FacetData(ids, values, task, held, allNamed, NO_BASIS)
             val hashes = HashMap<String, MutableList<String>>()
             store.textVectors.hashes(encoder.id).forEach { (k, hash) -> hashes.getOrPut(k.first) { ArrayList() } += hash }
             val windowCounts = store.parts.windowCounts(encoder.id)

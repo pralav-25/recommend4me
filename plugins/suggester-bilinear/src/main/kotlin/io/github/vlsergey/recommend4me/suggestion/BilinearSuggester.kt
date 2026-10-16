@@ -218,6 +218,9 @@ class BilinearSuggester internal constructor(
         }
     }.getOrNull()
 
+    override fun scoring(bytes: ByteArray, task: SuggestionTask): SuggestionScores? =
+        Scoring.read(bytes)?.takeIf { it.valueKeys == task.valueKeys && it.design.readsItems(task) }?.on(task)
+
     /**
      * The model of every fold, fitted with the [rank] and the [lambda] chosen, on the [design] of the
      * task fitted on; and the folds' weights at the penalties beside it ([nearby]), for a refit to go on from.
@@ -234,17 +237,21 @@ class BilinearSuggester internal constructor(
         fun nearest(penalty: Double): List<Weights> =
             (nearby + (lambda to folds)).minBy { abs(ln(it.key / penalty)) }.value.takeIf { it.size == FOLDS } ?: folds
 
-        override fun on(task: SuggestionTask): SuggestionScores {
+        override fun on(task: SuggestionTask): SuggestionScores = scoringOf(task).on(task)
+
+        override fun scoring(task: SuggestionTask): ByteArray = scoringOf(task).pack()
+
+        /** The scoring of the items against the values of [task]: every fold's coordinates of its values — their names and groups carried by B, their own coordinates added — and their biases. */
+        private fun scoringOf(task: SuggestionTask): Scoring {
             val m = task.valueCount
             val z = design.values(task)
             val known = design.valueIndices(task)
             val dz = design.valueWidth
-            // Every fold's coordinates of the task's values, transposed for the product, and its biases
             val sides = folds.map { w ->
-                val b = Floats.of(w.b)
                 val v = Floats(m * rank)
-                Blas.product(z.held, dz, m, dz, b, rank, v)
-                val vt = Floats(rank * m)
+                Blas.product(z.held, dz, m, dz, Floats.of(w.b), rank, v)
+                // Transposed for the product
+                val vt = FloatArray(rank * m)
                 val bias = FloatArray(m)
                 for (j in 0 until m) {
                     val own = known[j]
@@ -253,29 +260,7 @@ class BilinearSuggester internal constructor(
                 }
                 vt to bias
             }
-            return SuggestionScores { rows ->
-                val out = arrayOfNulls<FloatArray>(rows.size)
-                val byFold = rows.indices.groupBy { Problem.foldOf(task.itemIds[rows[it]], FOLDS) }
-                byFold.forEach { (fold, at) ->
-                    val w = folds[fold]
-                    val x = design.items(task, IntArray(at.size) { rows[at[it]] })
-                    val u = Floats(at.size * rank)
-                    Blas.product(x.held, design.itemWidth, at.size, design.itemWidth, Floats.of(w.a), rank, u)
-                    val (vt, bias) = sides[fold]
-                    val s = Floats(at.size * m)
-                    Blas.product(u, rank, at.size, rank, vt, m, s)
-                    at.forEachIndexed { r, k ->
-                        val i = rows[k]
-                        val row = FloatArray(m)
-                        s.take(row, 0, r * m, m)
-                        task.examples[i].forEach { row[it] += w.pair[0] }
-                        task.mentions[i]?.forEach { (v, count) -> if (v in 0 until m) row[v] += w.pair[1] * kotlin.math.ln1p(count.toDouble()).toFloat() }
-                        for (j in 0 until m) row[j] = Bilinear.sigmoid(row[j] + bias[j] + w.pair[2])
-                        out[k] = row
-                    }
-                }
-                out.map { it!! }
-            }
+            return Scoring(design, rank, task.valueKeys, folds.map { it.a }, folds.map { it.pair }, sides.map { it.first }, sides.map { it.second })
         }
 
         override fun pack(): ByteArray {

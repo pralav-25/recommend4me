@@ -573,6 +573,8 @@ class SiteTest {
         capture("n1|The captain|space|The Captain commands. The Captain waits. The Captain sleeps, the captain of the guard does not|")
         corrections.correctFacet("site", "n1", FacetCorrection(facet = "universe", added = true, key = "fake:U2"))
         refresh(store)
+        // How often its texts name every character is counted by the fitting after the quiet — here at once
+        inBackground { suggestions.refresh(store) }
         // The candidates wait for nothing: they offer what the weights say now, the work's kept chances
         // are made in the queue of the computations; a value the card gives is never offered beside it
         val offered = suggestionsApi.getCandidates("site", "n1", "characters").body!!
@@ -623,6 +625,9 @@ class SiteTest {
 
         // Its universes all named: no other is offered, the work has its own alone
         this.universes.addUniverse(UniverseRef("fake", "U1"))
+        // A universe new to the dictionary is among the values a work is scored by once the facet is
+        // fitted again, after the quiet — here at once: the scoring kept is of the values it was fitted on
+        inBackground { suggestions.refresh(store) }
         // The other universe: given by the model or offered among the candidates
         fun other(details: io.github.vlsergey.recommend4me.api.model.ItemDetails) =
             details.allFacets.single { it.facet == "universe" }.propertyValues.any { it.key == "fake:U1" } ||

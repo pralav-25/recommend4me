@@ -66,6 +66,38 @@ class BilinearSuggesterTest {
     }
 
     @Test
+    fun `the scoring kept apart gives the items read later the chances of the whole task, without the values' names`() {
+        val task = task(120, wrong = 5)
+        val suggester = BilinearSuggester()
+        val fitted = assertNotNull(suggester.fit(task))
+        val kept = assertNotNull(fitted.scoring(task))
+        // Some items alone, as a page reads them: their texts, the values by their keys, no names
+        val rows = intArrayOf(3, 5, 40, 77)
+        val texts = task.inputs.single().vectors.gather(rows)
+        val alone = SuggestionTask(
+            itemIds = rows.map { task.itemIds[it] },
+            inputs = listOf(InputBlock("text:annotation", texts, BooleanArray(rows.size) { true })),
+            values = Matrix(task.valueCount, 0),
+            valueKeys = task.valueKeys,
+            assigned = rows.map { task.assigned[it] },
+            confirmed = List(rows.size) { IntArray(0) },
+            rejected = List(rows.size) { IntArray(0) },
+            context = List(rows.size) { IntArray(0) },
+            contextKeys = emptyList(),
+        )
+        val whole = fitted.on(task).of(rows)
+        val read = assertNotNull(suggester.scoring(kept, alone)).of(IntArray(rows.size) { it })
+        rows.indices.forEach { r ->
+            task.valueKeys.indices.forEach { v -> assertEquals(whole[r][v], read[r][v], 1e-5f, "item ${rows[r]}, value $v") }
+        }
+        // Of other values the scoring is not: no chances made of it
+        val other = SuggestionTask(
+            alone.itemIds, alone.inputs, Matrix(2, 0), listOf("v0", "v9"), alone.assigned, alone.confirmed, alone.rejected, alone.context, alone.contextKeys,
+        )
+        assertEquals(null, suggester.scoring(kept, other))
+    }
+
+    @Test
     fun `a work the site gave no examples is judged by its text, the examples of the others taught it`() {
         val random = Random(3)
         val space = FloatArray(d) { if (it < d / 2) 1f else 0f }.normalized()
