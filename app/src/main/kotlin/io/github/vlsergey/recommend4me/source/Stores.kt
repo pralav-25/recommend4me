@@ -119,7 +119,7 @@ class SourceStore(
     fun names(facet: String, keys: Collection<String>): Map<String, String> {
         if (keys.isEmpty()) return emptyMap()
         // A language by its code, named as the model reads it ([StandardLanguages])
-        if (facet == StandardLanguages.KEY) return keys.mapNotNull { k -> StandardLanguages.NAMES[k]?.let { k to it } }.toMap()
+        if (StandardLanguages.ofLanguages(facet)) return keys.mapNotNull { k -> StandardLanguages.NAMES[k]?.let { k to it } }.toMap()
         if (facet in tagFacets) {
             // The tags as the user and every site name them ([TagRepository]); one the user made up, by the source
             val shown = tags.shown(keys)
@@ -138,7 +138,7 @@ class SourceStore(
         // The normalized tags alone: the source's names of the facet are of the sites' keys it had before them
         if (facet in tagFacets) return tags.shown(null)
         // Every language, a work in it or not yet: a value to answer by
-        if (facet == StandardLanguages.KEY) return StandardLanguages.NAMES
+        if (StandardLanguages.ofLanguages(facet)) return StandardLanguages.NAMES
         return dictionaryNames?.of(facet, null) { if (it == null) items.facetNames(facet) else items.facetNames(facet, it) } ?: items.facetNames(facet)
     }
 
@@ -154,7 +154,7 @@ class SourceStore(
     /** Of a language of the layer or of a site, the key it is shown by in the interface's language ([I18nKeys.language]). */
     private fun languageKey(facet: String, key: String): String? {
         val standard = schema.facet(facet)?.standard ?: return null
-        val language = standard.key == StandardLanguages.KEY || standard === StandardLanguages.LANGUAGE
+        val language = StandardLanguages.ofLanguages(standard.key) || standard === StandardLanguages.LANGUAGE
         return if (language && key in StandardLanguages.NAMES) I18nKeys.language(key) else null
     }
 

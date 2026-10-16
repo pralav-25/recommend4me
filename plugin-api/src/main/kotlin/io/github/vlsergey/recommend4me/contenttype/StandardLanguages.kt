@@ -23,6 +23,19 @@ object StandardLanguages {
      */
     fun languages(single: Boolean) = StandardFacet(KEY, filter = true, infer = true, single = single, completable = !single, original = LANGUAGE)
 
+    const val DESCRIPTION_KEY = "description-language"
+
+    /**
+     * THE LANGUAGE A WORK'S DESCRIPTION IS WRITTEN IN, one: what its texts are stemmed by in the
+     * index, where a text too short to tell its own language by itself takes it — of a game,
+     * whose [languages] are those it is played in, not the one its page is written in (user,
+     * 2026-10-16). Of a work without it, the [languages] of a book are its description's.
+     */
+    val DESCRIPTION = StandardFacet(DESCRIPTION_KEY, single = true)
+
+    /** Whether the facet [key] of the layer is of languages by their codes: named and shown as [NAMES]. */
+    fun ofLanguages(key: String) = key == KEY || key == DESCRIPTION_KEY
+
     private val RUSSIAN: Locale = Locale.of("ru")
 
     /** Every language by its code, named as the model reads it — in Russian, one language whatever the user reads. */

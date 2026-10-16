@@ -32,6 +32,7 @@ class LanguageAnswers(private val stores: Stores, private val settings: Settings
     @Order(2)
     @EventListener(ApplicationReadyEvent::class)
     fun give() {
+        giveDescriptions()
         if (settings.get(DONE) != null) return
         stores.sources.forEach { s ->
             try {
@@ -63,8 +64,36 @@ class LanguageAnswers(private val stores: Stores, private val settings: Settings
         events.publishEvent(ItemsChanged(s.id, given.keys.toList()))
     }
 
+    /**
+     * THE LANGUAGE OF THE DESCRIPTIONS OF THE WORKS KNOWN, GIVEN ONCE AS THE USER'S ANSWERS
+     * (2026-10-16): of every source whose works have it ([StandardLanguages.DESCRIPTION]) — the
+     * games, whose pages are written in English — English, by the user's word. A work the user
+     * answered on is left as it is. Once: marked in the settings.
+     */
+    private fun giveDescriptions() {
+        if (settings.get(DESCRIPTIONS_DONE) != null) return
+        stores.sources.forEach { s ->
+            val def = s.schema.facet(StandardLanguages.DESCRIPTION_KEY) ?: return@forEach
+            try {
+                val answered = s.corrections.allFacets().filter { it.facet == def.key }.map { it.itemId }.toSet()
+                val given = s.items.keys().map { it.id }.filter { it !in answered }
+                if (given.isEmpty()) return@forEach
+                val now = Instant.now()
+                s.writing.withLock { given.forEach { s.corrections.setFacet(it, def.key, ENGLISH_CODE, true, null, now) } }
+                log.info("{}: the language of the descriptions of {} works given as the user's answers", s.id, given.size)
+                events.publishEvent(ItemsChanged(s.id, given))
+            } catch (e: Exception) {
+                log.error("{}: the language of the descriptions was not given", s.id, e)
+                return
+            }
+        }
+        settings.set(DESCRIPTIONS_DONE, Instant.now().toString())
+    }
+
     companion object {
         private const val DONE = "languages.answered"
+        private const val DESCRIPTIONS_DONE = "description-languages.answered"
+        private const val ENGLISH_CODE = "en"
         private const val RUSSIAN_CODE = "ru"
 
         /** The sites of works in Russian alone, which state no language. */

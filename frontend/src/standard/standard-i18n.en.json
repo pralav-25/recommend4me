@@ -48,6 +48,7 @@
   "facet.kind.value.realism": "Realism",
   "facet.language": "Language on the site",
   "facet.languages": "Language",
+  "facet.description-language": "Language of the description",
   "facet.pairing": "Pairings and characters on the site",
   "facet.pairings": "Pairings",
   "facet.secondary-characters": "Secondary characters",
