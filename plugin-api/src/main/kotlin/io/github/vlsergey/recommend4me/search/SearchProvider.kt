@@ -118,6 +118,16 @@ interface SearchProvider {
      * them: of every value of a field that names one, its text and the characters of the names in it.
      */
     fun places(document: SearchDocument, names: Map<String, List<String>>, of: Collection<String>): List<NamePlace> = emptyList()
+
+    /**
+     * IN HOW MANY PARAGRAPHS OF THE WORKS' OWN WORDS EVERY TWO VALUES of [names] ARE NAMED TOGETHER,
+     * the names found as [mentions] finds them: of every work, the two by their keys in order. A
+     * paragraph ends at a line break.
+     */
+    fun together(contentType: String, items: Collection<ItemKey>?, names: Map<String, List<String>>): Map<ItemKey, Map<Pair<String, String>, Int>> = emptyMap()
+
+    /** Where the [document]'s own words name the values [a] and [b] in one paragraph, as [together] counts them: the names of both there. */
+    fun placesTogether(document: SearchDocument, names: Map<String, List<String>>, a: String, b: String): List<NamePlace> = emptyList()
 }
 
 /** A value of a field of a document ([SearchField.key], its [text]) where a value is named, at the characters [ranges]. */

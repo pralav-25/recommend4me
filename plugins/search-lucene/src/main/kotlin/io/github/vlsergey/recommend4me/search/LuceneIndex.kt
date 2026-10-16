@@ -209,7 +209,9 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
                     val name = fieldName(field)
                     field.values.filter { it.isNotBlank() }.forEach { value ->
                         val language = TextLanguages.of(value, doc.language).also { used += it }
-                        add(TextField(name, stemmers.getOrPut(language) { Stemmers.analyzer(language, reuse = false) }.tokenStream(name, value)))
+                        val stream = stemmers.getOrPut(language) { Stemmers.analyzer(language, reuse = false) }.tokenStream(name, value)
+                        // The work's own words with the marks their paragraphs begin with: two names in one paragraph are told by them
+                        add(TextField(name, if (field.counted) ParagraphMarks(stream, value) else stream))
                     }
                 }
                 // The languages its texts were stemmed as: what a name looked for in them is read as

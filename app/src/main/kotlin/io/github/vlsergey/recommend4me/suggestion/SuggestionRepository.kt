@@ -1,6 +1,5 @@
 package io.github.vlsergey.recommend4me.suggestion
 
-import io.github.vlsergey.recommend4me.database.model.tables.references.FACET_MENTION
 import io.github.vlsergey.recommend4me.database.model.tables.references.FACET_SUGGESTER
 import io.github.vlsergey.recommend4me.database.source.tables.references.FACET_VALUE_VECTOR
 import io.github.vlsergey.recommend4me.vector.Vectors
@@ -82,38 +81,6 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
             .fetchOne { KeptScoring(it.value1()!!, it.value2()?.split(LINE)?.filter { k -> k.isNotEmpty() }.orEmpty(), it.value3()!!) }
     }
 
-    /**
-     * How many times every work's texts name the facet's values, counted at the fitting: work to
-     * value to count — of every work counted, a work whose texts name none with none. Replaces the
-     * facet's counts of before in one transaction.
-     */
-    fun keepMentions(facet: String, counts: Map<String, Map<String, Int>>) = db.transaction { c ->
-        val tx = DSL.using(c)
-        val m = FACET_MENTION
-        tx.deleteFrom(m).where(m.SOURCE.eq(source), m.FACET.eq(facet)).execute()
-        counts.entries.chunked(BATCH).forEach { chunk ->
-            val batch = tx.batch(tx.insertInto(m, m.SOURCE, m.ITEM_ID, m.FACET, m.COUNTS).values(null as String?, null as String?, null as String?, null as String?))
-            chunk.forEach { (id, named) -> batch.bind(source, id, facet, named.entries.joinToString(LINE) { (key, n) -> "$key$TAB$n" }) }
-            batch.execute()
-        }
-    }
-
-    /** The counts of [keepMentions] of the works [ids] — of every work counted when null; a work never counted is not among them. */
-    fun mentions(facet: String, ids: Collection<String>?): Map<String, Map<String, Int>> {
-        val m = FACET_MENTION
-        fun read(only: Collection<String>?) = db.select(m.ITEM_ID, m.COUNTS).from(m)
-            .where(m.SOURCE.eq(source), m.FACET.eq(facet), only?.let { m.ITEM_ID.`in`(it) } ?: DSL.noCondition())
-            .fetchMap({ it.value1()!! }, { r ->
-                r.value2()!!.split(LINE).filter { it.isNotEmpty() }.associate { line -> line.substringBeforeLast(TAB) to line.substringAfterLast(TAB).toInt() }
-            })
-        return if (ids == null) read(null) else ids.distinct().chunked(BATCH).fold(HashMap()) { out, chunk -> out.apply { putAll(read(chunk)) } }
-    }
-
-    /** The counts of a work gone from the library. */
-    fun forget(itemId: String) {
-        db.deleteFrom(FACET_MENTION).where(FACET_MENTION.SOURCE.eq(source), FACET_MENTION.ITEM_ID.eq(itemId)).execute()
-    }
-
     /** Every facet's suggester of the source, without its weights. */
     fun suggesters(): List<SuggesterStatus> {
         val s = FACET_SUGGESTER
@@ -126,15 +93,11 @@ class SuggestionRepository(private val db: DSLContext, private val source: Strin
     /** Forgets the models of the facets the model no longer works on: those not in [facets]. */
     fun keepOnly(facets: Collection<String>) {
         db.deleteFrom(FACET_SUGGESTER).where(FACET_SUGGESTER.SOURCE.eq(source), FACET_SUGGESTER.FACET.notIn(facets)).execute()
-        db.deleteFrom(FACET_MENTION).where(FACET_MENTION.SOURCE.eq(source), FACET_MENTION.FACET.notIn(facets)).execute()
     }
 
     private companion object {
         /** The values of a facet kept one a line: a value's key has no line break. */
         const val LINE = "\n"
-
-        /** A value's key and its count, a line of [keepMentions]: a key has no tab. */
-        const val TAB = "\t"
 
         const val BATCH = 1000
     }

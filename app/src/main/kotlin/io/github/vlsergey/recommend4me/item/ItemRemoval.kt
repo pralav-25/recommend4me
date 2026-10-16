@@ -37,7 +37,6 @@ class ItemRemoval(private val stores: Stores, private val recommendations: Recom
         store.interest.forget(key.id)
         store.signals.forget(key.id)
         store.drafts.forget(key.id)
-        store.suggestions.forget(key.id)
         // A word on a match of a mark of any source may name it
         type.sources.forEach { it.marks.forget(key) }
         type.links.forget(key)

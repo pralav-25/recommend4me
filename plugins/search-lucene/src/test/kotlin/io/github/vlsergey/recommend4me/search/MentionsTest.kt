@@ -62,4 +62,48 @@ class MentionsTest {
             assertEquals(listOf("Гарри Поттера", "Поттер", "Гарри"), harry.flatMap { p -> p.ranges.map { p.text.substring(it) } })
         }
     }
+
+    private val potter = mapOf(
+        "harry" to listOf("Гарри Поттер", "Harry Potter"),
+        "hermione" to listOf("Гермиона Грейнджер", "Hermione Granger"),
+        "james" to listOf("Джеймс Поттер"),
+        "ron" to listOf("Рон Уизли"),
+        "ginny" to listOf("Джинни Уизли", "Джиневра Уизли"),
+        "c3po" to listOf("Си-Три-Пи-О"),
+        "saw" to listOf("Со Геррера"),
+        "rick" to listOf("Рик Джонс", "Нова"),
+    )
+
+    @Test
+    fun `the rules of the names, a family name and a function word naming nobody, a word alone only with a capital`() {
+        val docs = listOf(
+            doc("d", "ru", "Гарри посмотрел на Гермиону. Гермионы не было. Гарри Поттер ушёл к Джинни."),
+            doc("f", "ru", "Поттер и Уизли вошли. Джеймс Поттер остался."),
+            doc("w", "ru", "Пришёл со мной о чём-то. Со Геррера и Пи. пи равно трём."),
+            doc("n", "ru", "Однако новый мир — новые правила. Нова улетел."),
+        )
+        LuceneSearch(Files.createTempDirectory("search")).use { search ->
+            search.rebuild("books", docs.asSequence())
+            val counted = search.mentions("books", null, potter)
+            assertEquals(mapOf("harry" to 2, "hermione" to 2, "ginny" to 1), counted[ItemKey("test", "d")])
+            assertEquals(mapOf("james" to 1), counted[ItemKey("test", "f")])
+            assertEquals(mapOf("saw" to 1, "c3po" to 1), counted[ItemKey("test", "w")])
+            assertEquals(mapOf("rick" to 1), counted[ItemKey("test", "n")])
+        }
+    }
+
+    @Test
+    fun `two named in one paragraph are together, counted of the index as quoted of the texts`() {
+        val text = "Гарри поцеловал Гермиону.\n\nРон ел.\nГермиона и Рон спорили. И снова Гермиона и Рон."
+        val docs = listOf(doc("p", "ru", text), doc("q", "ru", "Гермиона.", "Рон."))
+        LuceneSearch(Files.createTempDirectory("search")).use { search ->
+            search.rebuild("books", docs.asSequence())
+            val together = search.together("books", null, potter)
+            assertEquals(mapOf(("harry" to "hermione") to 1, ("hermione" to "ron") to 1), together[ItemKey("test", "p")])
+            // Two texts are never one paragraph
+            assertEquals(null, together[ItemKey("test", "q")])
+            val quoted = search.placesTogether(docs[0], potter, "hermione", "ron").single()
+            assertEquals(listOf("Гермиона", "Рон", "Гермиона", "Рон"), quoted.ranges.map { quoted.text.substring(it) })
+        }
+    }
 }

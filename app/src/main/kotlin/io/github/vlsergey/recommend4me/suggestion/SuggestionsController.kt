@@ -12,7 +12,6 @@ import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
 import io.github.vlsergey.recommend4me.search.Search
 import io.github.vlsergey.recommend4me.universe.UniverseFacets
-import io.github.vlsergey.recommend4me.universe.workPassages
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
 
@@ -63,7 +62,7 @@ class SuggestionsController(private val stores: Stores, private val suggestions:
         if (store.items.find(item) == null) return ResponseEntity.notFound().build()
         val quotes = when (val quoting = suggestions.quoting(store, item, facet, value) ?: return ResponseEntity.notFound().build()) {
             is FacetSuggestions.Quoting.InIndex -> search.quotes(store, item, quoting.names, quoting.of)
-            is FacetSuggestions.Quoting.InTexts -> quoting.naming.quotes(store.workPassages(item), value)
+            is FacetSuggestions.Quoting.Together -> search.quotesTogether(store, item, quoting.names, quoting.a, quoting.b)
             FacetSuggestions.Quoting.None -> emptyList()
         }
         return ResponseEntity.ok(

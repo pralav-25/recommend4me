@@ -308,12 +308,17 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         return null
     }
 
+    /** A name found of the index: the value it is of, in which field of the work, in which paragraph of it. */
+    private class FoundIn(val value: String, val field: String, val paragraph: Int)
+
     /**
      * The names counted of the index, not of the texts: of every name's stems the places in the
-     * works' own fields ([LuceneIndex.IndexedField.counted]) with whether written with a capital,
-     * then the rules of [NameMatcher] over them, a field at a time — no text read again, no chapter.
+     * works' own fields ([LuceneIndex.IndexedField.counted]) with whether written with a capital, and
+     * the marks the paragraphs begin with ([ParagraphMarks]); then the rules of [NameMatcher] over
+     * them, a field at a time — no text read again, no chapter. Of the works [items], every work
+     * indexed when null.
      */
-    override fun mentions(contentType: String, items: Collection<ItemKey>?, names: Map<String, List<String>>): Map<ItemKey, Map<String, Int>> {
+    private fun named(contentType: String, items: Collection<ItemKey>?, names: Map<String, List<String>>): Map<ItemKey, List<FoundIn>> {
         if (names.isEmpty()) return emptyMap()
         val index = index(contentType)
         return index.search { searcher ->
@@ -334,31 +339,36 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
                 languages[doc] = d.get(LuceneIndex.LANGUAGES)?.split(',')?.filter { it.isNotEmpty() }.orEmpty()
             }
             val counted = index.fields(searcher).text.filter { it.counted }.map { it.name }
-            val out = HashMap<ItemKey, MutableMap<String, Int>>()
+            val out = HashMap<ItemKey, MutableList<FoundIn>>()
             // One matcher of every set of languages: of a catalogue of one language, one
             languages.entries.groupBy({ it.value }, { it.key }).forEach { (langs, docs) ->
                 val matcher = NameMatcher(names, langs)
-                // Every name's stem at its places, of every field of every document: the words the rules read
+                // Every name's stem at its places, of every field of every document: the words the rules read;
+                // and where its paragraphs begin
                 val words = HashMap<Pair<Int, String>, MutableList<NamedWord>>()
+                val marks = HashMap<Pair<Int, String>, IntArray>()
                 val sorted = docs.sorted()
                 searcher.indexReader.leaves().forEach { leaf ->
                     val inLeaf = sorted.filter { it >= leaf.docBase && it < leaf.docBase + leaf.reader().maxDoc() }.map { it - leaf.docBase }
                     if (inLeaf.isEmpty()) return@forEach
                     counted.forEach { field ->
                         val terms = leaf.reader().terms(field)?.iterator() ?: return@forEach
-                        // One enumeration of the places, reused for every stem: tens of thousands of stems a dictionary
+                        // One enumeration of the places, reused for every stem: thousands of stems of the names
                         var postings: PostingsEnum? = null
                         val term = BytesRefBuilder()
-                        matcher.stems.forEach { stem ->
+                        (matcher.stems + ParagraphMarks.MARK).forEach { stem ->
                             term.copyChars(stem)
                             if (!terms.seekExact(term.get())) return@forEach
                             val places = terms.postings(postings, PostingsEnum.PAYLOADS.toInt()).also { postings = it }
                             inLeaf.forEach { doc ->
-                                if (places.docID() < doc && places.advance(doc) == doc) {
-                                    val list = words.getOrPut(leaf.docBase + doc to field) { ArrayList() }
-                                    repeat(places.freq()) {
-                                        val position = places.nextPosition()
-                                        list += NamedWord(stem, position, places.payload == Stemmers.CAPITAL)
+                                // Gone to the document asked for, or past it: it may stand there already, gone to while looking for the one before
+                                val standing = if (places.docID() < doc) places.advance(doc) else places.docID()
+                                if (standing == doc) {
+                                    val at = leaf.docBase + doc to field
+                                    if (stem == ParagraphMarks.MARK) marks[at] = IntArray(places.freq()) { places.nextPosition() }
+                                    else {
+                                        val list = words.getOrPut(at) { ArrayList() }
+                                        repeat(places.freq()) { list += NamedWord(stem, places.nextPosition(), places.payload == Stemmers.CAPITAL) }
                                     }
                                 }
                             }
@@ -366,36 +376,79 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
                     }
                 }
                 words.forEach { (at, list) ->
-                    val named = out.getOrPut(keys.getValue(at.first)) { HashMap() }
-                    matcher.found(list).forEach { named.merge(it.value, 1, Int::plus) }
+                    val begins = marks[at]?.also { it.sort() } ?: IntArray(0)
+                    val found = out.getOrPut(keys.getValue(at.first)) { ArrayList() }
+                    matcher.found(list).forEach { f ->
+                        // Of the paragraph the name stands in: how many marks are before it
+                        val paragraph = begins.binarySearch(f.first.position).let { if (it >= 0) it + 1 else -it - 1 }
+                        found += FoundIn(f.value, at.second, paragraph)
+                    }
                 }
             }
             out.filterValues { it.isNotEmpty() }
         }
     }
 
-    /** The places of [value] in the document's own words, found by the rules of [mentions] over its texts read again as they were put in the index. */
+    override fun mentions(contentType: String, items: Collection<ItemKey>?, names: Map<String, List<String>>): Map<ItemKey, Map<String, Int>> =
+        named(contentType, items, names).mapValues { (_, found) -> found.groupingBy { it.value }.eachCount() }
+
+    override fun together(contentType: String, items: Collection<ItemKey>?, names: Map<String, List<String>>): Map<ItemKey, Map<Pair<String, String>, Int>> =
+        named(contentType, items, names).mapValues { (_, found) ->
+            val out = HashMap<Pair<String, String>, Int>()
+            found.groupBy { it.field to it.paragraph }.values.forEach { paragraph ->
+                val each = paragraph.map { it.value }.toSortedSet().toList()
+                each.forEachIndexed { k, a -> each.drop(k + 1).forEach { b -> out.merge(a to b, 1, Int::plus) } }
+            }
+            out
+        }.filterValues { it.isNotEmpty() }
+
+    /** The names of a [text] of the document found again, read as it was put in the index: its words with their characters. */
+    private fun foundIn(text: String, document: SearchDocument, matcher: NameMatcher): List<Found> {
+        val words = ArrayList<NamedWord>()
+        Stemmers.analyzer(TextLanguages.of(text, document.language)).tokenStream("", text).use { stream ->
+            val term = stream.addAttribute(CharTermAttribute::class.java)
+            val step = stream.addAttribute(PositionIncrementAttribute::class.java)
+            val payload = stream.addAttribute(PayloadAttribute::class.java)
+            val offset = stream.addAttribute(OffsetAttribute::class.java)
+            stream.reset()
+            var position = -1
+            while (stream.incrementToken()) {
+                position += step.positionIncrement
+                words += NamedWord(term.toString(), position, payload.payload == Stemmers.CAPITAL, offset.startOffset(), offset.endOffset())
+            }
+            stream.end()
+        }
+        return matcher.found(words)
+    }
+
+    /** The places of the values [of] in the document's own words, found by the rules of [mentions] over its texts read again as they were put in the index. */
     override fun places(document: SearchDocument, names: Map<String, List<String>>, of: Collection<String>): List<NamePlace> {
         val wanted = of.toHashSet()
         val matcher = NameMatcher(names, LuceneIndex.languagesOf(document))
         return document.fields.filter { it.counted }.flatMap { field ->
             field.values.filter { it.isNotBlank() }.mapNotNull { text ->
-                val words = ArrayList<NamedWord>()
-                Stemmers.analyzer(TextLanguages.of(text, document.language)).tokenStream("", text).use { stream ->
-                    val term = stream.addAttribute(CharTermAttribute::class.java)
-                    val step = stream.addAttribute(PositionIncrementAttribute::class.java)
-                    val payload = stream.addAttribute(PayloadAttribute::class.java)
-                    val offset = stream.addAttribute(OffsetAttribute::class.java)
-                    stream.reset()
-                    var position = -1
-                    while (stream.incrementToken()) {
-                        position += step.positionIncrement
-                        words += NamedWord(term.toString(), position, payload.payload == Stemmers.CAPITAL, offset.startOffset(), offset.endOffset())
-                    }
-                    stream.end()
-                }
-                val ranges = matcher.found(words).filter { it.value in wanted }.map { it.first.start until it.last.end }
+                val ranges = foundIn(text, document, matcher).filter { it.value in wanted }.map { it.first.start until it.last.end }
                 if (ranges.isEmpty()) null else NamePlace(field.key, text, ranges)
+            }
+        }
+    }
+
+    /**
+     * The places of the two values [a] and [b] named in one paragraph of the document's own words, as
+     * [together] counts them: of every value of a field, the names of both in the paragraphs naming both.
+     */
+    override fun placesTogether(document: SearchDocument, names: Map<String, List<String>>, a: String, b: String): List<NamePlace> {
+        val matcher = NameMatcher(names, LuceneIndex.languagesOf(document))
+        return document.fields.filter { it.counted }.flatMap { field ->
+            field.values.filter { it.isNotBlank() }.mapNotNull { text ->
+                // A paragraph ends at a line break, as the marks of the index have it
+                val found = foundIn(text, document, matcher).filter { it.value == a || it.value == b }
+                val breaks = text.indices.filter { text[it] == '\n' }
+                fun paragraphOf(at: Int) = breaks.binarySearch(at).let { if (it >= 0) it else -it - 1 }
+                val ranges = found.groupBy { paragraphOf(it.first.start) }.values
+                    .filter { inOne -> inOne.any { it.value == a } && inOne.any { it.value == b } }
+                    .flatten().map { it.first.start until it.last.end }
+                if (ranges.isEmpty()) null else NamePlace(field.key, text, ranges.sortedBy { it.first })
             }
         }
     }

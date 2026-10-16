@@ -38,18 +38,4 @@ class SuggestionRepositoryTest {
             assertContentEquals(byteArrayOf(9, 8), scoring.bytes)
         }
     }
-
-    @Test
-    fun `the counts of the values' names in a work's texts are kept a line a work, every fitting's in place of the one before`() {
-        Database("model", folder.resolve("model"), "model").use { db ->
-            val repository = SuggestionRepository(db.dsl, "site")
-            repository.keepMentions("characters", mapOf("w1" to mapOf("wikidataQ1" to 3, "original:f" to 1), "w2" to emptyMap()))
-            assertEquals(mapOf("w1" to mapOf("wikidataQ1" to 3, "original:f" to 1), "w2" to emptyMap()), repository.mentions("characters", null))
-            assertEquals(setOf("w2"), repository.mentions("characters", listOf("w2", "w3")).keys)
-            repository.keepMentions("characters", mapOf("w3" to mapOf("x" to 2)))
-            assertEquals(mapOf("w3" to mapOf("x" to 2)), repository.mentions("characters", null))
-            repository.forget("w3")
-            assertEquals(emptyMap(), repository.mentions("characters", null))
-        }
-    }
 }

@@ -19,7 +19,7 @@ import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
 import io.github.vlsergey.recommend4me.contenttype.StandardLanguages
 import io.github.vlsergey.recommend4me.source.SourceSchema
-import io.github.vlsergey.recommend4me.universe.Naming
+import io.github.vlsergey.recommend4me.universe.Quotes
 import io.github.vlsergey.recommend4me.universe.Quote
 import io.github.vlsergey.recommend4me.workload.Work
 import io.github.vlsergey.recommend4me.workload.Workload
@@ -365,12 +365,20 @@ class Search(
      * were put in it — what is counted is what is shown — each a paragraph, or the part of a long one
      * around the names. None without a search plugin.
      */
-    fun quotes(s: SourceStore, itemId: String, names: Map<String, List<String>>, of: Collection<String>): List<Quote> {
+    fun quotes(s: SourceStore, itemId: String, names: Map<String, List<String>>, of: Collection<String>): List<Quote> =
+        quoted(s, itemId) { provider, doc -> provider.places(doc, names, of) }
+
+    /** The passages of the work [itemId] that name the characters [a] and [b] in one paragraph, as a pairing is counted of the index ([SearchProvider.together]): both marked. */
+    fun quotesTogether(s: SourceStore, itemId: String, names: Map<String, List<String>>, a: String, b: String): List<Quote> =
+        quoted(s, itemId) { provider, doc -> provider.placesTogether(doc, names, a, b) }
+
+    /** The [places] of the work's document as quotes: by where in the work each is, a paragraph each. */
+    private fun quoted(s: SourceStore, itemId: String, places: (SearchProvider, SearchDocument) -> List<NamePlace>): List<Quote> {
         val provider = plugins.search ?: return emptyList()
         val doc = documents(s, listOf(itemId), passages = false)[ItemKey(s.id, itemId)] ?: return emptyList()
-        val places = provider.places(doc, names, of)
-        val chapters = if (places.any { it.field.startsWith(PART) }) s.parts.titlesOf(listOf(itemId))[itemId].orEmpty() else emptyList()
-        return places.flatMap { p -> Naming.quotesOf(placeOf(s, p.field, chapters), p.text, p.ranges) }
+        val found = places(provider, doc)
+        val chapters = if (found.any { it.field.startsWith(PART) }) s.parts.titlesOf(listOf(itemId))[itemId].orEmpty() else emptyList()
+        return found.flatMap { p -> Quotes.of(placeOf(s, p.field, chapters), p.text, p.ranges) }
     }
 
     @PreDestroy
