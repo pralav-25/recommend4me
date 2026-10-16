@@ -19,6 +19,8 @@ import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
 import io.github.vlsergey.recommend4me.contenttype.StandardLanguages
 import io.github.vlsergey.recommend4me.source.SourceSchema
+import io.github.vlsergey.recommend4me.universe.Naming
+import io.github.vlsergey.recommend4me.universe.Quote
 import io.github.vlsergey.recommend4me.workload.Work
 import io.github.vlsergey.recommend4me.workload.Workload
 import io.github.vlsergey.recommend4me.vector.Vectors
@@ -101,16 +103,43 @@ class Search(
         worker.execute {
             stores.types.forEach { type ->
                 try {
-                    workload.run(Work("searchIndex", type = type.id), mapOf("start" to 1)) { provider.rebuild(type.id, documentsOf(type)) }
+                    made(type, mapOf("start" to 1))
                 } catch (e: Exception) {
                     log.error("{}: the search index was not made", type.id, e)
-                } finally {
-                    built[type.id]?.countDown()
                 }
                 // What was written while the index was made
                 catchUp(type)
             }
         }
+    }
+
+    /**
+     * The index of the start made, in the queue of the computations, unless it is made already: by
+     * the start, or by a refresh of the models that needed it first ([current]).
+     */
+    private fun made(type: TypeStore, reasons: Map<String, Int>) {
+        val provider = plugins.search ?: return
+        val latch = built[type.id] ?: return
+        try {
+            workload.run(Work("searchIndex", type = type.id), reasons) {
+                if (latch.count > 0) provider.rebuild(type.id, documentsOf(type))
+            }
+        } finally {
+            latch.countDown()
+        }
+    }
+
+    /**
+     * THE INDEX AS THE WORKS ARE NOW, before the models of a source are fitted on what it counts —
+     * the names its works' words name ([io.github.vlsergey.recommend4me.search.SearchProvider.mentions]):
+     * made, if the start has not made it yet, and the works written since indexed — in the work of
+     * the queue that asks, not after a quiet.
+     */
+    @EventListener
+    fun current(event: ModelsRefreshing) {
+        val type = stores.typeOf(event.source)
+        made(type, mapOf("models" to 1))
+        catchUp(type)
     }
 
     /**
@@ -310,25 +339,38 @@ class Search(
             val s = stores.source(source) ?: return@forEach
             val inParts = list.filter { it.value.field.startsWith(PART) }.map { it.key.id }
             val chapters = if (inParts.isEmpty()) emptyMap() else s.parts.titlesOf(inParts)
-            list.forEach { (key, match) ->
-                val field = match.field
-                out[key] = when {
-                    field == TITLE -> TextPlace(labelKey = TextVectors.TITLE_LABEL)
-                    field.startsWith(FACET) -> field.removePrefix(FACET).let { f ->
-                        TextPlace(labelKey = s.schema.facet(f)?.let { I18nKeys.facetLabel(s.id, it) } ?: I18nKeys.qualified(s.id, I18nKeys.facet(f)))
-                    }
-                    field.startsWith(PART) -> {
-                        val partId = field.removePrefix(PART)
-                        val read = chapters[key.id].orEmpty()
-                        val at = read.indexOfFirst { it.first == partId }
-                        read.getOrNull(at)?.second?.takeIf { it.isNotBlank() }?.let { TextPlace(title = it) }
-                            ?: TextPlace(part = if (at >= 0) at + 1 else null)
-                    }
-                    else -> TextPlace(labelKey = I18nKeys.textLabel(s.id, field))
-                }
-            }
+            list.forEach { (key, match) -> out[key] = placeOf(s, match.field, chapters[key.id].orEmpty()) }
         }
         return out
+    }
+
+    /** Where in the work the field [field] of its document is: its title, a facet, a text by the keys of their labels; a chapter by its title among its [chapters], or by its number. */
+    private fun placeOf(s: SourceStore, field: String, chapters: List<Pair<String, String?>>): TextPlace = when {
+        field == TITLE -> TextPlace(labelKey = TextVectors.TITLE_LABEL)
+        field.startsWith(FACET) -> field.removePrefix(FACET).let { f ->
+            TextPlace(labelKey = s.schema.facet(f)?.let { I18nKeys.facetLabel(s.id, it) } ?: I18nKeys.qualified(s.id, I18nKeys.facet(f)))
+        }
+        field.startsWith(PART) -> {
+            val partId = field.removePrefix(PART)
+            val at = chapters.indexOfFirst { it.first == partId }
+            chapters.getOrNull(at)?.second?.takeIf { it.isNotBlank() }?.let { TextPlace(title = it) }
+                ?: TextPlace(part = if (at >= 0) at + 1 else null)
+        }
+        else -> TextPlace(labelKey = I18nKeys.textLabel(s.id, field))
+    }
+
+    /**
+     * The passages of the work [itemId] that name any of the values [of] among [names], as its
+     * mentions are counted of the index ([SearchProvider.mentions]): its own words read again as they
+     * were put in it — what is counted is what is shown — each a paragraph, or the part of a long one
+     * around the names. None without a search plugin.
+     */
+    fun quotes(s: SourceStore, itemId: String, names: Map<String, List<String>>, of: Collection<String>): List<Quote> {
+        val provider = plugins.search ?: return emptyList()
+        val doc = documents(s, listOf(itemId), passages = false)[ItemKey(s.id, itemId)] ?: return emptyList()
+        val places = provider.places(doc, names, of)
+        val chapters = if (places.any { it.field.startsWith(PART) }) s.parts.titlesOf(listOf(itemId))[itemId].orEmpty() else emptyList()
+        return places.flatMap { p -> Naming.quotesOf(placeOf(s, p.field, chapters), p.text, p.ranges) }
     }
 
     @PreDestroy

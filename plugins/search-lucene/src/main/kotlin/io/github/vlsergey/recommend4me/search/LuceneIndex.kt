@@ -137,6 +137,16 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
         /** The vector of a passage. */
         const val VECTOR = "v"
 
+        /** The languages an item's texts were stemmed as, by a comma. */
+        const val LANGUAGES = "languages"
+
+        /** What an item's document is: the query of the documents of items alone, not of their passages. */
+        val ITEMS = TermQuery(Term(KIND, ITEM))
+
+        /** The languages the own words of [doc] are stemmed as ([TextLanguages]), in order. */
+        fun languagesOf(doc: SearchDocument): List<String> =
+            doc.fields.flatMap { f -> f.values.filter { it.isNotBlank() }.map { TextLanguages.of(it, doc.language) } }.distinct().sorted()
+
         /** Where a passage is: its field's key, its characters from and until in the field's text. */
         const val PASSAGE_FIELD = "p.field"
         const val PASSAGE_FROM = "p.from"
@@ -188,16 +198,19 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
             val id = doc.key.toString()
             // Every value stemmed as its language: a stream of its own each, of an analyzer that reuses none
             val stemmers = HashMap<String, Analyzer>()
+            val used = sortedSetOf<String>()
             val fields = Document().apply {
                 add(StringField(ID, id, Field.Store.YES))
                 add(StringField(KIND, ITEM, Field.Store.NO))
                 doc.fields.forEach { field ->
                     val name = fieldName(field)
                     field.values.filter { it.isNotBlank() }.forEach { value ->
-                        val language = TextLanguages.of(value, doc.language)
+                        val language = TextLanguages.of(value, doc.language).also { used += it }
                         add(TextField(name, stemmers.getOrPut(language) { Stemmers.analyzer(language, reuse = false) }.tokenStream(name, value)))
                     }
                 }
+                // The languages its texts were stemmed as: what a name looked for in them is read as
+                add(StoredField(LANGUAGES, used.joinToString(",")))
             }
             val passages = doc.passages.mapNotNull { p ->
                 val vector = p.vector ?: return@mapNotNull null

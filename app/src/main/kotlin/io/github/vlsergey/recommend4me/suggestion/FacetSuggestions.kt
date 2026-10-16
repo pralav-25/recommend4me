@@ -26,6 +26,9 @@ import io.github.vlsergey.recommend4me.universe.UniverseFacets
 import io.github.vlsergey.recommend4me.universe.Mentions
 import io.github.vlsergey.recommend4me.universe.Naming
 import io.github.vlsergey.recommend4me.universe.Quote
+import io.github.vlsergey.recommend4me.item.ItemKey
+import io.github.vlsergey.recommend4me.search.ModelsRefreshing
+import io.github.vlsergey.recommend4me.search.SearchProvider
 import io.github.vlsergey.recommend4me.universe.everyName
 import io.github.vlsergey.recommend4me.universe.workPassages
 import io.github.vlsergey.recommend4me.universe.workTexts
@@ -204,6 +207,8 @@ class FacetSuggestions(
      */
     private fun refresh(store: SourceStore, givenUp: Boolean, reasons: Map<String, Int>?) {
         val encoder = plugins.textEncoder() ?: return
+        // What the models count of the index — the names the works' words name — of the works as they are now
+        events.publishEvent(ModelsRefreshing(store.id))
         val generation = generationOf(store.id).get()
         val stop = if (givenUp) ({ generationOf(store.id).get() != generation }) else ({ false })
         val facets = facetsOf(store)
@@ -331,10 +336,12 @@ class FacetSuggestions(
     private fun scored(store: SourceStore, facet: FacetDef, suggester: FacetSuggester, encoder: TextEncoder, ids: Collection<String>?, made: WorkChances): Scored? {
         store.suggestions.scoring(facet.key)?.takeIf { it.suggester == suggester.id }?.let { kept ->
             val vocabulary = vocabularyOf(store, facet, ids, made, light = true)
-            val counted = store.suggestions.mentions(facet.key, ids)
+            // The names counted of the index, as the fitting counted them; the pairings as the fitting kept them
+            val mentions = vocabulary?.takeIf { it.names != null }?.mentions(store, ids, stores.typeOf(store.id).id, plugins.search)
+                ?: store.suggestions.mentions(facet.key, ids).let { kept -> { id: String -> kept[id] } }
             val data = FacetData.load(
                 store, facet, encoder, imageEncoder = plugins.imageEncoder()?.id, sets = stores.typeOf(store.id).embeddings.ids(), only = ids,
-                modelled = made, mentions = { id -> counted[id] }, allowed = vocabulary?.allowed, examples = vocabulary?.examples, kept = kept.values,
+                modelled = made, mentions = mentions, allowed = vocabulary?.allowed, examples = vocabulary?.examples, kept = kept.values,
             )
             if (data.values.isEmpty()) return null
             return suggester.scoring(kept.bytes, data.task)?.let { Scored(data, it, vocabulary) }
@@ -402,7 +409,7 @@ class FacetSuggestions(
         imageEncoder = plugins.imageEncoder()?.id, sets = stores.typeOf(store.id).embeddings.ids(), only = ids,
         modelled = made, valueKeys = valueKeys,
         // Counted in the texts of the works [ids] alone: no other work's chances are made
-        mentions = vocabulary?.mentions(store, ids),
+        mentions = vocabulary?.mentions(store, ids, stores.typeOf(store.id).id, plugins.search),
         allowed = vocabulary?.allowed, groupings = vocabulary?.groupings, examples = vocabulary?.examples, lackWeight = vocabulary?.lackWeight ?: 1.0,
         hintNames = vocabulary?.hintNames.orEmpty(), hintAmong = vocabulary?.hintAmong ?: { emptyList() },
     )
@@ -453,8 +460,10 @@ class FacetSuggestions(
             fresh
         }
         val fittedAt = System.currentTimeMillis() - started
-        // Every work's texts' counts of the values' names, as the fitting read them: what a work read later is scored by
-        if (data.task.mentions.any { it != null }) {
+        // Of the pairings, every work's texts' counts as the fitting read them: what a work read later is scored by.
+        // The names of a vocabulary of names are counted of the index whenever a work is read: none kept
+        if (vocabulary?.names != null) store.suggestions.keepMentions(facet.key, emptyMap())
+        else if (data.task.mentions.any { it != null }) {
             store.suggestions.keepMentions(facet.key, data.ids.indices.mapNotNull { i ->
                 data.task.mentions[i]?.let { named -> data.ids[i] to named.entries.associate { (v, n) -> data.values[v] to n } }
             }.toMap())
@@ -520,7 +529,14 @@ class FacetSuggestions(
     private class Vocabulary(
         val values: Map<String, String>,
         val allowed: ((String) -> Set<String>)?,
-        /** How the item's own texts name the values; null for an item not counted. */
+        /**
+         * The names every work's own words are looked for by in the index ([SearchProvider.mentions]):
+         * value to the names it goes by — one map for every work of the same, the works of one
+         * universe sharing it; null for a work not counted. [valuesOf]: the values a name found is of.
+         */
+        val names: ((String) -> Map<String, List<String>>?)? = null,
+        val valuesOf: (String) -> Collection<String> = { listOf(it) },
+        /** How the item's own texts name the values, read of the texts: of the pairings, two named in one paragraph; null for an item not counted. */
         val naming: ((String) -> Naming?)? = null,
         /** The groupings of the values the task is made of, in its order; none when they fall into no known groups. */
         val groupings: (List<String>) -> List<ValueGrouping> = { emptyList() },
@@ -537,8 +553,37 @@ class FacetSuggestions(
          */
         val hintAmong: (String) -> Collection<String> = { emptyList() },
     ) {
-        /** How often each item's own texts name each value, by [naming]; null when the values are not counted. */
-        fun mentions(store: SourceStore, ids: Collection<String>?): ((String) -> Map<String, Int>?)? = naming?.let { of ->
+        /**
+         * How often each item's own words name each value: by [names], of the index of the [search],
+         * a call for every map of names shared by works; by [naming], of the texts. Null when the
+         * values are not counted.
+         */
+        fun mentions(store: SourceStore, ids: Collection<String>?, typeId: String, search: SearchProvider?): ((String) -> Map<String, Int>?)? {
+            names?.let { of ->
+                val provider = search ?: return null
+                val wanted = ids ?: store.items.keys().map { it.id }
+                val groups = IdentityHashMap<Map<String, List<String>>, MutableList<String>>()
+                wanted.forEach { id -> of(id)?.let { groups.getOrPut(it) { ArrayList() } += id } }
+                val counted = HashMap<String, Map<String, Int>>()
+                groups.forEach { (named, works) ->
+                    // Every work of the source when all of them are: the index read whole, not a work at a time
+                    val keys = if (ids == null && groups.size == 1) null else works.map { ItemKey(store.id, it) }
+                    provider.mentions(typeId, keys, named).forEach { (key, byName) ->
+                        if (key.source != store.id) return@forEach
+                        val byValue = HashMap<String, Int>()
+                        byName.forEach { (name, n) -> valuesOf(name).forEach { byValue.merge(it, n, Int::plus) } }
+                        counted[key.id] = byValue
+                    }
+                }
+                val within = ids?.toHashSet()
+                // A work counted that names none has none, not an unknown count
+                return { id -> if (within != null && id !in within || of(id) == null) null else counted[id].orEmpty() }
+            }
+            return textMentions(store, ids)
+        }
+
+        /** How often each item's own texts name each value, by [naming], read of the texts; null when the values are not counted so. */
+        private fun textMentions(store: SourceStore, ids: Collection<String>?): ((String) -> Map<String, Int>?)? = naming?.let { of ->
             // Of every work: the values' names read once for them all, not a query of each work's
             val names = if (ids == null) store.everyName() else store.items::facetNames
             val within = ids?.toHashSet()
@@ -615,7 +660,6 @@ class FacetSuggestions(
                 val all = universes.associate { it.value to it.name }
                 // Realism, an alternative history and an original work: our world, ours changed, or a world of its own
                 fun original(id: String) = kinds[id].orEmpty().let { it.isNotEmpty() && it.all { k -> k in UniverseFacets.UNIVERSELESS } }
-                if (light) return Vocabulary(emptyMap(), allowed = { id -> if (original(id)) emptySet() else all.keys })
                 // A universe is named by its characters ("Гарри", "Хогвартс") and by its own name
                 val ofCharacter = HashMap<String, MutableSet<String>>()
                 val names = HashMap<String, List<String>>()
@@ -628,14 +672,16 @@ class FacetSuggestions(
                     }
                 }
                 // A universe is named by itself or by a character of it
-                val naming = Naming(Mentions(names), valuesOf = { value -> ofCharacter[value] ?: setOf(value).filter { it in all } })
+                val valuesOf = { value: String -> ofCharacter[value] ?: setOf(value).filter { it in all } }
+                val named = { id: String -> names.takeUnless { original(id) } }
+                if (light) return Vocabulary(emptyMap(), allowed = { id -> if (original(id)) emptySet() else all.keys }, names = named, valuesOf = valuesOf)
                 // Every name of a universe and of each of its characters is a text that names it, and no other universe
                 val hintNames = HashMap<String, MutableList<String>>()
                 names.forEach { (value, own) -> (ofCharacter[value] ?: setOf(value).filter { it in all }).forEach { u -> hintNames.getOrPut(u) { ArrayList() } += own } }
                 Vocabulary(
                     all,
                     allowed = { id -> if (original(id)) emptySet() else all.keys },
-                    naming = { id -> naming.takeUnless { original(id) } },
+                    names = named, valuesOf = valuesOf,
                     hintNames = hintNames.mapValues { it.value.distinct() },
                     hintAmong = { all.keys },
                 )
@@ -657,7 +703,7 @@ class FacetSuggestions(
                 read.forEach { u ->
                     val characters = type.universes.characters(u.catalogue, u.id)
                     ofUniverse[u.value] = characters.map { UniverseFacet.valueOf(u.catalogue, it.id) }.toSet()
-                    if (!light) characters.forEach { c ->
+                    characters.forEach { c ->
                         val value = UniverseFacet.valueOf(u.catalogue, c.id)
                         values[value] = c.names.joinToString(" / ")
                         names[value] = c.names
@@ -666,7 +712,11 @@ class FacetSuggestions(
                 }
                 val out = leftOut(store, facet.key, ids, made)
                 fun of(id: String) = universes[id].orEmpty().flatMap { ofUniverse[it].orEmpty() }.toSet() - out(id)
-                if (light) return Vocabulary(emptyMap(), allowed = { id -> of(id) + UniverseFacet.ORIGINAL_CHARACTERS.keys })
+                // The characters of a work's universes, looked for in its words: a work of none is not counted.
+                // One map of names for every work of the same characters, the index read once for them all
+                val nameSets = HashMap<Set<String>, Map<String, List<String>>>()
+                val named = { id: String -> of(id).takeIf { it.isNotEmpty() }?.let { own -> nameSets.getOrPut(own) { own.associateWith { names[it].orEmpty() } } } }
+                if (light) return Vocabulary(emptyMap(), allowed = { id -> of(id) + UniverseFacet.ORIGINAL_CHARACTERS.keys }, names = named)
                 // A name of a character names it and none of the other characters of its universes:
                 // judged among them all, one set for every character of the same universes
                 val universesOf = HashMap<String, MutableSet<String>>()
@@ -678,8 +728,7 @@ class FacetSuggestions(
                     hintNames = names,
                     hintAmong = { c -> universesOf[c]?.let(among::getValue).orEmpty() },
                     allowed = { id -> of(id) + UniverseFacet.ORIGINAL_CHARACTERS.keys },
-                    // The characters of a work's universes, counted in its texts: a work of none is not counted
-                    naming = { id -> of(id).takeIf { it.isNotEmpty() }?.let { own -> Naming(Mentions(own.associateWith { names[it].orEmpty() })) } },
+                    names = named,
                     // A work's tags tell the sex of its main characters
                     groupings = { list -> listOf(ValueGrouping("sex", CharacterSex.entries.map { it.name }, list.map { c -> sexes[c]?.let { intArrayOf(it.ordinal) } ?: IntArray(0) })) },
                 )
@@ -817,16 +866,34 @@ class FacetSuggestions(
     }
 
     /**
-     * The passages of the item's texts that name the [value] of the [facet], as its mentions were
-     * counted: a character by its names, a universe by its own and its characters', a pairing by
-     * its two named in one paragraph. Null for a facet whose values are not counted in the texts.
+     * What the passages of the item that name the [value] of the [facet] are found by, as its mentions
+     * are counted: a character by its names, a universe by its own and its characters' — looked for in
+     * the index ([Quoting.InIndex]); a pairing by its two named in one paragraph, of the texts
+     * ([Quoting.InTexts]). Null for a facet whose values are not counted.
      */
-    fun quotes(store: SourceStore, itemId: String, facet: String, value: String): List<Quote>? {
+    fun quoting(store: SourceStore, itemId: String, facet: String, value: String): Quoting? {
         val facets = facetsOf(store)
         val k = facets.indexOfFirst { it.key == facet }.takeIf { it >= 0 } ?: return null
         val ids = listOf(itemId)
-        val naming = universeVocabulary(store, facets[k], ids, chain(store, ids, k))?.naming ?: return null
-        return naming(itemId)?.quotes(store.workPassages(itemId), value).orEmpty()
+        val vocabulary = universeVocabulary(store, facets[k], ids, chain(store, ids, k)) ?: return null
+        vocabulary.names?.let { of ->
+            val names = of(itemId) ?: return Quoting.None
+            return Quoting.InIndex(names, names.keys.filter { value in vocabulary.valuesOf(it) })
+        }
+        val naming = vocabulary.naming?.invoke(itemId) ?: return if (vocabulary.naming == null) null else Quoting.None
+        return Quoting.InTexts(naming)
+    }
+
+    /** What the passages naming a value are found by ([quoting]). */
+    sealed interface Quoting {
+        /** The names looked for in the index, and those of them that name the value. */
+        class InIndex(val names: Map<String, List<String>>, val of: List<String>) : Quoting
+
+        /** How the work's texts name the value, read of them. */
+        class InTexts(val naming: Naming) : Quoting
+
+        /** The work's words are not counted: it names nothing. */
+        data object None : Quoting
     }
 
     /**
@@ -870,7 +937,7 @@ class FacetSuggestions(
             .map { FacetCandidate(it.key, it.chance, it.mentions) }
         val unscored = if (facet !in UniverseFacet.CHARACTER_FACETS || chances.any { !it.had } || complete) emptyList() else {
             // As the fitting counted them; of a facet never fitted, counted now — of the work's universes' characters alone
-            val named = store.suggestions.mentions(facet, ids)[itemId] ?: vocabularyOf(store, def, ids, made)?.mentions(store, ids)?.invoke(itemId)
+            val named = vocabularyOf(store, def, ids, made, light = true)?.mentions(store, ids, stores.typeOf(store.id).id, plugins.search)?.invoke(itemId)
             may.orEmpty()
                 .filter { it !in answered && it !in current && it !in out && chances.none { c -> c.key == it } }
                 .map { FacetCandidate(it, null, named?.let { n -> n[it] ?: 0 }) }

@@ -44,6 +44,12 @@ class Naming(
     }.toList()
 
     companion object {
+        /** The [text] of the [place] as quotes of the [names] in it, ranges of it: the paragraphs that hold them, cut around them when long. */
+        fun quotesOf(place: TextPlace, text: String, names: List<IntRange>): List<Quote> = paragraphs(text).flatMap { range ->
+            val inside = names.filter { it.first >= range.first && it.last <= range.last }.map { (it.first - range.first)..(it.last - range.first) }
+            excerpts(text.substring(range), inside).map { (cut, highlights) -> Quote(place, cut, highlights) }
+        }
+
         private val BREAK = Regex("\\n\\s*\\n|\\n")
 
         /** Around the names of a long paragraph, so much of it on each side. */

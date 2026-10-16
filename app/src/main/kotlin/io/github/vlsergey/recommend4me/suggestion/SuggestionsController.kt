@@ -10,7 +10,9 @@ import io.github.vlsergey.recommend4me.api.model.SuggestedValue
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
 import io.github.vlsergey.recommend4me.universe.UniverseFacet
+import io.github.vlsergey.recommend4me.search.Search
 import io.github.vlsergey.recommend4me.universe.UniverseFacets
+import io.github.vlsergey.recommend4me.universe.workPassages
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.RestController
 
@@ -23,7 +25,7 @@ fun ItemFacetSuggestions.toApi(store: SourceStore) = ApiFacetSuggestions(
 )
 
 @RestController
-class SuggestionsController(private val stores: Stores, private val suggestions: FacetSuggestions) : SuggestionsApi {
+class SuggestionsController(private val stores: Stores, private val suggestions: FacetSuggestions, private val search: Search) : SuggestionsApi {
 
     override fun getSuggestions(source: String, item: String): ResponseEntity<List<ApiFacetSuggestions>> {
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
@@ -59,7 +61,11 @@ class SuggestionsController(private val stores: Stores, private val suggestions:
     override fun getMentions(source: String, item: String, facet: String, value: String): ResponseEntity<List<MentionQuote>> {
         val store = stores.source(source) ?: return ResponseEntity.notFound().build()
         if (store.items.find(item) == null) return ResponseEntity.notFound().build()
-        val quotes = suggestions.quotes(store, item, facet, value) ?: return ResponseEntity.notFound().build()
+        val quotes = when (val quoting = suggestions.quoting(store, item, facet, value) ?: return ResponseEntity.notFound().build()) {
+            is FacetSuggestions.Quoting.InIndex -> search.quotes(store, item, quoting.names, quoting.of)
+            is FacetSuggestions.Quoting.InTexts -> quoting.naming.quotes(store.workPassages(item), value)
+            FacetSuggestions.Quoting.None -> emptyList()
+        }
         return ResponseEntity.ok(
             quotes.map { q ->
                 MentionQuote(

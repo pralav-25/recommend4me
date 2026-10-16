@@ -101,4 +101,24 @@ interface SearchProvider {
 
     /** What to show of each of [keys] found by [result]. */
     fun matches(contentType: String, result: SearchResult, keys: Collection<ItemKey>, context: SearchContext): Map<ItemKey, SearchMatch>
+
+    /**
+     * HOW MANY TIMES THE WORKS' OWN WORDS ([SearchField.counted]) NAME EVERY VALUE of [names] — a
+     * value to the names it goes by — read of the index as their texts were stemmed: of the items
+     * [items], of every item indexed when null; an item none of whose words name any is left out.
+     *
+     * A name of several words counts whole; one word of it counts by itself only when no other value
+     * has that word in a name and it is no function word; a name of one word only where it is written
+     * with a capital; at every place the longest name found counts, once.
+     */
+    fun mentions(contentType: String, items: Collection<ItemKey>?, names: Map<String, List<String>>): Map<ItemKey, Map<String, Int>> = emptyMap()
+
+    /**
+     * Where the [document]'s own words name any of the values [of] among [names], as [mentions] counts
+     * them: of every value of a field that names one, its text and the characters of the names in it.
+     */
+    fun places(document: SearchDocument, names: Map<String, List<String>>, of: Collection<String>): List<NamePlace> = emptyList()
 }
+
+/** A value of a field of a document ([SearchField.key], its [text]) where a value is named, at the characters [ranges]. */
+class NamePlace(val field: String, val text: String, val ranges: List<IntRange>)
