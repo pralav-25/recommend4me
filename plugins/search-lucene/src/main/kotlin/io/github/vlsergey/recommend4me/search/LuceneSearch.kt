@@ -3,7 +3,6 @@ package io.github.vlsergey.recommend4me.search
 import io.github.vlsergey.recommend4me.item.ItemKey
 import org.apache.lucene.analysis.CharArraySet
 import org.apache.lucene.analysis.en.EnglishAnalyzer
-import org.apache.lucene.analysis.ru.RussianAnalyzer
 import org.apache.lucene.index.Term
 import org.apache.lucene.search.BooleanClause
 import org.apache.lucene.search.BooleanQuery
@@ -49,8 +48,11 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
     private fun index(contentType: String): LuceneIndex =
         indexes.computeIfAbsent(contentType) { LuceneIndex(dataDir.resolve("types").resolve(it).resolve("search-index")) }
 
-    /** Marks the words of a query in a text given to it, without the index: the texts are not stored in it. */
-    private val highlighter = UnifiedHighlighter.builderWithoutSearcher(LuceneIndex.analyzer)
+    /**
+     * Marks the words of a query in a text given to it, without the index — the texts are not stored
+     * in it — the text read as its [language], as it was put in the index.
+     */
+    private fun highlighter(language: String) = UnifiedHighlighter.builderWithoutSearcher(Stemmers.analyzer(language))
         .withFormatter(SnippetFormatter())
         .withMaxNoHighlightPassages(0)
         // Not only the first 10 000 characters, the default: a changelog is longer
@@ -67,26 +69,29 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         index(contentType).update(documents, removed)
     }
 
-    /** What [matches] needs of a search: the line's words, its vector and the passage of every item nearest by meaning. */
-    private class State(val terms: List<String>, val vector: FloatArray?, val nearest: Map<ItemKey, SearchPassage>)
+    /** What [matches] needs of a search: the line's words, the language it is read as, its vector and the passage of every item nearest by meaning. */
+    private class State(val terms: List<String>, val language: String, val vector: FloatArray?, val nearest: Map<ItemKey, SearchPassage>)
 
     private class Nearest(val cosine: Double, val passage: SearchPassage)
 
-    override fun search(contentType: String, line: String, context: SearchContext): SearchResult {
+    override fun search(contentType: String, line: String, language: String, context: SearchContext): SearchResult {
         val q = line.trim().lowercase()
-        if (q.isEmpty()) return SearchResult(q, emptyList(), State(emptyList(), null, emptyMap()))
+        val read = Stemmers.of(language)
+        if (q.isEmpty()) return SearchResult(q, emptyList(), State(emptyList(), read, null, emptyMap()))
         val started = System.currentTimeMillis()
         val index = index(contentType)
         val scores = HashMap<ItemKey, Double>()
 
         val vector = context.queryVector(q)
-        val terms = q.split(Regex("[^\\p{L}\\p{N}']+")).filter { it.length >= 2 && !STOP_WORDS.contains(it) }.distinct()
+        // The function words of English and of the line's language
+        val stops = CharArraySet(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET, true).apply { addAll(Stemmers.stopWords(read)) }
+        val terms = q.split(Regex("[^\\p{L}\\p{N}']+")).filter { it.length >= 2 && !stops.contains(it) }.distinct()
         val nearest = index.search { searcher ->
-            val fields = index.fields(searcher)
+            val fields = index.fields(searcher).searched()
             val nearest = vector?.takeIf { fields.vectors }?.let { nearest(searcher, it) }.orEmpty()
             val semantic = closeness(nearest, index.items(searcher))
             semantic.forEach { (key, closeness) -> if (closeness >= SEMANTIC_FLOOR) scores[key] = SEMANTIC_WEIGHT * closeness }
-            byWords(searcher, fields, q, terms).forEach { (key, score) ->
+            byWords(searcher, fields, q, terms, read).forEach { (key, score) ->
                 // An item found by words still keeps its meaning score, so the two add up
                 scores[key] = (scores[key] ?: (SEMANTIC_WEIGHT * (semantic[key] ?: 0.0))) + WORD_WEIGHT * score
             }
@@ -95,7 +100,7 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         val ranked = scores.entries.sortedByDescending { it.value }.take(MAX_RESULTS).map { it.key }
         log.info("'{}' in {}: {} items in {} ms", line, contentType, ranked.size, System.currentTimeMillis() - started)
         val passages = nearest.mapValues { it.value.passage }
-        return SearchResult(q, ranked, State(terms, vector, passages), passages)
+        return SearchResult(q, ranked, State(terms, read, vector, passages), passages)
     }
 
     /**
@@ -111,7 +116,7 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         val byMeaning = HashMap<ItemKey, Pair<SearchField, List<String>>>()
         keys.forEach { key ->
             val doc = documents[key] ?: return@forEach
-            val words = snippet(state.terms, doc)
+            val words = snippet(state.terms, state.language, doc)
             if (words != null) byWords[key] = SearchMatch(words.first.key, false, words.second.text, words.second.highlights)
             // The words apart did not make the item a match, its meaning did: the phrase of the passage nearest by meaning is shown
             if (words?.third == true) return@forEach
@@ -191,16 +196,16 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
      * together — within [NEAR] words of each other, in any order; plus [NAME_BONUS] when the whole
      * [line] stands as a phrase in a naming field — or, a single word typed in part, begins a word of it.
      */
-    private fun byWords(searcher: org.apache.lucene.search.IndexSearcher, fields: LuceneIndex.Fields, line: String, terms: List<String>): Map<ItemKey, Double> {
+    private fun byWords(searcher: org.apache.lucene.search.IndexSearcher, fields: LuceneIndex.Fields, line: String, terms: List<String>, language: String): Map<ItemKey, Double> {
         if (fields.text.isEmpty()) return emptyMap()
         val query = BooleanQuery.Builder()
-        val termQueries = terms.mapNotNull { termQuery(fields, it) }
+        val termQueries = terms.mapNotNull { termQuery(fields, it, language) }
         if (termQueries.isNotEmpty()) {
             val byWords = BooleanQuery.Builder().setMinimumNumberShouldMatch(required(termQueries.size))
             termQueries.forEach { byWords.add(BoostQuery(it, 1f / termQueries.size), BooleanClause.Occur.SHOULD) }
             query.add(BoostQuery(byWords.build(), if (termQueries.size > 1) APART else 1f), BooleanClause.Occur.SHOULD)
         }
-        val all = terms.flatMap(LuceneIndex::tokens).distinct()
+        val all = terms.flatMap { LuceneIndex.tokens(it, language) }.distinct()
         if (all.size > 1) {
             val together = fields.text.map { field ->
                 val near = PhraseQuery.Builder().setSlop(NEAR).apply { all.forEach { add(Term(field.name, it)) } }.build()
@@ -208,7 +213,7 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
             }
             query.add(BoostQuery(DisjunctionMaxQuery(together, 0f), TOGETHER), BooleanClause.Occur.SHOULD)
         }
-        val words = words(line)
+        val words = words(line, language)
         val naming = fields.text.filter { it.naming }
         if (words.isNotEmpty() && naming.isNotEmpty()) {
             val inName = naming.map { field ->
@@ -238,8 +243,8 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
      * to it already, and as a beginning it finds other words — "stolen", read as "steal", found
      * "stealth".
      */
-    private fun words(term: String): List<Word> {
-        val parts = LuceneIndex.tokens(term)
+    private fun words(term: String, language: String): List<Word> {
+        val parts = LuceneIndex.tokens(term, language)
         val asTyped = parts.size == 1 && parts.single() == term.lowercase() && term.length >= MIN_PREFIX
         return parts.map { Word(it, asTyped) }
     }
@@ -254,8 +259,8 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
     }
 
     /** A term of the query, scored by the weight of the best field it is found in; a term the analyzer splits needs every part in that field. */
-    private fun termQuery(fields: LuceneIndex.Fields, term: String): Query? {
-        val parts = words(term)
+    private fun termQuery(fields: LuceneIndex.Fields, term: String, language: String): Query? {
+        val parts = words(term, language)
         if (parts.isEmpty()) return null
         val perField = fields.text.map { field ->
             val each = parts.map { part -> wordQuery(field.name, part) }
@@ -271,25 +276,27 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
      * The piece of the item's text where the [terms] are found, with the words found marked: where
      * they all stand together, from the weightiest field that has them so — the place that made the
      * item a match — or else from the weightiest field that holds one; null when none is found.
-     * The third value: whether the words all stand together there.
+     * The third value: whether the words all stand together there. The [terms] are of the [language].
      */
-    private fun snippet(terms: List<String>, doc: SearchDocument): Triple<SearchField, Snippet, Boolean>? {
-        val parts = terms.flatMap(::words).distinct()
+    private fun snippet(terms: List<String>, language: String, doc: SearchDocument): Triple<SearchField, Snippet, Boolean>? {
+        val parts = terms.flatMap { words(it, language) }.distinct()
         if (parts.isEmpty()) return null
         val contents = doc.fields.sortedByDescending { it.weight }.mapNotNull { field ->
             field.values.filter { it.isNotBlank() }.takeIf { it.isNotEmpty() }?.let { field to it.joinToString(if (field.list) ", " else "\n\n") }
         }
-        val all = terms.flatMap(LuceneIndex::tokens).distinct()
+        val all = terms.flatMap { LuceneIndex.tokens(it, language) }.distinct()
+        // A text read as it was put in the index: as its own language, or the work's
+        fun marker(content: String) = highlighter(TextLanguages.of(content, doc.language))
         if (all.size > 1) contents.forEach { (field, content) ->
             val name = LuceneIndex.fieldName(field)
             val near = PhraseQuery.Builder().setSlop(NEAR).apply { all.forEach { add(Term(name, it)) } }.build()
-            val found = highlighter.highlightWithoutSearcher(name, near, content, 1) as Snippet?
+            val found = marker(content).highlightWithoutSearcher(name, near, content, 1) as Snippet?
             if (found != null) return Triple(field, found, true)
         }
         contents.forEach { (field, content) ->
             val name = LuceneIndex.fieldName(field)
             val query = BooleanQuery.Builder().apply { parts.forEach { part -> add(wordQuery(name, part), BooleanClause.Occur.SHOULD) } }.build()
-            val found = highlighter.highlightWithoutSearcher(name, query, content, 1) as Snippet?
+            val found = marker(content).highlightWithoutSearcher(name, query, content, 1) as Snippet?
             if (found != null) return Triple(field, found, all.size <= 1)
         }
         return null
@@ -302,9 +309,6 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
     companion object {
         private const val MAX_RESULTS = 500
         private const val MAX_TEXT = 1_000_000
-
-        /** The stop words of English and Russian, Lucene's own lists. */
-        private val STOP_WORDS = CharArraySet(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET, true).apply { addAll(RussianAnalyzer.getDefaultStopSet()) }
 
         /** The items nearest by meaning that are asked for; the farther ones are no matches by meaning. */
         private const val NEAREST = 2000

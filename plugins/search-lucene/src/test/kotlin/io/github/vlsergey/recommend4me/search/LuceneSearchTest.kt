@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 
 class LuceneSearchTest {
 
-    private fun doc(id: String, title: String, author: String, text: String) = SearchDocument(
+    private fun doc(id: String, title: String, author: String, text: String, language: String = "en") = SearchDocument(
         ItemKey("test", id),
         listOf(
             SearchField("title", "Название", 1.0f, listOf(title), naming = true),
@@ -16,12 +16,13 @@ class LuceneSearchTest {
             SearchField("annotation", "Аннотация", 0.6f, listOf(text)),
         ),
         emptyList(),
+        language,
     )
 
     private val documents = listOf(
         doc("1", "Stolen Memories", "Herandu Games", "A detective story in a rainy city."),
         doc("2", "Beach Day", "Somebody", "Her clothes were stolen at the beach, and the day went on from there."),
-        doc("3", "Повелитель драконов", "Иван Петров", "Юноша находит яйцо дракона и становится всадником."),
+        doc("3", "Повелитель драконов", "Иван Петров", "Юноша находит яйцо дракона и становится всадником.", "ru"),
     )
 
     private val context = object : SearchContext {
@@ -35,12 +36,12 @@ class LuceneSearchTest {
         LuceneSearch(Files.createTempDirectory("search")).use { search ->
             search.rebuild("books", documents.asSequence())
             // The words standing together in one text beat a title that has one of them
-            val clothes = search.search("books", "stolen clothes", context)
+            val clothes = search.search("books", "stolen clothes", "en", context)
             assertEquals("2", clothes.keys.first().id)
             // A developer's name typed in part
-            assertEquals(listOf("1"), search.search("books", "herand", context).keys.map { it.id })
+            assertEquals(listOf("1"), search.search("books", "herand", "en", context).keys.map { it.id })
             // Another case of a Russian word
-            assertEquals(listOf("3"), search.search("books", "драконы", context).keys.map { it.id })
+            assertEquals(listOf("3"), search.search("books", "драконы", "ru", context).keys.map { it.id })
 
             val match = search.matches("books", clothes, clothes.keys, context).getValue(ItemKey("test", "2"))
             // The field by its key: the application tells where in the work it is
@@ -66,10 +67,12 @@ class LuceneSearchTest {
                 SearchPassage("part:1", 0, scene, floatArrayOf(0f, 0f, 1f)),
                 SearchPassage("part:1", scene, chapter.length, lighthouse),
             ),
+            "ru",
         )
         val other = SearchDocument(
             ItemKey("test", "5"), listOf(SearchField("title", "Название", 1.0f, listOf("Другое"), naming = true)),
             listOf(SearchPassage("title", 0, 6, floatArrayOf(0f, 1f, 0f))),
+            "ru",
         )
         val byMeaning = object : SearchContext by context {
             override fun queryVector(line: String) = lighthouse
@@ -77,7 +80,7 @@ class LuceneSearchTest {
         }
         LuceneSearch(Files.createTempDirectory("search")).use { search ->
             search.rebuild("books", sequenceOf(withChapter, other))
-            val found = search.search("books", "свидание у маяка утром", byMeaning)
+            val found = search.search("books", "свидание у маяка утром", "ru", byMeaning)
             assertEquals("4", found.keys.first().id)
             val nearest = found.nearest.getValue(ItemKey("test", "4"))
             assertEquals("part:1", nearest.field)
@@ -87,7 +90,7 @@ class LuceneSearchTest {
             assertTrue(shown.byMeaning && shown.text.startsWith("Наутро"), shown.text)
             // Removed, the item's passages go with it
             search.update("books", emptyList(), listOf(ItemKey("test", "4")))
-            assertTrue(ItemKey("test", "4") !in search.search("books", "свидание у маяка утром", byMeaning).keys)
+            assertTrue(ItemKey("test", "4") !in search.search("books", "свидание у маяка утром", "ru", byMeaning).keys)
         }
     }
 
@@ -98,6 +101,7 @@ class LuceneSearchTest {
             ItemKey("test", "8"),
             listOf(SearchField("title", "Название", 1.0f, listOf("Обнажённая"), naming = true), SearchField("tags", "Теги", 0.9f, listOf(tags))),
             listOf(SearchPassage("tags", 0, tags.length, floatArrayOf(1f, 0f, 0f))),
+            "ru",
         )
         val byMeaning = object : SearchContext by context {
             override fun queryVector(line: String) = floatArrayOf(1f, 0f, 0f)
@@ -105,7 +109,7 @@ class LuceneSearchTest {
         }
         LuceneSearch(Files.createTempDirectory("search")).use { search ->
             search.rebuild("books", sequenceOf(doc))
-            val found = search.search("books", "голышом", byMeaning)
+            val found = search.search("books", "голышом", "ru", byMeaning)
             val shown = search.matches("books", found, found.keys, byMeaning).getValue(ItemKey("test", "8"))
             assertEquals("tags", shown.field)
             assertEquals(tags, shown.text)
@@ -115,10 +119,10 @@ class LuceneSearchTest {
     @Test
     fun `a work of a thousand chapters is one field of chapters searched`() {
         val chapters = (1..1100).map { SearchField("part:$it", "Глава $it", 0.5f, listOf("Глава о том, как прошёл день номер $it."), group = "parts") }
-        val long = SearchDocument(ItemKey("test", "7"), listOf(SearchField("title", "Название", 1.0f, listOf("Долгая сага"), naming = true)) + chapters, emptyList())
+        val long = SearchDocument(ItemKey("test", "7"), listOf(SearchField("title", "Название", 1.0f, listOf("Долгая сага"), naming = true)) + chapters, emptyList(), "ru")
         LuceneSearch(Files.createTempDirectory("search")).use { search ->
             search.rebuild("books", sequenceOf(long))
-            val found = search.search("books", "прошёл день", context)
+            val found = search.search("books", "прошёл день", "ru", context)
             assertEquals(listOf("7"), found.keys.map { it.id })
         }
     }
@@ -128,9 +132,9 @@ class LuceneSearchTest {
         LuceneSearch(Files.createTempDirectory("search")).use { search ->
             search.rebuild("books", documents.take(1).asSequence())
             search.update("books", listOf(doc("9", "Lighthouse Keeper", "Nobody", "A quiet game about a lighthouse.")), emptyList())
-            assertEquals(listOf("9"), search.search("books", "lighthouse", context).keys.map { it.id })
+            assertEquals(listOf("9"), search.search("books", "lighthouse", "en", context).keys.map { it.id })
             search.update("books", emptyList(), listOf(ItemKey("test", "9")))
-            assertTrue(search.search("books", "lighthouse", context).keys.isEmpty())
+            assertTrue(search.search("books", "lighthouse", "en", context).keys.isEmpty())
         }
     }
 }

@@ -2,13 +2,6 @@ package io.github.vlsergey.recommend4me.search
 
 import io.github.vlsergey.recommend4me.item.ItemKey
 import org.apache.lucene.analysis.Analyzer
-import org.apache.lucene.analysis.LowerCaseFilter
-import org.apache.lucene.analysis.TokenStream
-import org.apache.lucene.analysis.en.EnglishPossessiveFilter
-import org.apache.lucene.analysis.en.PorterStemFilter
-import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter
-import org.apache.lucene.analysis.ru.RussianLightStemFilter
-import org.apache.lucene.analysis.standard.StandardTokenizer
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute
 import org.apache.lucene.document.Document
 import org.apache.lucene.document.Field
@@ -37,9 +30,14 @@ import kotlin.io.path.exists
  * [SearchField], searched by words — and a document of every passage of its texts ([SearchPassage]),
  * its vector searched by meaning; all of them under the item's [ID], replaced and removed together.
  *
- * THE WEIGHT OF A FIELD IS IN ITS NAME — `t.<weight in hundredths>.<key>`, `n.` for a field that
- * names the item — so a search reads which fields there are and what each weighs from the index
- * itself, whatever source wrote them. Every passage's vector is in the one field [VECTOR].
+ * THE WEIGHT OF A FIELD IS IN ITS NAME — `<marks>.<weight in hundredths>.<key>`, the marks `n` of a
+ * field that names the item, `c` of the work's own words ([SearchField.counted]), `t` of neither —
+ * so a search reads which fields there are and what each weighs from the index itself, whatever
+ * source wrote them. Every passage's vector is in the one field [VECTOR].
+ *
+ * EVERY TEXT STEMMED BEFORE IT IS PUT IN, ONCE, as written in its language ([TextLanguages],
+ * [Stemmers]) — one field of it, no copy by another language (user, 2026-10-16): every word as its
+ * stem at its place, marked when written with a capital ([Stemmers.CAPITAL]).
  *
  * MADE ANEW BESIDE THE OLD ONE: a rebuild writes into a folder of its own while the searches use
  * the index as it was, then takes its place; what is updated meanwhile goes into both.
@@ -112,13 +110,16 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
         return Fields(text, VECTOR in names)
     }
 
-    class Fields(val text: List<IndexedField>, val vectors: Boolean)
+    class Fields(val text: List<IndexedField>, val vectors: Boolean) {
+        /** Of the fields searched alone: not those of weight 0, the work's own words kept for the counting of names. */
+        fun searched() = Fields(text.filter { it.weight > 0f }, vectors)
+    }
 
     /** How many items the index has: their documents of fields, not their passages. */
     fun items(searcher: IndexSearcher): Int = searcher.count(TermQuery(Term(KIND, ITEM)))
 
-    /** A text field of the index: its name there, its key in the documents, its weight, whether it names the item. */
-    data class IndexedField(val name: String, val key: String, val weight: Float, val naming: Boolean)
+    /** A text field of the index: its name there, its key in the documents, its weight, whether it names the item, whether it is the work's own words. */
+    data class IndexedField(val name: String, val key: String, val weight: Float, val naming: Boolean, val counted: Boolean)
 
     override fun close() = lock.withLock {
         searchers.close()
@@ -142,29 +143,19 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
         const val PASSAGE_TO = "p.to"
 
         /**
-         * Words, lower case, accents folded, English endings stemmed and irregular verbs brought to
-         * their base — "clothes" and "clothing", "steals", "stealing" and "stolen" are one word
-         * each — and Russian endings taken off ("драконы", "драконов" and "дракон" are one).
+         * The writer's: the texts come stemmed already, each as its language ([documents]); what it
+         * tells is the gap between two values of one field — two tags, two attributes are not one
+         * phrase — and it stems as English what is ever given it unstemmed.
          */
-        val analyzer: Analyzer = object : Analyzer() {
-            override fun createComponents(fieldName: String): TokenStreamComponents {
-                val source = StandardTokenizer()
-                val english = PorterStemFilter(EnglishPossessiveFilter(ASCIIFoldingFilter(LowerCaseFilter(source))))
-                return TokenStreamComponents(source, RussianLightStemFilter(IrregularVerbs.filter(english)))
-            }
-
-            override fun normalize(fieldName: String, `in`: TokenStream): TokenStream = ASCIIFoldingFilter(LowerCaseFilter(`in`))
-
-            // Two tags, two attributes are not one phrase
-            override fun getPositionIncrementGap(fieldName: String): Int = VALUE_GAP
-        }
+        val analyzer: Analyzer = Stemmers.analyzer(Stemmers.DEFAULT)
 
         /** The positions between two values of one field — two tags — farther than any phrase reaches. */
         const val VALUE_GAP = 100
 
-        fun tokens(text: String): List<String> {
+        /** The words of a [text] of the [language] as the index has them: their stems. */
+        fun tokens(text: String, language: String): List<String> {
             val out = ArrayList<String>()
-            analyzer.tokenStream("", text).use { stream ->
+            Stemmers.analyzer(language).tokenStream("", text).use { stream ->
                 val term = stream.addAttribute(CharTermAttribute::class.java)
                 stream.reset()
                 while (stream.incrementToken()) out += term.toString()
@@ -174,14 +165,15 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
         }
 
         fun fieldName(field: SearchField): String =
-            (if (field.naming) "n." else "t.") + Math.round(field.weight * 100) + "." + field.group
+            ((if (field.naming) "n" else "") + (if (field.counted) "c" else "")).ifEmpty { "t" } + "." + Math.round(field.weight * 100) + "." + field.group
+
+        private val MARKS = Regex("[nct]+")
 
         private fun textField(name: String): IndexedField? {
-            if (!name.startsWith("t.") && !name.startsWith("n.")) return null
             val parts = name.split('.', limit = 3)
-            if (parts.size < 3) return null
+            if (parts.size < 3 || !MARKS.matches(parts[0])) return null
             val weight = parts[1].toIntOrNull() ?: return null
-            return IndexedField(name, parts[2], weight / 100f, parts[0] == "n")
+            return IndexedField(name, parts[2], weight / 100f, 'n' in parts[0], 'c' in parts[0])
         }
 
         private fun idTerm(key: ItemKey) = Term(ID, key.toString())
@@ -194,12 +186,17 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
         /** The documents of an item: of its fields, and of every passage of it with a vector. */
         private fun documents(doc: SearchDocument): List<Document> {
             val id = doc.key.toString()
+            // Every value stemmed as its language: a stream of its own each, of an analyzer that reuses none
+            val stemmers = HashMap<String, Analyzer>()
             val fields = Document().apply {
                 add(StringField(ID, id, Field.Store.YES))
                 add(StringField(KIND, ITEM, Field.Store.NO))
                 doc.fields.forEach { field ->
                     val name = fieldName(field)
-                    field.values.filter { it.isNotBlank() }.forEach { add(TextField(name, it, Field.Store.NO)) }
+                    field.values.filter { it.isNotBlank() }.forEach { value ->
+                        val language = TextLanguages.of(value, doc.language)
+                        add(TextField(name, stemmers.getOrPut(language) { Stemmers.analyzer(language, reuse = false) }.tokenStream(name, value)))
+                    }
                 }
             }
             val passages = doc.passages.mapNotNull { p ->

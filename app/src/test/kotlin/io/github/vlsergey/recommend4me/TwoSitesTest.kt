@@ -45,6 +45,8 @@ import io.github.vlsergey.recommend4me.tag.TagRepository
 import io.github.vlsergey.recommend4me.tag.Tags
 import io.github.vlsergey.recommend4me.tag.TagsController
 import org.junit.jupiter.api.AfterAll
+import org.springframework.context.i18n.LocaleContextHolder
+import java.util.Locale
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -520,6 +522,8 @@ class TwoSitesTest {
 
     @Test
     fun `a tag the user gave a work finds it at once`() {
+        // The line read as the interface's language, English: the works are of English
+        LocaleContextHolder.setLocale(Locale.ENGLISH)
         alpha("q3|Deep water|water|Waves over the reef||")
         // Indexed as the site wrote it first
         assertTrue(waitFor(60) { items.listItems("books", ItemQuery(search = "water")).body!!.items.any { it.item == "q3" } })

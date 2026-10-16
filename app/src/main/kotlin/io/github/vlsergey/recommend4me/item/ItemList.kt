@@ -98,11 +98,13 @@ class ItemList(
         ranges: List<NumberRange>,
         offset: Int,
         limit: Int,
+        /** The language the [line] is read as (ISO 639-1). */
+        language: String,
     ): ItemPage {
         val type = stores.type(typeId) ?: return ItemPage(0, emptyList())
         val clusters = works.of(type)
         val places = if (order == ItemOrder.SURPRISE) recommendations.gradePlaces(typeId) else null
-        val found = line?.takeIf { it.isNotBlank() }?.let { search.search(typeId, it) }
+        val found = line?.takeIf { it.isNotBlank() }?.let { search.search(typeId, it, language) }
         val relevance = found?.keys?.withIndex()?.associate { (i, k) -> k to i }
         val choices = facets.associateBy { it.facet }
 

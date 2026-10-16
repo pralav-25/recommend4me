@@ -41,6 +41,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.springframework.core.io.FileSystemResource
 import org.springframework.core.io.Resource
 import org.springframework.http.CacheControl
+import org.springframework.context.i18n.LocaleContextHolder
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -79,7 +80,7 @@ class ItemsController(
     }
 
     override fun getSearchQuality(type: String, top: Int): ResponseEntity<SearchQuality> =
-        searchQuality.measure(type, top)?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
+        searchQuality.measure(type, top, LocaleContextHolder.getLocale().language)?.let { ResponseEntity.ok(it) } ?: ResponseEntity.notFound().build()
 
     override fun removeItem(source: String, item: String): ResponseEntity<Unit> =
         if (removal.remove(ItemKey(source, item))) ResponseEntity.noContent().build() else ResponseEntity.notFound().build()
@@ -96,6 +97,8 @@ class ItemsController(
             list.page(
                 type, ItemView.valueOf((q.view ?: d.view!!).name), ItemOrder.valueOf((q.sort ?: d.sort!!).name), q.sortNumber, q.search,
                 facets, q.sources?.toSet()?.takeIf { it.isNotEmpty() }, ranges, q.offset ?: d.offset!!, q.limit ?: d.limit!!,
+                // The line searched read as the interface's language: the one it is typed in
+                language = LocaleContextHolder.getLocale().language,
             ),
         )
     }

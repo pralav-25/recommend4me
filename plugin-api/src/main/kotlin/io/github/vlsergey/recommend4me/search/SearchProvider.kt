@@ -6,11 +6,15 @@ import io.github.vlsergey.recommend4me.item.ItemKey
  * Everything searchable of an item: its fields of text — the title, the facets' names, the texts,
  * the chapters read — each with the weight of a match in it, and the passages of its texts for the
  * search by meaning: every window of every text the encoder reads, each with its vector.
+ *
+ * [language]: the language its description is written in (ISO 639-1) — what a text of it too short
+ * to tell its own is stemmed as; null when it is not known.
  */
 class SearchDocument(
     val key: ItemKey,
     val fields: List<SearchField>,
     val passages: List<SearchPassage>,
+    val language: String? = null,
 )
 
 /**
@@ -32,6 +36,12 @@ class SearchField(
      * its kind — the chapters of a work, hundreds of them, are one field searched, each shown by its name.
      */
     val group: String = key,
+    /**
+     * The work's own words — its texts, its chapters, the values its site gives it — where a name
+     * written counts as the work naming it ([SearchProvider.mentions]); not the values the user or
+     * the model gave it. A field of [weight] 0 is of these alone, not searched.
+     */
+    val counted: Boolean = false,
 ) {
     /** The field's values as one text: what its passages' characters count in. */
     val text: String get() = values.joinToString(if (list) ", " else "\n\n")
@@ -86,7 +96,8 @@ interface SearchProvider {
 
     fun update(contentType: String, documents: List<SearchDocument>, removed: Collection<ItemKey>)
 
-    fun search(contentType: String, line: String, context: SearchContext): SearchResult
+    /** The items matching [line], read as a text of the [language] (ISO 639-1) — the interface's, the one it is typed in. */
+    fun search(contentType: String, line: String, language: String, context: SearchContext): SearchResult
 
     /** What to show of each of [keys] found by [result]. */
     fun matches(contentType: String, result: SearchResult, keys: Collection<ItemKey>, context: SearchContext): Map<ItemKey, SearchMatch>

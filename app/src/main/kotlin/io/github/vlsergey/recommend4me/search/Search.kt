@@ -17,6 +17,8 @@ import io.github.vlsergey.recommend4me.suggestion.ModelValues
 import io.github.vlsergey.recommend4me.textvector.PhraseVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectors
 import io.github.vlsergey.recommend4me.textvector.TextVectorsChanged
+import io.github.vlsergey.recommend4me.contenttype.StandardLanguages
+import io.github.vlsergey.recommend4me.source.SourceSchema
 import io.github.vlsergey.recommend4me.workload.Work
 import io.github.vlsergey.recommend4me.workload.Workload
 import io.github.vlsergey.recommend4me.vector.Vectors
@@ -129,6 +131,12 @@ class Search(
      * and of the chapters: every window of a text longer than one with its own vector, a shorter one
      * whole with the text's. The values the model gives them of their [chances], made now of them
      * when not given.
+     *
+     * THE WORK'S OWN WORDS ([SearchField.counted]) — every text of it, every chapter, every value its
+     * site gives it — are all in it, those not searched of weight 0: a name written in them is the
+     * work naming it ([SearchProvider.mentions]). The values the user or the model gave it are a
+     * field of their own beside the site's, searched, never counted: the model would count its own
+     * guesses. And the language its description is written in ([descriptionLanguage]).
      */
     fun documents(s: SourceStore, ids: List<String>, passages: Boolean = true, chances: WorkChances? = null): Map<ItemKey, SearchDocument> {
         val schema = s.schema
@@ -139,11 +147,11 @@ class Search(
         val hierarchies = s.hierarchies()
         val fields = s.corrections.fieldsOf(ids)
         val texts = s.items.textsOf(ids)
-        val searchedFacets = schema.facets.filter { it.searchWeight > 0 }
+        val site = s.items.facetsOf(ids)
         // The values of every item as the user says, the user's own among them: what is indexed — and named
         val corrected = ids.associateWith { id -> TagHierarchy.corrected(facets[id].orEmpty(), facetCorrections[id].orEmpty(), hierarchies) }
-        val names = searchedFacets.associate { def ->
-            def.key to s.names(def.key, ids.flatMap { corrected[it]?.get(def.key).orEmpty() }.distinct()) +
+        val names = schema.facets.associate { def ->
+            def.key to s.names(def.key, ids.flatMap { corrected[it]?.get(def.key).orEmpty() + site[it]?.get(def.key).orEmpty() }.distinct()) +
                 facetCorrections.values.flatten().filter { it.facet == def.key && it.name != null }.associate { it.key to it.name!! }
         }
         val encoder = plugins.textEncoder()?.takeIf { passages }
@@ -174,25 +182,33 @@ class Search(
             // The fields' names are what the reranker reads them as, plain words; where a match is the
             // interface is told by the field's key ([places])
             docFields += SearchField(TITLE, TITLE, 1.0f, listOf(Corrected.title(head.title, own)), naming = true)
-            searchedFacets.forEach { def ->
+            schema.facets.forEach { def ->
                 val keys = itemFacets[def.key].orEmpty()
-                if (keys.isNotEmpty()) docFields += SearchField(
-                    FACET + def.key, def.key, def.searchWeight, keys.map { names[def.key]?.get(it) ?: it }, list = true, naming = def.names,
+                // The site's own, as the user left them; the rest the user's and the model's
+                val removed = facetCorrections[id].orEmpty().filter { it.facet == def.key && !it.added }.map { it.key }.toSet()
+                val own = site[id]?.get(def.key).orEmpty().filter { it !in removed }.distinct()
+                val given = keys.filter { it !in own }
+                fun named(list: List<String>) = list.map { names[def.key]?.get(it) ?: it }
+                if (own.isNotEmpty()) docFields += SearchField(
+                    FACET + def.key, def.key, def.searchWeight, named(own), list = true, naming = def.names, counted = true,
+                )
+                if (given.isNotEmpty() && def.searchWeight > 0) docFields += SearchField(
+                    FACET + def.key, def.key, def.searchWeight, named(given), list = true, naming = def.names, group = FACET + def.key + GIVEN,
                 )
             }
-            schema.texts.filter { it.searchWeight > 0 }.forEach { def ->
-                itemTexts[def.key]?.let { docFields += SearchField(def.key, def.key, def.searchWeight, listOf(it)) }
+            schema.texts.forEach { def ->
+                itemTexts[def.key]?.let { docFields += SearchField(def.key, def.key, def.searchWeight, listOf(it), counted = true) }
             }
             val docPassages = ArrayList<SearchPassage>()
             docFields.filter { it.key in meaningful }.forEach { f -> docPassages += passagesOf(f, vectors[id]?.get(f.key), windows[id]?.get(f.key)) }
             // The chapters read: searched by their words and by the meaning of every window of them
             parts[id].orEmpty().forEachIndexed { n, (partId, title, content) ->
-                val field = SearchField(PART + partId, title?.takeIf { it.isNotBlank() } ?: "part ${n + 1}", partWeight, listOf(content), group = PARTS)
+                val field = SearchField(PART + partId, title?.takeIf { it.isNotBlank() } ?: "part ${n + 1}", partWeight, listOf(content), group = PARTS, counted = true)
                 docFields += field
                 val w = partWindows[id]?.get(partId)
                 docPassages += passagesOf(field, w?.singleOrNull(), w)
             }
-            ItemKey(s.id, id) to SearchDocument(ItemKey(s.id, id), docFields, docPassages)
+            ItemKey(s.id, id) to SearchDocument(ItemKey(s.id, id), docFields, docPassages, descriptionLanguage(schema, itemFacets))
         }.toMap()
     }
 
@@ -224,17 +240,17 @@ class Search(
     }
 
     /**
-     * The works matching [line], most relevant first; null without a search plugin. Found by the
+     * The works matching [line], read as the [language] (ISO 639-1), most relevant first; null without a search plugin. Found by the
      * plugin — by meaning and by words — and then, with a reranker ([rerank]), every one of them
      * read together with the line and put in the order of what it says: a vector of a text is the
      * text squeezed before it meets the line, and "a detective in Victorian London" found the works
      * whose texts named a Victor and London.
      */
-    fun search(typeId: String, line: String, rerank: Boolean = true): SearchResult? {
+    fun search(typeId: String, line: String, language: String, rerank: Boolean = true): SearchResult? {
         val provider = plugins.search ?: return null
         val type = stores.type(typeId) ?: return null
         // The index as it is: the works written since are indexed in the background, a request never waits for it
-        val found = provider.search(typeId, line, context(type))
+        val found = provider.search(typeId, line, language, context(type))
         return if (rerank) reranked(type, found) else found
     }
 
@@ -336,5 +352,17 @@ class Search(
         /** The fields of the chapters: "part:<part id>", searched as one field of the index, [PARTS]. */
         private const val PART = "part:"
         private const val PARTS = "parts"
+
+        /** The field of the values of a facet the user and the model gave a work, beside the site's own. */
+        private const val GIVEN = "+given"
+
+        /**
+         * The language a work's description is written in: its own facet of it
+         * ([StandardLanguages.DESCRIPTION]); else, of a work of one language — a book — that one;
+         * else none known.
+         */
+        fun descriptionLanguage(schema: SourceSchema, facets: Map<String, List<String>>): String? =
+            facets[StandardLanguages.DESCRIPTION_KEY]?.firstOrNull()
+                ?: schema.facet(StandardLanguages.KEY)?.takeIf { it.single }?.let { facets[it.key]?.singleOrNull() }
     }
 }

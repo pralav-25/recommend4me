@@ -17,11 +17,11 @@ import io.github.vlsergey.recommend4me.api.model.SearchQualitySum as ApiSearchQu
 @Component
 class SearchQuality(private val stores: Stores, private val search: Search) {
 
-    /** The measure of the type's search over the first [top] works found; null for no such type. */
-    fun measure(typeId: String, top: Int): ApiSearchQuality? {
+    /** The measure of the type's search over the first [top] works found, the lines read as the [language]; null for no such type. */
+    fun measure(typeId: String, top: Int, language: String): ApiSearchQuality? {
         val type = stores.type(typeId) ?: return null
         val rows = type.searchJudgments.all().toSortedMap().map { (query, judged) ->
-            fun ranks(rerank: Boolean) = ranks(search.search(typeId, query, rerank)?.keys.orEmpty(), judged, top)
+            fun ranks(rerank: Boolean) = ranks(search.search(typeId, query, language, rerank)?.keys.orEmpty(), judged, top)
             ApiQueryQuality(query, judged.count { it.value }, judged.count { !it.value }, ranks(true), ranks(false))
         }
         return ApiSearchQuality(top, rows, sum(rows.map { it.reranked }, rows), sum(rows.map { it.plain }, rows))

@@ -175,9 +175,9 @@ object Stemmers {
      * [CAPITAL] when written with a capital ([Capitals]), stemmed by the language's chain; every
      * value of a field farther from the next than any name reaches ([LuceneIndex.VALUE_GAP]).
      */
-    fun analyzer(language: String): Analyzer {
+    fun analyzer(language: String, reuse: Boolean = true): Analyzer {
         val chain = LANGUAGES.getValue(of(language)).chain
-        return object : Analyzer() {
+        return object : Analyzer(if (reuse) GLOBAL_REUSE_STRATEGY else NO_REUSE) {
             override fun createComponents(fieldName: String): TokenStreamComponents {
                 val source = StandardTokenizer()
                 return TokenStreamComponents(source, chain(Capitals(source)))
@@ -185,6 +185,16 @@ object Stemmers {
 
             override fun getPositionIncrementGap(fieldName: String): Int = LuceneIndex.VALUE_GAP
         }
+    }
+
+    /**
+     * A stream of its own of every call: the values of one field of a document are given the writer
+     * as streams made before it reads any — streams reused would read the last value only.
+     */
+    private val NO_REUSE = object : Analyzer.ReuseStrategy() {
+        override fun getReusableComponents(analyzer: Analyzer, fieldName: String): Analyzer.TokenStreamComponents? = null
+
+        override fun setReusableComponents(analyzer: Analyzer, fieldName: String, components: Analyzer.TokenStreamComponents) {}
     }
 
     /** The payload of a word written with a capital: one byte, 1. */
