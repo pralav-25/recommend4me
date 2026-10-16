@@ -38,9 +38,11 @@ internal class NameMatcher(names: Map<String, List<String>>, languages: Collecti
 
     init {
         val all = languages.ifEmpty { listOf(Stemmers.DEFAULT) }.distinct().flatMap { language ->
-            val whole = names.flatMap { (value, own) -> own.map { Pattern(LuceneIndex.tokens(it, language), value) } }.filter { it.stems.isNotEmpty() }.distinct()
+            // One analyzer for every name: thousands of names of a dictionary
+            val analyzer = Stemmers.analyzer(language)
+            val whole = names.flatMap { (value, own) -> own.map { Pattern(LuceneIndex.tokens(it, analyzer), value) } }.filter { it.stems.isNotEmpty() }.distinct()
             val common = CharArraySet(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET, true).apply { addAll(Stemmers.stopWords(language)) }
-                .flatMap { LuceneIndex.tokens(String(it as CharArray), language) }.toSet()
+                .flatMap { LuceneIndex.tokens(String(it as CharArray), analyzer) }.toSet()
             val owners = HashMap<String, MutableSet<String>>()
             whole.forEach { p -> p.stems.forEach { owners.getOrPut(it) { HashSet() } += p.value } }
             val single = owners.filter { (stem, of) -> of.size == 1 && stem !in common }.map { (stem, of) -> Pattern(listOf(stem), of.first()) }

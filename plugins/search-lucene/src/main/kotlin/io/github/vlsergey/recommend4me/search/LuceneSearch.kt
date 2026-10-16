@@ -9,7 +9,7 @@ import org.apache.lucene.analysis.tokenattributes.PayloadAttribute
 import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute
 import org.apache.lucene.index.PostingsEnum
 import org.apache.lucene.index.Term
-import org.apache.lucene.util.BytesRef
+import org.apache.lucene.util.BytesRefBuilder
 import org.apache.lucene.search.BooleanClause
 import org.apache.lucene.search.BooleanQuery
 import org.apache.lucene.search.BoostQuery
@@ -346,15 +346,19 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
                     if (inLeaf.isEmpty()) return@forEach
                     counted.forEach { field ->
                         val terms = leaf.reader().terms(field)?.iterator() ?: return@forEach
+                        // One enumeration of the places, reused for every stem: tens of thousands of stems a dictionary
+                        var postings: PostingsEnum? = null
+                        val term = BytesRefBuilder()
                         matcher.stems.forEach { stem ->
-                            if (!terms.seekExact(BytesRef(stem))) return@forEach
-                            val postings = terms.postings(null, PostingsEnum.PAYLOADS.toInt())
+                            term.copyChars(stem)
+                            if (!terms.seekExact(term.get())) return@forEach
+                            val places = terms.postings(postings, PostingsEnum.PAYLOADS.toInt()).also { postings = it }
                             inLeaf.forEach { doc ->
-                                if (postings.docID() < doc && postings.advance(doc) == doc) {
+                                if (places.docID() < doc && places.advance(doc) == doc) {
                                     val list = words.getOrPut(leaf.docBase + doc to field) { ArrayList() }
-                                    repeat(postings.freq()) {
-                                        val position = postings.nextPosition()
-                                        list += NamedWord(stem, position, postings.payload == Stemmers.CAPITAL)
+                                    repeat(places.freq()) {
+                                        val position = places.nextPosition()
+                                        list += NamedWord(stem, position, places.payload == Stemmers.CAPITAL)
                                     }
                                 }
                             }

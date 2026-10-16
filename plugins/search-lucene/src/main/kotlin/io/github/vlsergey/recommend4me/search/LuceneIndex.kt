@@ -163,9 +163,12 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
         const val VALUE_GAP = 100
 
         /** The words of a [text] of the [language] as the index has them: their stems. */
-        fun tokens(text: String, language: String): List<String> {
+        fun tokens(text: String, language: String): List<String> = tokens(text, Stemmers.analyzer(language))
+
+        /** The words of a [text] as the [analyzer] of its language reads them: of many texts, one analyzer for them all. */
+        fun tokens(text: String, analyzer: Analyzer): List<String> {
             val out = ArrayList<String>()
-            Stemmers.analyzer(language).tokenStream("", text).use { stream ->
+            analyzer.tokenStream("", text).use { stream ->
                 val term = stream.addAttribute(CharTermAttribute::class.java)
                 stream.reset()
                 while (stream.incrementToken()) out += term.toString()
