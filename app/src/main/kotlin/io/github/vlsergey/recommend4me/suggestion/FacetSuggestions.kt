@@ -660,6 +660,9 @@ class FacetSuggestions(
                 val all = universes.associate { it.value to it.name }
                 // Realism, an alternative history and an original work: our world, ours changed, or a world of its own
                 fun original(id: String) = kinds[id].orEmpty().let { it.isNotEmpty() && it.all { k -> k in UniverseFacets.UNIVERSELESS } }
+                // NO NAME OF IT LOOKED FOR IN THE WORK'S WORDS (user, 2026-10-16): the universe is told by the
+                // work's texts, its tags and its other values; the names below are what the fitting learns from
+                if (light) return Vocabulary(emptyMap(), allowed = { id -> if (original(id)) emptySet() else all.keys })
                 // A universe is named by its characters ("Гарри", "Хогвартс") and by its own name
                 val ofCharacter = HashMap<String, MutableSet<String>>()
                 val names = HashMap<String, List<String>>()
@@ -671,17 +674,12 @@ class FacetSuggestions(
                         ofCharacter.getOrPut(value) { HashSet() } += u.value
                     }
                 }
-                // A universe is named by itself or by a character of it
-                val valuesOf = { value: String -> ofCharacter[value] ?: setOf(value).filter { it in all } }
-                val named = { id: String -> names.takeUnless { original(id) } }
-                if (light) return Vocabulary(emptyMap(), allowed = { id -> if (original(id)) emptySet() else all.keys }, names = named, valuesOf = valuesOf)
                 // Every name of a universe and of each of its characters is a text that names it, and no other universe
                 val hintNames = HashMap<String, MutableList<String>>()
                 names.forEach { (value, own) -> (ofCharacter[value] ?: setOf(value).filter { it in all }).forEach { u -> hintNames.getOrPut(u) { ArrayList() } += own } }
                 Vocabulary(
                     all,
                     allowed = { id -> if (original(id)) emptySet() else all.keys },
-                    names = named, valuesOf = valuesOf,
                     hintNames = hintNames.mapValues { it.value.distinct() },
                     hintAmong = { all.keys },
                 )
