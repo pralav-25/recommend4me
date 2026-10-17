@@ -71,6 +71,13 @@ class LuceneSearch(private val dataDir: Path) : SearchProvider, AutoCloseable {
         log.info("search index of {}: {} items made in {} ms", contentType, count, System.currentTimeMillis() - started)
     }
 
+    override fun sync(contentType: String, documents: Sequence<SearchDocument>) {
+        val started = System.currentTimeMillis()
+        var read = 0
+        val written = index(contentType).sync(documents.onEach { read++ })
+        log.info("search index of {}: {} items read, {} of them written again, in {} ms", contentType, read, written, System.currentTimeMillis() - started)
+    }
+
     override fun update(contentType: String, documents: List<SearchDocument>, removed: Collection<ItemKey>) {
         index(contentType).update(documents, removed)
     }

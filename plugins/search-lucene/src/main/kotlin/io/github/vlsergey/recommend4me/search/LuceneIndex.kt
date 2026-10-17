@@ -10,7 +10,9 @@ import org.apache.lucene.document.StoredField
 import org.apache.lucene.document.StringField
 import org.apache.lucene.document.TextField
 import org.apache.lucene.search.TermQuery
+import org.apache.lucene.index.DirectoryReader
 import org.apache.lucene.index.FieldInfos
+import org.apache.lucene.index.MultiBits
 import org.apache.lucene.index.IndexWriter
 import org.apache.lucene.index.IndexWriterConfig
 import org.apache.lucene.index.Term
@@ -19,7 +21,9 @@ import org.apache.lucene.search.IndexSearcher
 import org.apache.lucene.search.SearcherFactory
 import org.apache.lucene.search.SearcherManager
 import org.apache.lucene.store.FSDirectory
+import java.nio.ByteBuffer
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -41,6 +45,11 @@ import kotlin.io.path.exists
  *
  * MADE ANEW BESIDE THE OLD ONE: a rebuild writes into a folder of its own while the searches use
  * the index as it was, then takes its place; what is updated meanwhile goes into both.
+ *
+ * KEPT BETWEEN THE RUNS (user, 2026-10-17): every item's document carries the fingerprint of what it
+ * was made of ([fingerprint]), the index the version of how its documents are made ([FORMAT]); on a
+ * start the documents are read and only those whose fingerprint changed written again ([sync]), not
+ * every text stemmed and its language told anew. An index of another version is made anew.
  */
 class LuceneIndex(private val dir: Path) : AutoCloseable {
 
@@ -50,6 +59,48 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
 
     /** The writer of a rebuild in progress: updates go into it too. */
     private var building: IndexWriter? = null
+
+    /**
+     * The index brought to [documents], every item of the type: the items whose fingerprint changed
+     * or that are new written, those gone removed; answers how many were written. Made anew whole
+     * when it is of another [FORMAT], or empty.
+     */
+    fun sync(documents: Sequence<SearchDocument>): Int {
+        val kept = lock.withLock {
+            val reader = DirectoryReader.open(writer)
+            try {
+                if (reader.indexCommit.userData[FORMAT_KEY] != FORMAT.toString() || reader.numDocs() == 0) null
+                else {
+                    val stored = reader.storedFields()
+                    val live = MultiBits.getLiveDocs(reader)
+                    HashMap<String, Long>().also { out ->
+                        for (doc in 0 until reader.maxDoc()) {
+                            if (live != null && !live.get(doc)) continue
+                            val d = stored.document(doc, setOf(ID, FINGERPRINT))
+                            d.getField(FINGERPRINT)?.numericValue()?.toLong()?.let { out[d.get(ID)] = it }
+                        }
+                    }
+                }
+            } finally {
+                reader.close()
+            }
+        } ?: return rebuild(documents)
+        val seen = HashSet<String>()
+        var written = 0
+        documents.forEach { doc ->
+            val id = doc.key.toString()
+            seen += id
+            if (kept[id] == fingerprint(doc)) return@forEach
+            lock.withLock { writer.updateDocuments(idTerm(doc.key), documents(doc)) }
+            written++
+        }
+        lock.withLock {
+            (kept.keys - seen).forEach { writer.deleteDocuments(Term(ID, it)) }
+            commit(writer)
+            searchers.maybeRefresh()
+        }
+        return written
+    }
 
     /** Rebuilds the index from [documents]; searches use the old one until it is done. */
     fun rebuild(documents: Sequence<SearchDocument>): Int {
@@ -63,7 +114,7 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
                 next.updateDocuments(idTerm(it.key), documents(it))
                 count++
             }
-            next.commit()
+            commit(next)
         } catch (e: Exception) {
             lock.withLock { building = null }
             next.close()
@@ -88,7 +139,7 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
             documents.forEach { w.updateDocuments(idTerm(it.key), documents(it)) }
             removed.forEach { w.deleteDocuments(idTerm(it)) }
         }
-        writer.commit()
+        commit(writer)
         searchers.maybeRefresh()
     }
 
@@ -139,6 +190,47 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
 
         /** The languages an item's texts were stemmed as, by a comma. */
         const val LANGUAGES = "languages"
+
+        /** What an item's document was made of ([fingerprint]): written again when it changes. */
+        const val FINGERPRINT = "fingerprint"
+
+        /**
+         * The version of how the documents are made — the fields, the stemming, the marks — kept with
+         * every commit: an index of another is made anew. 2: every text stemmed as its language, the
+         * paragraphs of the work's own words marked, the fingerprints kept.
+         */
+        const val FORMAT = 2
+        private const val FORMAT_KEY = "format"
+
+        /** Commits [w] with the version of the index ([FORMAT]). */
+        private fun commit(w: IndexWriter) {
+            w.setLiveCommitData(mapOf(FORMAT_KEY to FORMAT.toString()).entries)
+            w.commit()
+        }
+
+        /**
+         * What a document is made of, as a number: its language, every field — its key, its name, its
+         * weight, how it is read, its values — and every passage with its vector. Equal of a work
+         * unchanged since it was indexed.
+         */
+        fun fingerprint(doc: SearchDocument): Long {
+            val digest = MessageDigest.getInstance("SHA-256")
+            fun put(text: String) {
+                digest.update(text.toByteArray(Charsets.UTF_8))
+                digest.update(0)
+            }
+            put(doc.language.orEmpty())
+            doc.fields.forEach { f ->
+                put(f.key); put(f.name); put(f.group); put(f.weight.toString())
+                put("" + f.list + f.naming + f.counted)
+                f.values.forEach(::put)
+            }
+            doc.passages.forEach { p ->
+                put(p.field); put(p.from.toString()); put(p.to.toString())
+                p.vector?.let { v -> ByteBuffer.allocate(v.size * Float.SIZE_BYTES).also { it.asFloatBuffer().put(v) }.array().let(digest::update) }
+            }
+            return ByteBuffer.wrap(digest.digest(), 0, Long.SIZE_BYTES).long
+        }
 
         /** What an item's document is: the query of the documents of items alone, not of their passages. */
         val ITEMS = TermQuery(Term(KIND, ITEM))
@@ -216,6 +308,7 @@ class LuceneIndex(private val dir: Path) : AutoCloseable {
                 }
                 // The languages its texts were stemmed as: what a name looked for in them is read as
                 add(StoredField(LANGUAGES, used.joinToString(",")))
+                add(StoredField(FINGERPRINT, fingerprint(doc)))
             }
             val passages = doc.passages.mapNotNull { p ->
                 val vector = p.vector ?: return@mapNotNull null

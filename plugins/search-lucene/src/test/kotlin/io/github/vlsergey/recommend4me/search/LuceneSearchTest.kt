@@ -128,6 +128,26 @@ class LuceneSearchTest {
     }
 
     @Test
+    fun `the index is kept between the runs, only what changed written again`() {
+        val dir = Files.createTempDirectory("search")
+        LuceneIndex(dir.resolve("types").resolve("books").resolve("search-index")).use { index ->
+            assertEquals(3, index.sync(documents.asSequence()))
+            // Nothing changed: nothing written
+            assertEquals(0, index.sync(documents.asSequence()))
+        }
+        // Another run: the index opened again as it was left
+        LuceneIndex(dir.resolve("types").resolve("books").resolve("search-index")).use { index ->
+            val changed = listOf(documents[0], doc("2", "Beach Night", "Somebody", "The night at the beach."))
+            assertEquals(1, index.sync(changed.asSequence()))
+            index.search { searcher -> assertEquals(2, index.items(searcher)) }
+        }
+        LuceneSearch(dir).use { search ->
+            assertEquals(listOf("2"), search.search("books", "night", "en", context).keys.map { it.id })
+            assertTrue(search.search("books", "драконы", "ru", context).keys.isEmpty())
+        }
+    }
+
+    @Test
     fun `an update is found without a rebuild`() {
         LuceneSearch(Files.createTempDirectory("search")).use { search ->
             search.rebuild("books", documents.take(1).asSequence())

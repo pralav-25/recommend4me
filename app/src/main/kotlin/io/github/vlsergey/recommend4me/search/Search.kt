@@ -42,7 +42,8 @@ private val log = LoggerFactory.getLogger(Search::class.java)
 /**
  * The search over the works of a content type, by the search plugin: the documents of the items —
  * their corrected titles, facets and texts with the vectors of the texts — made here, the index
- * the plugin's. The whole index is made again on every start, in the background; an item written
+ * the plugin's. On every start, in the background, the index is brought to every document — of a
+ * plugin that keeps it between the runs, only what changed written again ([SearchProvider.sync]); an item written
  * since it was indexed is indexed again in the background too, shortly after the writes go quiet —
  * a search never waits for it, it searches the index as it is (the queue of their keys is all
  * that is kept here).
@@ -122,7 +123,8 @@ class Search(
         val latch = built[type.id] ?: return
         try {
             workload.run(Work("searchIndex", type = type.id), reasons) {
-                if (latch.count > 0) provider.rebuild(type.id, documentsOf(type))
+                // Kept between the runs: what changed since written again
+                if (latch.count > 0) provider.sync(type.id, documentsOf(type))
             }
         } finally {
             latch.countDown()

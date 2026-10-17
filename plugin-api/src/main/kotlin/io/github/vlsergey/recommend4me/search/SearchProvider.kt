@@ -94,6 +94,12 @@ interface SearchProvider {
 
     fun rebuild(contentType: String, documents: Sequence<SearchDocument>)
 
+    /**
+     * The index brought to [documents], every item of the type, on a start: of a provider that keeps
+     * its index between the runs, only what changed written again; of any other, made anew.
+     */
+    fun sync(contentType: String, documents: Sequence<SearchDocument>) = rebuild(contentType, documents)
+
     fun update(contentType: String, documents: List<SearchDocument>, removed: Collection<ItemKey>)
 
     /** The items matching [line], read as a text of the [language] (ISO 639-1) — the interface's, the one it is typed in. */
