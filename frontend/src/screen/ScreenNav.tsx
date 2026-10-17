@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { TFunction } from "i18next";
-import { HistoryIcon, MenuIcon, OrbitIcon, RadarIcon, TagsIcon } from "lucide-react";
+import { HistoryIcon, MenuIcon, OrbitIcon, PowerIcon, RadarIcon, TagsIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { ContentTypeInfo } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -25,15 +25,17 @@ export type MenuProps = {
   type: ContentTypeInfo;
   screen: Screen;
   onCapture: () => void;
+  /** The application stopped as it should be ([StopDialog][@/screen/StopDialog]). */
+  onStop: () => void;
 };
 
 /**
  * THE ENTRIES, ONE LIST FOR BOTH MENUS: the works of every content type by its name — "Games",
  * "Books" — the dictionary of universes and the tags, both every type's; then
- * the model of the type and the browser extension, each opening its window. The language of the
- * interface follows them, in each menu as fits it.
+ * the model of the type and the browser extension, each opening its window; the stop of the
+ * application. The language of the interface follows them, in each menu as fits it.
  */
-function entries({ types, type, screen, onCapture }: MenuProps, t: TFunction<"screen">): Entry[] {
+function entries({ types, type, screen, onCapture, onStop }: MenuProps, t: TFunction<"screen">): Entry[] {
   const universes = types.some((tp) => tp.universes);
   return [
     ...types.map((tp): Entry => {
@@ -103,6 +105,17 @@ function entries({ types, type, screen, onCapture }: MenuProps, t: TFunction<"sc
         </>
       ),
       title: t("Menu.capture.title"),
+      active: false,
+    },
+    {
+      key: "stop",
+      open: onStop,
+      label: (
+        <>
+          <PowerIcon /> {t("Menu.stop")}
+        </>
+      ),
+      title: t("Menu.stop.title"),
       active: false,
     },
   ];

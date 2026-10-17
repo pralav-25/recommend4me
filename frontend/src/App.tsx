@@ -29,6 +29,7 @@ import { SourceFilter } from "@/source/SourceFilter";
 import { WorkProgress } from "@/status/WorkProgress";
 import { ThemeToggle } from "@/theme/ThemeToggle";
 import { ScreenBar, ScreenMenuButton } from "@/screen/ScreenNav";
+import { StopDialog, Stopped, stopApplication, stopsWithoutAsking } from "@/screen/StopDialog";
 import { replaceScreen, useScreen, type Screen } from "@/screen/screens";
 import { HistoryScreen } from "@/history/HistoryScreen";
 import { TagsScreen } from "@/tag/TagsScreen";
@@ -109,7 +110,14 @@ function TypeScreen({ type, types, screen }: { type: ContentTypeInfo; types: Con
   // The dictionary of universes, of the type that has one
   const universes = types.find((tp) => tp.universes);
   const [captureOpen, setCaptureOpen] = useState(false);
-  const menu = { types, type, screen, onCapture: () => setCaptureOpen(true) };
+  // The application stopped from the menu: asked first, unless the user said not to ask again
+  const [stopOpen, setStopOpen] = useState(false);
+  const [stopped, setStopped] = useState(false);
+  const onStop = () => {
+    if (!stopsWithoutAsking()) return setStopOpen(true);
+    stopApplication().then(() => setStopped(true), () => setStopOpen(true));
+  };
+  const menu = { types, type, screen, onCapture: () => setCaptureOpen(true), onStop };
 
   // The list asks for the shown sources by name, and for none when all are shown
   const sources = useMemo(() => {
@@ -156,6 +164,7 @@ function TypeScreen({ type, types, screen }: { type: ContentTypeInfo; types: Con
   }, []);
 
   const notLoggedIn = jobs.data?.some((j) => j.loggedIn === false);
+  if (stopped) return <Stopped />;
 
   return (
     <div className="min-h-screen">
@@ -311,6 +320,7 @@ function TypeScreen({ type, types, screen }: { type: ContentTypeInfo; types: Con
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <CaptureDialog open={captureOpen} onOpenChange={setCaptureOpen} />
+      <StopDialog open={stopOpen} onOpenChange={setStopOpen} onStopped={() => setStopped(true)} />
       <HashItemDialog />
     </div>
   );

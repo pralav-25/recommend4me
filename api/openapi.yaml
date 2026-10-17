@@ -25,6 +25,7 @@ tags:
   - name: universes
   - name: tags
   - name: workload
+  - name: launcher
 
 paths:
   /api/types:
@@ -1914,6 +1915,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Status'
+
+  /api/launcher/stop:
+    post:
+      tags: [launcher]
+      operationId: stopApplication
+      summary: Stops the application as it should be stopped
+      description: |
+        Answered at once, stopped right after: every database closed as it should be, the works of
+        the queue of the computations broken off, the process ended. Never killed: a file of a
+        database a stop cut in the middle of its writing is lost.
+      responses:
+        '202':
+          description: Stopping
 
 components:
   parameters:

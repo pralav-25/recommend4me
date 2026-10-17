@@ -11,10 +11,19 @@
   "Menu.history": "History",
   "Menu.history.title": "Your grades and marks of interest, the newest first: find one given by mistake and take it back",
   "Menu.model.title": "The recommendation model: how it orders the works",
+  "Menu.stop": "Exit",
+  "Menu.stop.title": "Stop the application: its databases closed as they should be",
   "Menu.tags": "Tags",
   "Menu.tags.title": "Tags of every site, games and books: merge the same ones, name them, build parent and child tags",
   "Menu.title": "Menu",
   "Menu.universes": "Universes",
   "Menu.universes.title": "The dictionary of fan fiction universes and their characters",
-  "Menu.works.title": "{{type}}: works with predictions"
+  "Menu.works.title": "{{type}}: works with predictions",
+  "Stop.cancel": "Cancel",
+  "Stop.confirm": "Stop",
+  "Stop.description": "Every database is closed as it should be and the application's window on the computer closes; the computations under way are broken off. It is started again on the computer.",
+  "Stop.noAsking": "Do not ask again",
+  "Stop.startAgain": "Start it again on the computer (run.bat), then reload this page.",
+  "Stop.stopped": "The application is stopped",
+  "Stop.title": "Stop the application?"
 }

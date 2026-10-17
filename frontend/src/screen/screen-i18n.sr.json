@@ -11,10 +11,19 @@
   "Menu.history": "Istorija",
   "Menu.history.title": "Vaše ocene i oznake interesa, najnovije prvo: nađite slučajno datu i poništite je",
   "Menu.model.title": "Model preporuka: kako ređa dela",
+  "Menu.stop": "Izlaz",
+  "Menu.stop.title": "Zaustavi aplikaciju: baze se zatvaraju kako treba",
   "Menu.tags": "Tagovi",
   "Menu.tags.title": "Tagovi svih sajtova, igara i knjiga: spojite iste, imenujte ih, napravite nadređene i podređene tagove",
   "Menu.title": "Meni",
   "Menu.universes": "Univerzumi",
   "Menu.universes.title": "Rečnik univerzuma fanfikcije i njihovih likova",
-  "Menu.works.title": "{{type}}: dela sa predviđanjima"
+  "Menu.works.title": "{{type}}: dela sa predviđanjima",
+  "Stop.cancel": "Otkaži",
+  "Stop.confirm": "Zaustavi",
+  "Stop.description": "Sve baze se zatvaraju kako treba, prozor aplikacije na računaru se zatvara, računanja u toku se prekidaju. Ponovo se pokreće na računaru.",
+  "Stop.noAsking": "Ne pitaj više",
+  "Stop.startAgain": "Pokrenite je ponovo na računaru (run.bat), pa osvežite ovu stranicu.",
+  "Stop.stopped": "Aplikacija je zaustavljena",
+  "Stop.title": "Zaustaviti aplikaciju?"
 }
