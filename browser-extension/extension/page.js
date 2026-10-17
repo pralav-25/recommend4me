@@ -986,7 +986,7 @@
     const chosen = CHOSEN.includes(facet);
 
     /**
-     * Every hint known: { name — as shown, key, nameKey?, description?, note }; and those the typing leaves, drawn
+     * Every hint known: { name — as shown, names? — every one it goes by, key, nameKey?, description?, note }; and those the typing leaves, drawn
      * up to [drawn], the one gone to by the keys [active].
      */
     let hints = [];
@@ -1071,10 +1071,10 @@
       drawMore();
     }
 
-    /** The hints whose name has every word typed, in their order. */
+    /** The hints that have every word typed, each in any of their names ("мадам хуч": "Мадам Трюк", "Роланда Хуч"), in their order. */
     function narrow() {
       const words = folded(input.value).split(/\s+/).filter(Boolean);
-      shown = chosen ? hints.filter((h) => words.every((w) => folded(h.name).includes(w))) : hints;
+      shown = chosen ? hints.filter((h) => words.every((w) => [h.name, ...(h.names || [])].some((n) => folded(n).includes(w)))) : hints;
       show();
     }
 
@@ -1101,6 +1101,8 @@
             (candidates) => {
               hints = candidates.map((c) => ({
                 name: nameOf(c),
+                // Every name a character goes by: found by any of them
+                names: c.names,
                 key: c.key,
                 nameKey: c.nameKey,
                 description: c.description,

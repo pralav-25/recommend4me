@@ -4023,6 +4023,13 @@ components:
         description:
           type: string
           description: What the catalogue says of a universe or a character, in the first of the user's languages that has it - shown beside its name
+        names:
+          type: array
+          items:
+            type: string
+          description: |
+            Every name the catalogue knows a character by in the user's languages, the shown one first -
+            a search by its name finds it by any of them; of any other value, none
 
     MentionQuote:
       type: object

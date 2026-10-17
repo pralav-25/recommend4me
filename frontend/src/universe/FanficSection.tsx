@@ -63,6 +63,9 @@ type AllNamedKind = "universes" | "mainCharacters" | "secondaryCharacters" | "pa
 /** The key of the pairing of two characters: one whatever their order. */
 const pairingKey = (a: string, b: string) => "pair:" + [a, b].sort().join("|");
 
+/** A name as a search compares it: lower case, "ё" as "е". */
+const folded = (text: string) => text.toLocaleLowerCase("ru-RU").replace(/ё/g, "е");
+
 /** The work has the value: the site or the model gave it, or the user added it, and the user did not take it away — not one only offered. */
 const has = (v: FacetValueInfo) => v.corrected !== "REMOVED" && !v.offered;
 
@@ -903,13 +906,15 @@ function Picker({
       </Button>
     );
 
-  const needle = filter.trim().toLocaleLowerCase("ru-RU");
+  const needle = folded(filter.trim());
   // An id of the catalogue — "Q23991129", or its page's address pasted whole — finds its entry exactly
   const id = needle.split(/[/?#]/).filter((s) => s !== "").pop() ?? "";
+  // Every word typed, each in any of its names: "мадам хуч" finds the one named "Мадам Трюк" and "Роланда Хуч"
+  const words = needle.split(/\s+/).filter((w) => w !== "");
   const shown =
     needle === ""
       ? options
-      : options.filter((o) => o.key.toLocaleLowerCase("ru-RU").endsWith(`:${id}`) || o.names.some((n) => n.toLocaleLowerCase("ru-RU").includes(needle)));
+      : options.filter((o) => o.key.toLocaleLowerCase("ru-RU").endsWith(`:${id}`) || words.every((w) => o.names.some((n) => folded(n).includes(w))));
   const typed = filter.trim();
 
   return (

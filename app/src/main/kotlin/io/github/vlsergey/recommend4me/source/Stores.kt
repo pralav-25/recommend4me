@@ -133,6 +133,10 @@ class SourceStore(
     fun descriptions(facet: String, keys: Collection<String>): Map<String, String> =
         if (keys.isEmpty()) emptyMap() else dictionaryNames?.descriptions(facet, keys).orEmpty()
 
+    /** Every name the catalogue knows the values [keys] of a facet of characters by, for a search by any of them: key to names; none of any other facet. */
+    fun allNames(facet: String, keys: Collection<String>): Map<String, List<String>> =
+        if (keys.isEmpty()) emptyMap() else dictionaryNames?.allNames(facet, keys).orEmpty()
+
     /** The name of every value of a facet the source or the dictionary names. */
     fun names(facet: String): Map<String, String> {
         // The normalized tags alone: the source's names of the facet are of the sites' keys it had before them

@@ -284,6 +284,33 @@ class UniverseRepository(
         }
     }
 
+    /**
+     * Every name each character of [values] ("<catalogue>:<id>") goes by in the user's languages — the
+     * name the user gave it, then the labels and aliases language by language — for a search by any of
+     * them; one read of the table.
+     */
+    fun characterAllNames(values: Collection<String>): Map<String, List<String>> {
+        val wanted = byCatalogue(values).ifEmpty { return emptyMap() }
+        val c = UNIVERSE_CHARACTER
+        val local = localNames()
+        val out = HashMap<String, List<String>>()
+        db.select(c.CATALOGUE, c.CHARACTER_ID, c.LABELS, c.ALIASES, c.NAMES).from(c)
+            .where(DSL.or(wanted.map { (catalogue, ids) -> c.CATALOGUE.eq(catalogue).and(c.CHARACTER_ID.`in`(ids)) })).fetch().forEach { r ->
+                val value = UniverseFacet.valueOf(r.value1()!!, r.value2()!!)
+                val own = if (r.value3() != null) {
+                    val labels = decode(r.value3())
+                    val aliases = decodeAll(r.value4())
+                    languages.flatMap { listOfNotNull(labels[it]) + aliases[it].orEmpty() }
+                } else {
+                    // Saved before the texts were kept by language: as it was shown then
+                    r.value5()!!.split('\n')
+                }
+                // A character of several universes is one entry: the same names in each
+                out.putIfAbsent(value, (listOfNotNull(local[value]) + own).distinct())
+            }
+        return out
+    }
+
     /** The ids of [values] ("<catalogue>:<id>") by catalogue; a value of no catalogue left out. */
     /**
      * What the catalogue says of [values] — universes and characters of the dictionary — in the first

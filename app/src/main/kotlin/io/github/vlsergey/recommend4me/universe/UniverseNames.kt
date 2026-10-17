@@ -29,6 +29,10 @@ class UniverseNames(private val dictionary: UniverseRepository) {
     fun descriptions(facet: String, keys: Collection<String>): Map<String, String> =
         if (facet == UniverseFacet.KEY || facet in UniverseFacet.CHARACTER_FACETS) dictionary.descriptions(keys) else emptyMap()
 
+    /** Every name a character of [keys] of [facet] goes by in the user's languages, for a search by any of them; none of another facet. */
+    fun allNames(facet: String, keys: Collection<String>): Map<String, List<String>> =
+        if (facet in UniverseFacet.CHARACTER_FACETS) dictionary.characterAllNames(keys.filter { it !in UniverseFacet.ORIGINAL_CHARACTERS }) else emptyMap()
+
     /** "A / B" of the two characters — a man before a woman — with the sign of their sexes when the dictionary tells both. */
     private fun pairings(keys: Collection<String>?): Map<String, String> {
         val pairs = keys?.mapNotNull { p -> UniverseFacet.members(p)?.let { p to it } } ?: return emptyMap()

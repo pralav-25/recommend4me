@@ -47,11 +47,15 @@ class SuggestionsController(private val stores: Stores, private val suggestions:
         val pages = if (type.type.universes && facet in PAGED) UniverseFacet.pages(type.universes) else emptyMap()
         // And what it says of them: told apart by it when the names are alike
         val described = store.descriptions(facet, found.candidates.map { it.key })
+        // And every name it goes by: found by any of them, as the work may name it
+        val named = store.allNames(facet, found.candidates.map { it.key })
         return ResponseEntity.ok(
             found.candidates.map {
+                val name = found.names[it.key] ?: it.key
                 Candidate(
-                    key = it.key, name = found.names[it.key] ?: it.key, nameKey = store.nameKey(facet, it.key),
+                    key = it.key, name = name, nameKey = store.nameKey(facet, it.key),
                     chance = it.chance, mentions = it.mentions, url = pages[it.key], description = described[it.key],
+                    names = named[it.key]?.let { all -> (listOf(name) + all).distinct() },
                 )
             },
         )
