@@ -15,6 +15,11 @@ import org.jooq.impl.DSL
 import java.time.Instant
 
 /** A universe of the dictionary, with how many of its entries are kept as characters, of how many. */
+/** A universe of the dictionary by its key: its catalogue and its id there. */
+data class UniverseKey(val catalogue: String, val id: String) {
+    val value: String get() = UniverseFacet.valueOf(catalogue, id)
+}
+
 class StoredUniverse(
     val catalogue: String,
     val id: String,
@@ -69,6 +74,9 @@ class UniverseRepository(
     /** The names the user gives the universes and the characters, in the user's preferences. */
     private val renames: CatalogueRenameRepository,
 ) {
+
+    /** Every universe of the dictionary by its key alone, its characters not read: what the chances of a work read want of it. */
+    fun keys(): List<UniverseKey> = db.select(UNIVERSE.CATALOGUE, UNIVERSE.UNIVERSE_ID).from(UNIVERSE).fetch { UniverseKey(it.value1()!!, it.value2()!!) }
 
     fun all(): List<StoredUniverse> {
         val local = localNames()

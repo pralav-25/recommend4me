@@ -486,15 +486,23 @@ class FacetSuggestions(
         // All named by the user's word: the item has its own values and is offered no other
         if (data.complete[i]) return has.map { chance(it, true) }
         fun may(v: Int) = allowed == null || data.values[v] in allowed
-        // The likeliest of the rest too, likely or not, to offer the work at least so many the site does not give
-        val unanswered = chances.indices.filter { it !in has && it !in rejected && may(it) }
-        val offered = ModelValues.offered(
-            unanswered.associate { data.values[it] to chances[it].toDouble() },
-            shown = unanswered.filter { chances[it] > ModelValues.LIKELY }.map { data.values[it] }.toSet(),
-            answered = emptySet(),
-            fromSite = data.task.examples[i].map { data.values[it] }.toSet(),
-        ).toSet()
         val examples = data.task.examples[i].toHashSet()
+        // The likeliest of the rest too, likely or not, to offer the work at least so many the site does not
+        // give ([ModelValues.offered]): chosen of the values by their places, not of a map of thousands of
+        // characters made for every work and sorted whole
+        fun open(v: Int) = v !in has && v !in rejected && v !in examples && may(v)
+        var shown = 0
+        for (v in chances.indices) if (open(v) && chances[v] > ModelValues.LIKELY) shown++
+        val wanted = (ModelValues.OFFERED - shown).coerceAtLeast(0)
+        val offered = HashSet<Int>()
+        repeat(wanted) {
+            var best = -1
+            for (v in chances.indices) {
+                if (!open(v) || chances[v] > ModelValues.LIKELY || v in offered) continue
+                if (best < 0 || chances[v] > chances[best]) best = v
+            }
+            if (best >= 0) offered += best
+        }
         return chances.indices.mapNotNull { v ->
             when {
                 v in has -> chance(v, true)
@@ -502,7 +510,7 @@ class FacetSuggestions(
                 v in examples -> chance(v, false)
                 // A value the user rejected keeps its chance: it is shown crossed out, in its place by it
                 v in rejected -> chance(v, false)
-                may(v) && (chances[v] > ModelValues.LIKELY || data.values[v] in offered) -> chance(v, false)
+                may(v) && (chances[v] > ModelValues.LIKELY || v in offered) -> chance(v, false)
                 else -> null
             }
         }
@@ -637,13 +645,17 @@ class FacetSuggestions(
                 answersOf(store, ids).filter { it.facet == UniverseFacets.KIND }.groupBy { it.itemId }.forEach { (id, own) ->
                     kinds[id] = Corrected.facets(mapOf(UniverseFacets.KIND to kinds[id].orEmpty()), own)[UniverseFacets.KIND].orEmpty()
                 }
-                val universes = type.universes.all()
-                val all = universes.associate { it.value to it.name }
                 // Realism, an alternative history and an original work: our world, ours changed, or a world of its own
                 fun original(id: String) = kinds[id].orEmpty().let { it.isNotEmpty() && it.all { k -> k in UniverseFacets.UNIVERSELESS } }
                 // NO NAME OF IT LOOKED FOR IN THE WORK'S WORDS (user, 2026-10-16): the universe is told by the
-                // work's texts, its tags and its other values; the names below are what the fitting learns from
-                if (light) return Vocabulary(emptyMap(), allowed = { id -> if (original(id)) emptySet() else all.keys })
+                // work's texts, its tags and its other values; the names below are what the fitting learns from.
+                // Of the works read, the universes' keys alone: not every universe's characters read to count them
+                if (light) {
+                    val keys = type.universes.keys().map { it.value }.toSet()
+                    return Vocabulary(emptyMap(), allowed = { id -> if (original(id)) emptySet() else keys })
+                }
+                val universes = type.universes.all()
+                val all = universes.associate { it.value to it.name }
                 // A universe is named by its characters ("Гарри", "Хогвартс") and by its own name
                 val ofCharacter = HashMap<String, MutableSet<String>>()
                 val names = HashMap<String, List<String>>()
@@ -671,7 +683,8 @@ class FacetSuggestions(
                 // and the original characters; a work is given those of its own universes. Of the works
                 // read, the characters of their universes alone: no other is chosen from ([FacetData.load])
                 val universes = workUniverses(store, ids, made)
-                val read = type.universes.all().let { all ->
+                // The universes by their keys alone: their characters read below, of those wanted
+                val read = type.universes.keys().let { all ->
                     if (ids == null) all else ids.flatMap { universes[it].orEmpty() }.toSet().let { own -> all.filter { it.value in own } }
                 }
                 val ofUniverse = HashMap<String, Set<String>>()
@@ -782,7 +795,7 @@ class FacetSuggestions(
         val universes = workUniverses(store, ids, made)
         val own = universes.values.flatten().toSet()
         val known = HashMap<String, List<String>>()
-        type.universes.all().filter { it.value in own }.forEach { u ->
+        type.universes.keys().filter { it.value in own }.forEach { u ->
             type.universes.characters(u.catalogue, u.id).forEach { known[UniverseFacet.valueOf(u.catalogue, it.id)] = it.names }
         }
         val missing = characters.values.flatten().toSet().filter { it !in known && it !in UniverseFacet.ORIGINAL_CHARACTERS }
