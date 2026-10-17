@@ -763,12 +763,12 @@ class Tags(
     }
 
     /**
-     * The tags of the layer [facet] found by [query] for a work of [source], at most [limit], in
-     * three steps, each only while the ones before found fewer: the tags a site's tag of [source]
-     * of that name holds it; then by any of their names — of every site, the user's, the one shown;
-     * then the likest by the meaning of their names. Of the first two, a name that is the text first,
-     * then one beginning with it, then one holding it; the most used first among them. A tag the user
-     * ignores is never found: it is not offered to add.
+     * The tags of the layer [facet] found by [query] for a work of [source], at most [limit]: by their
+     * names — a name that is the text first, then one beginning with it, then one holding it; of each,
+     * the tags a site's tag of [source] of that name holds first, then by any of their names — of every
+     * site, the user's, the one shown — the most used first among them; then, while fewer are found,
+     * the likest by the meaning of their names. A tag the user ignores is never found: it is not
+     * offered to add.
      */
     fun find(scope: TagScope, facet: String, source: String, query: String, limit: Int): List<NamedTag> = find(scope, naming(scope, facet), source, query, limit)
 
@@ -824,23 +824,28 @@ class Tags(
         val wanted = query.trim().lowercase()
         val stats = n.stats.filterKeys { it !in n.ignored }
         val found = LinkedHashMap<String, TagStats>()
-        fun step(namesOf: (TagStats) -> List<String>) {
-            if (found.size >= limit) return
-            stats.values.filter { it.key !in found }
-                .mapNotNull { t ->
-                    val names = namesOf(t).map { it.lowercase() }
-                    when {
-                        names.any { it == wanted } -> 0
-                        names.any { it.startsWith(wanted) } -> 1
-                        names.any { wanted in it } -> 2
-                        else -> null
-                    }?.let { t to it }
-                }
-                .sortedWith(compareBy<Pair<TagStats, Int>> { it.second }.thenByDescending { it.first.counts.works }.thenBy { it.first.key })
-                .forEach { found.putIfAbsent(it.first.key, it.first) }
+        // How a tag's names hold the text: 0 one is it, 1 one begins with it, 2 one holds it
+        fun match(names: List<String>): Int? {
+            val lower = names.map { it.lowercase() }
+            return when {
+                lower.any { it == wanted } -> 0
+                lower.any { it.startsWith(wanted) } -> 1
+                lower.any { wanted in it } -> 2
+                else -> null
+            }
         }
-        step { t -> t.variants.values.filter { it.site.source == source }.map { it.name } }
-        step { t -> n.allNames(t) + n.shown(t.key) }
+        // BY HOW CLOSE THE NAME FIRST, THEN BY WHOSE: a tag of the name typed itself, of any site, before
+        // one of this site that only holds it — "ER" of ficbook was lost behind the twenty tags of AO3
+        // holding "er" (2026-10-17); of one closeness, the names of this site's tags first, then any name
+        stats.values.mapNotNull { t ->
+            val own = match(t.variants.values.filter { it.site.source == source }.map { it.name })
+            val any = match(n.allNames(t) + n.shown(t.key))
+            val best = listOfNotNull(own, any).minOrNull() ?: return@mapNotNull null
+            Triple(t, best, if (own == best) 0 else 1)
+        }
+            .sortedWith(compareBy<Triple<TagStats, Int, Int>> { it.second }.thenBy { it.third }.thenByDescending { it.first.counts.works }.thenBy { it.first.key })
+            .take(limit)
+            .forEach { found[it.first.key] = it.first }
         if (found.size < limit && wanted.isNotEmpty()) {
             val meaning = Meaning(scope, stats)
             val target = meaning.ofText(query.trim())

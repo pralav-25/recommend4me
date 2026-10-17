@@ -258,6 +258,17 @@ class TwoSitesTest {
     }
 
     @Test
+    fun `a tag named by the text itself on another site comes before the tags of this site that only hold it`() {
+        alpha("r1|Reefs|reefs of the north|Reefs to the north||")
+        alpha("r2|Reefs again|reefs of the south|Reefs to the south||")
+        beta("r3|Reefs|reefs|Reefs")
+        // The tags named and counted after the quiet — here at once
+        inBackground { tagService.scope()?.let { tagService.rename(it, it.facet) } }
+        val found = items.listFacetValues("alpha", "tags", "reefs", 1).body!!
+        assertEquals(listOf(tagOf("beta", "reefs")), found.map { it.key })
+    }
+
+    @Test
     fun `tags of two sites merged — the user's answers on both move to the one kept, in each site's database`() {
         alpha("a2|Waves|waves|Waves on the shore||")
         alpha("a3|Calm|calm|A calm sea||")
