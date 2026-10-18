@@ -910,8 +910,9 @@ class FacetSuggestions(
     /**
      * Every value of the [facet] the item may be given and neither has nor was answered on, with its
      * chance and how often the item's texts name it: the likeliest first, then the most named. A
-     * facet of characters the model has no chances of yet — none answered on to learn from — offers
-     * every character of the work's universes all the same, without a chance, the most named first.
+     * facet of characters or pairings offers every value the work may have that the model has no
+     * chance of — none answered on to learn from, or given the work after the fitting: a pairing of
+     * two characters added since — all the same, without a chance, the most named first.
      * Null for an item or a facet the model does not work on.
      */
     fun candidates(store: SourceStore, itemId: String, facet: String): ItemFacetCandidates? {
@@ -946,12 +947,15 @@ class FacetSuggestions(
         // A value the model gives the work is the work's already
         val scored = if (complete) emptyList() else chances.filter { !it.had && it.key !in answered && it.key !in current && it.key !in out && !(def.infer && it.chance > ModelValues.LIKELY) }
             .map { FacetCandidate(it.key, it.chance, it.mentions) }
-        val unscored = if (facet !in UniverseFacet.CHARACTER_FACETS || chances.any { !it.had } || complete) emptyList() else {
-            // As the fitting counted them; of a facet never fitted, counted now — of the work's universes' characters alone
-            val named = vocabularyOf(store, def, ids, made, light = true)?.mentions(store, ids, stores.typeOf(store.id).id, plugins.search)?.invoke(itemId)
-            may.orEmpty()
-                .filter { it !in answered && it !in current && it !in out && chances.none { c -> c.key == it } }
-                .map { FacetCandidate(it, null, named?.let { n -> n[it] ?: 0 }) }
+        // Of the values the work may have, those the model has no chance of — a character of a universe
+        // or a pairing of characters given the work after the model was fitted: offered all the same, without a chance
+        val unscored = if (facet !in UniverseFacet.CHARACTER_FACETS + UniverseFacets.PAIRINGS || complete) emptyList() else {
+            val chanced = chances.map { it.key }.toHashSet()
+            val unknown = may.orEmpty().filter { it !in answered && it !in current && it !in out && it !in chanced }
+            // Counted now, of the work's universes' characters alone
+            val named = if (unknown.isEmpty()) null else
+                vocabularyOf(store, def, ids, made, light = true)?.mentions(store, ids, stores.typeOf(store.id).id, plugins.search)?.invoke(itemId)
+            unknown.map { FacetCandidate(it, null, named?.let { n -> n[it] ?: 0 }) }
         }
         val candidates = (scored + unscored)
             .sortedWith(compareByDescending<FacetCandidate> { it.chance ?: -1.0 }.thenByDescending { it.mentions ?: 0 })

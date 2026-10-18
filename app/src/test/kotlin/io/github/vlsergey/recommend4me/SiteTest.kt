@@ -629,6 +629,15 @@ class SiteTest {
         val ofc = items.getItem("site", "n1").body!!.allFacets.single { it.facet == "characters" }.propertyValues.single { it.key == "oc:female" }
         assertEquals("standard:character.oc-female", ofc.nameKey)
         assertEquals(UniverseFacet.ORIGINAL_CHARACTERS.getValue("oc:female"), ofc.name)
+        // Every pair of the work's main characters is given or offered, a pair of characters added after the
+        // fitting too: the model has no chance of it, offered all the same
+        val had = items.getItem("site", "n1").body!!.allFacets.single { it.facet == "characters" }.propertyValues
+            .filter { it.offered != true && it.corrected != FacetValueInfo.Corrected.REMOVED }.map { it.key }
+        val mains = (had + UniverseFacet.ORIGINAL_CHARACTERS.keys).distinct().sorted()
+        val pairs = mains.flatMapIndexed { k, a -> mains.drop(k + 1).map { b -> UniverseFacet.pairing(a, b) } }.toSet()
+        assertTrue("pair:fake:C2|oc:female" in pairs, "pairs $pairs")
+        val pairingsShown = keysOf("pairings") + candidatesOf("pairings")
+        assertTrue(pairingsShown.containsAll(pairs), "pairings $pairingsShown, pairs $pairs")
 
         // The universe of a fan fiction is worked out as its characters are: given when likely, offered first when not
         capture("f1|Fleet tales|space|Ships of the fleet|")
