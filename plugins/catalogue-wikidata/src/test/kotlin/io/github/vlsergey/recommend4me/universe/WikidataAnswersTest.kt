@@ -124,15 +124,17 @@ class WikidataAnswersTest {
         val renamed = character("Q1", "Ghost-Spider", CharacterSex.FEMALE)
         val otherSex = character("Q2", "Gwen Stacy", CharacterSex.MALE)
         val elsewhere = character("Q3", "Gwen Stacy", CharacterSex.FEMALE)
+        val unstated = character("Q4", "Gwen Stacy", null)
         val kept = WikidataCatalogue.withoutVersions(
-            listOf(comics, films, spiderWoman, verse, renamed, otherSex, elsewhere),
+            listOf(comics, films, spiderWoman, verse, renamed, otherSex, elsewhere, unstated),
             mapOf(
                 "Q98454800" to setOf("Q945817"), "Q119806001" to setOf("Q20979395"),
-                "Q1" to setOf("Q945817"), "Q2" to setOf("Q945817"), "Q3" to setOf("Q404"),
+                "Q1" to setOf("Q945817"), "Q2" to setOf("Q945817"), "Q3" to setOf("Q404"), "Q4" to setOf("Q945817"),
             ),
         )
-        // The films' and the Spider-Verse's Gwen go by the names of the ones they are based on; a version
-        // of another name, another sex, or based on an entry outside the universe stays
+        // The films' and the Spider-Verse's Gwen go by the names of the ones they are based on, and one of a
+        // sex not stated is no other; a version of another name, another sex, or based on an entry outside
+        // the universe stays
         assertEquals(listOf("Q945817", "Q20979395", "Q1", "Q2", "Q3"), kept.map { it.id })
     }
 

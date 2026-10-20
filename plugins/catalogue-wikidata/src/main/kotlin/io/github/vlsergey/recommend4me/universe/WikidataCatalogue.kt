@@ -344,10 +344,10 @@ class WikidataCatalogue(
 
         /**
          * The [characters] without the versions of a character of the same universe (user, 2026-10-20):
-         * an entry based on (P144, [basedOn]) another entry of [characters] of the same sex, a label of
-         * it being a name of that one — Gwen Stacy of the films based on Gwen Stacy of the comics, Harry
-         * Potter of a musical based on Harry Potter of the books — is the same character for the
-         * user, and the one it is based on stands for it.
+         * an entry based on (P144, [basedOn]) another entry of [characters] of the same sex — or of a
+         * sex one of them does not state — a label of it being a name of that one, is the same
+         * character for the user, and the one it is based on stands for it: Gwen Stacy of the films
+         * based on Gwen Stacy of the comics, Harry Potter of a musical based on Harry Potter of the books.
          */
         internal fun withoutVersions(characters: List<UniverseCharacter>, basedOn: Map<String, Set<String>>): List<UniverseCharacter> {
             val byId = characters.associateBy { it.id }
@@ -355,7 +355,7 @@ class WikidataCatalogue(
             val versions = characters.filter { c ->
                 basedOn[c.id].orEmpty().any { id ->
                     val original = byId[id] ?: return@any false
-                    original.id != c.id && original.sex == c.sex && namesOf(original).let { names -> c.labels.values.any { it.lowercase() in names } }
+                    original.id != c.id && (original.sex == c.sex || original.sex == null || c.sex == null) && namesOf(original).let { names -> c.labels.values.any { it.lowercase() in names } }
                 }
             }.map { it.id }.toSet()
             return characters.filter { it.id !in versions }
