@@ -22,7 +22,9 @@ import java.time.format.DateTimeFormatter
  * (P179 "part of the series", P361 "part of", P8345). Not only people are said to be in a universe:
  * its places, groups, spells and things are too. Every entry comes with its classes (P31
  * "instance of"), and a class tells whether its entries are characters, for the user to keep the
- * characters and whatever else they want. Its sex or gender (P21) comes with it too.
+ * characters and whatever else they want. Its sex or gender (P21) comes with it too. A version of a
+ * character of the universe — based on it (P144), of its sex and going by its name, as Gwen Stacy of
+ * the films is of Gwen Stacy of the comics — is not an entry of its own ([withoutVersions]).
  *
  * Every name is asked for in the user's languages: the label and every alias, so that "Невилл
  * Лонгботтом" of the fans is found as an alias of "Невилл Долгопупс" of the translation — and the
@@ -167,6 +169,12 @@ class WikidataCatalogue(
             val sex = row.path("sex").path("value").asString("").substringAfterLast('/')
             if (ITEM.matches(sex)) sexes.getOrPut(row.path("c").path("value").asString().substringAfterLast('/')) { HashSet() } += sex
         }
+        // What each entry is based on (P144), asked by itself the same way: a character's version in a film or a musical
+        val basedOn = HashMap<String, MutableSet<String>>()
+        sparql("SELECT ?c ?original WHERE { $entries ?c wdt:P144 ?original . }").forEach { row ->
+            val original = row.path("original").path("value").asString("").substringAfterLast('/')
+            if (ITEM.matches(original)) basedOn.getOrPut(row.path("c").path("value").asString().substringAfterLast('/')) { HashSet() } += original
+        }
         sparql(query).forEach { row ->
             val character = row.path("c").path("value").asString().substringAfterLast('/')
             val text = row.path("text")
@@ -180,12 +188,13 @@ class WikidataCatalogue(
             }
         }
         val stated = statements(entries, properties)
-        return byCharacter.map { (character, n) ->
+        val read = byCharacter.map { (character, n) ->
             UniverseCharacter(
                 character, n.labels, n.aliases.groupBy({ it.first }, { it.second }), n.descriptions, "$PAGE$character", languages,
                 classes[character].orEmpty(), sexes[character]?.let(::sexOf), stated[character].orEmpty(),
             )
         }.filter { it.names.isNotEmpty() }
+        return withoutVersions(read, basedOn)
     }
 
     /**
@@ -332,6 +341,25 @@ class WikidataCatalogue(
 
         /** A property of Wikidata: "P8419". */
         private val PROPERTY = Regex("P\\d+")
+
+        /**
+         * The [characters] without the versions of a character of the same universe (user, 2026-10-20):
+         * an entry based on (P144, [basedOn]) another entry of [characters] of the same sex, a label of
+         * it being a name of that one — Gwen Stacy of the films based on Gwen Stacy of the comics, Harry
+         * Potter of a musical based on Harry Potter of the books — is the same character for the
+         * user, and the one it is based on stands for it.
+         */
+        internal fun withoutVersions(characters: List<UniverseCharacter>, basedOn: Map<String, Set<String>>): List<UniverseCharacter> {
+            val byId = characters.associateBy { it.id }
+            fun namesOf(c: UniverseCharacter) = (c.labels.values + c.aliases.values.flatten()).map { it.lowercase() }.toSet()
+            val versions = characters.filter { c ->
+                basedOn[c.id].orEmpty().any { id ->
+                    val original = byId[id] ?: return@any false
+                    original.id != c.id && original.sex == c.sex && namesOf(original).let { names -> c.labels.values.any { it.lowercase() in names } }
+                }
+            }.map { it.id }.toSet()
+            return characters.filter { it.id !in versions }
+        }
 
         /** The address an item of Wikidata is given by in the answers of the query service. */
         private const val ENTITY = "http://www.wikidata.org/entity/"

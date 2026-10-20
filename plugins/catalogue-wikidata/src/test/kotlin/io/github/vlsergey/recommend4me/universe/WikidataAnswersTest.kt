@@ -114,6 +114,29 @@ class WikidataAnswersTest {
     }
 
     @Test
+    fun `a version of a character based on it, of its sex and going by its name, is not an entry of its own`() {
+        fun character(id: String, label: String, sex: CharacterSex?, aliases: List<String> = emptyList()) =
+            UniverseCharacter(id, mapOf("en" to label), mapOf("en" to aliases), emptyMap(), "", languages, sex = sex)
+        val comics = character("Q945817", "Gwen Stacy", CharacterSex.FEMALE)
+        val films = character("Q98454800", "Gwen Stacy", CharacterSex.FEMALE)
+        val spiderWoman = character("Q20979395", "Spider-Woman", CharacterSex.FEMALE, listOf("Gwen Stacy"))
+        val verse = character("Q119806001", "Gwen Stacy", CharacterSex.FEMALE)
+        val renamed = character("Q1", "Ghost-Spider", CharacterSex.FEMALE)
+        val otherSex = character("Q2", "Gwen Stacy", CharacterSex.MALE)
+        val elsewhere = character("Q3", "Gwen Stacy", CharacterSex.FEMALE)
+        val kept = WikidataCatalogue.withoutVersions(
+            listOf(comics, films, spiderWoman, verse, renamed, otherSex, elsewhere),
+            mapOf(
+                "Q98454800" to setOf("Q945817"), "Q119806001" to setOf("Q20979395"),
+                "Q1" to setOf("Q945817"), "Q2" to setOf("Q945817"), "Q3" to setOf("Q404"),
+            ),
+        )
+        // The films' and the Spider-Verse's Gwen go by the names of the ones they are based on; a version
+        // of another name, another sex, or based on an entry outside the universe stays
+        assertEquals(listOf("Q945817", "Q20979395", "Q1", "Q2", "Q3"), kept.map { it.id })
+    }
+
+    @Test
     fun `asked too often, the request is sent again after the wait the API asks for, any other failure fails`() {
         failures += 429 to mapOf("Retry-After" to "0")
         assertEquals(listOf("Q2"), catalogue.entries(listOf("Q2"), languages).map { it.id })
