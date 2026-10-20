@@ -348,17 +348,44 @@ class WikidataCatalogue(
          * sex one of them does not state — a label of it being a name of that one, is the same
          * character for the user, and the one it is based on stands for it: Gwen Stacy of the films
          * based on Gwen Stacy of the comics, Harry Potter of a musical based on Harry Potter of the books.
+         * Every name of a version becomes a name of the one standing for it — of the first not a version
+         * itself, up a chain of versions — found by any of them.
          */
         internal fun withoutVersions(characters: List<UniverseCharacter>, basedOn: Map<String, Set<String>>): List<UniverseCharacter> {
             val byId = characters.associateBy { it.id }
             fun namesOf(c: UniverseCharacter) = (c.labels.values + c.aliases.values.flatten()).map { it.lowercase() }.toSet()
-            val versions = characters.filter { c ->
-                basedOn[c.id].orEmpty().any { id ->
-                    val original = byId[id] ?: return@any false
+            // Each version to the entry it is a version of
+            val versionOf = characters.mapNotNull { c ->
+                basedOn[c.id].orEmpty().firstOrNull { id ->
+                    val original = byId[id] ?: return@firstOrNull false
                     original.id != c.id && (original.sex == c.sex || original.sex == null || c.sex == null) && namesOf(original).let { names -> c.labels.values.any { it.lowercase() in names } }
+                }?.let { c.id to it }
+            }.toMap()
+            fun standing(id: String): String? {
+                val seen = HashSet<String>()
+                var at = id
+                while (true) {
+                    if (!seen.add(at)) return null
+                    at = versionOf[at] ?: return at
                 }
-            }.map { it.id }.toSet()
-            return characters.filter { it.id !in versions }
+            }
+            // The names of the versions, by language, to the entry standing for each — a circle of versions stands for none
+            val gained = HashMap<String, MutableMap<String, MutableList<String>>>()
+            versionOf.keys.forEach { id ->
+                val into = standing(id) ?: return@forEach
+                val version = byId.getValue(id)
+                val names = gained.getOrPut(into) { LinkedHashMap() }
+                version.labels.forEach { (lang, name) -> names.getOrPut(lang) { ArrayList() } += name }
+                version.aliases.forEach { (lang, aliases) -> names.getOrPut(lang) { ArrayList() } += aliases }
+            }
+            val circled = versionOf.keys.filter { standing(it) == null }.toSet()
+            return characters.filter { it.id !in versionOf || it.id in circled }.map { c ->
+                val more = gained[c.id] ?: return@map c
+                val known = namesOf(c).toMutableSet()
+                val aliases = LinkedHashMap(c.aliases.mapValues { it.value.toMutableList() })
+                more.forEach { (lang, names) -> names.forEach { name -> if (known.add(name.lowercase())) aliases.getOrPut(lang) { ArrayList() } += name } }
+                UniverseCharacter(c.id, c.labels, aliases, c.descriptions, c.url, c.languages, c.classes, c.sex, c.properties)
+            }
         }
 
         /** The address an item of Wikidata is given by in the answers of the query service. */

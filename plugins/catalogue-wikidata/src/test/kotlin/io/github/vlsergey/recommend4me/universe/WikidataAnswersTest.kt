@@ -118,7 +118,7 @@ class WikidataAnswersTest {
         fun character(id: String, label: String, sex: CharacterSex?, aliases: List<String> = emptyList()) =
             UniverseCharacter(id, mapOf("en" to label), mapOf("en" to aliases), emptyMap(), "", languages, sex = sex)
         val comics = character("Q945817", "Gwen Stacy", CharacterSex.FEMALE)
-        val films = character("Q98454800", "Gwen Stacy", CharacterSex.FEMALE)
+        val films = character("Q98454800", "Gwen Stacy", CharacterSex.FEMALE, listOf("Gwendolyne Stacy"))
         val spiderWoman = character("Q20979395", "Spider-Woman", CharacterSex.FEMALE, listOf("Gwen Stacy"))
         val verse = character("Q119806001", "Gwen Stacy", CharacterSex.FEMALE)
         val renamed = character("Q1", "Ghost-Spider", CharacterSex.FEMALE)
@@ -136,6 +136,22 @@ class WikidataAnswersTest {
         // sex not stated is no other; a version of another name, another sex, or based on an entry outside
         // the universe stays
         assertEquals(listOf("Q945817", "Q20979395", "Q1", "Q2", "Q3"), kept.map { it.id })
+        // The names of a version are the names of the one standing for it, each once
+        assertEquals(listOf("Gwen Stacy", "Gwendolyne Stacy"), kept.first { it.id == "Q945817" }.names)
+        assertEquals(listOf("Spider-Woman", "Gwen Stacy"), kept.first { it.id == "Q20979395" }.names)
+    }
+
+    @Test
+    fun `a chain of versions brings its names to the first that is no version, a circle of them stays as it is`() {
+        fun character(id: String, label: String) = UniverseCharacter(id, mapOf("en" to label), emptyMap(), emptyMap(), "", languages)
+        val book = character("Q10", "Harry Potter")
+        val film = UniverseCharacter("Q11", mapOf("en" to "Harry Potter", "ru" to "Гарри Поттер"), emptyMap(), emptyMap(), "", languages)
+        val game = UniverseCharacter("Q12", mapOf("en" to "Harry Potter"), mapOf("en" to listOf("The Boy Who Lived")), emptyMap(), "", languages)
+        val a = character("Q20", "Twin")
+        val b = character("Q21", "Twin")
+        val kept = WikidataCatalogue.withoutVersions(listOf(book, film, game, a, b), mapOf("Q11" to setOf("Q10"), "Q12" to setOf("Q11"), "Q20" to setOf("Q21"), "Q21" to setOf("Q20")))
+        assertEquals(listOf("Q10", "Q20", "Q21"), kept.map { it.id })
+        assertEquals(listOf("Harry Potter", "Гарри Поттер", "The Boy Who Lived").toSet(), kept.first().names.toSet())
     }
 
     @Test
