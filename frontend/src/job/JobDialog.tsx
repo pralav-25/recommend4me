@@ -1,13 +1,14 @@
 import { CheckCircle2Icon, DatabaseIcon, DownloadIcon, SquareIcon, TriangleAlertIcon } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 import type { JobStatus, SourceInfo } from "@/api/client";
+import { RefreshSelect } from "@/components/RefreshSelect";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Progress } from "@/components/ui/progress";
 import { compact, formatDate, timeLeft } from "@/i18n/format";
 import { sourceTitle } from "@/i18n/label";
 import { catalogueLabel, jobMessage, modeLabel, phaseLabel } from "./labels";
-import { catalogueUnfinished, isActive, useCancelJob, useStartJob } from "./useJobs";
+import { catalogueUnfinished, isActive, useCancelJob, useJobsRefresh, useStartJob } from "./useJobs";
 
 type Props = {
   source: SourceInfo | null;
@@ -24,6 +25,7 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
   const { t } = useTranslation("job");
   const start = useStartJob();
   const cancel = useCancelJob();
+  const [every, setEvery] = useJobsRefresh();
   const active = isActive(job);
   const whole = source?.modes.includes("SCRAPE_ALL");
   const updates = source?.modes.includes("UPDATES");
@@ -49,6 +51,8 @@ export function JobDialog({ source, job, onOpenChange, onNeedSettings }: Props) 
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <DatabaseIcon className="size-5" /> {t("JobDialog.title", { source: sourceTitle(source.id) })}
+                {/* Beside the closing cross */}
+                <RefreshSelect every={every} onChange={setEvery} className="mr-8 ml-auto" />
               </DialogTitle>
               <DialogDescription>
                 <Trans

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { api, unwrap, type WorkStatus } from "@/api/client";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { compact, duration, number } from "@/i18n/format";
+import { useWorkloadRefresh } from "@/workload/WorkQueue";
 import { workLabel } from "./labels";
 
 const ICON: Record<string, LucideIcon> = {
@@ -13,12 +14,16 @@ const ICON: Record<string, LucideIcon> = {
   sets: LayersIcon,
 };
 
-/** How far the background work has gone — pictures, texts, chapters, sets; it runs for days. */
+/**
+ * How far the background work has gone — pictures, texts, chapters, sets; it runs for days. Read
+ * again as often as the queue of the computations, as the user chose there: it has no heading of its own.
+ */
 export function WorkProgress() {
+  const [every] = useWorkloadRefresh();
   const status = useQuery({
     queryKey: ["status"],
     queryFn: async () => unwrap(await api.GET("/api/status")),
-    refetchInterval: (q) => (q.state.data?.work.some((w) => w.running) ? 10000 : 30000),
+    refetchInterval: every || false,
   });
   const work = (status.data?.work ?? []).filter((w) => w.total > 0 || w.running);
   if (work.length === 0) return null;

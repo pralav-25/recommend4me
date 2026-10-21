@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, failure, unwrap, type JobStatus, type SourceMode } from "@/api/client";
+import { useRefresh } from "@/lib/useRefresh";
 
 export const ACTIVE = new Set<JobStatus["state"]>(["RUNNING", "CANCELLING"]);
 
@@ -16,12 +17,24 @@ export function catalogueUnfinished(job: JobStatus | undefined): boolean {
   return c ? !c.complete && c.stage !== "none" : job?.resumable === "SCRAPE_ALL";
 }
 
-/** The jobs of every scraping source: fast while one runs, otherwise now and then. */
+/** How often the jobs are asked for again while one runs, till the user chooses ([useJobsRefresh]). */
+const EVERY_MS = 1000;
+
+/** Of the jobs none running: asked for again no oftener than this — a job is started here, or by a schedule. */
+const IDLE_MS = 30_000;
+
+/** How often the jobs are read again, as the user chose in the dialog of a job ([RefreshSelect]). */
+export function useJobsRefresh(): [number, (ms: number) => void] {
+  return useRefresh("jobs.refresh", EVERY_MS);
+}
+
+/** The jobs of every scraping source: as often as chosen while one runs, otherwise now and then; never when "off". */
 export function useJobs() {
+  const [every] = useJobsRefresh();
   return useQuery({
     queryKey: ["jobs"],
     queryFn: async () => unwrap(await api.GET("/api/jobs")),
-    refetchInterval: (q) => (q.state.data?.some(isActive) ? 1000 : 30000),
+    refetchInterval: (q) => (every ? (q.state.data?.some(isActive) ? every : Math.max(every, IDLE_MS)) : false),
   });
 }
 

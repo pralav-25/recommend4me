@@ -14,6 +14,14 @@ import { cn } from "@/lib/utils";
 const EVERY_MS = 2000;
 
 /**
+ * How often the queue of the computations is read again, as the user chose in its heading: the
+ * background work in the header ([WorkProgress]), which has no heading of its own, reads as often.
+ */
+export function useWorkloadRefresh(): [number, (ms: number) => void] {
+  return useRefresh("workload.refresh", EVERY_MS);
+}
+
+/**
  * THE QUEUE OF THE COMPUTATIONS, as a timeline: the last works done with how long each took, the one
  * computing now with when it began and when it is expected to end, those waiting their turn and
  * those planned after the quiet that follows the changes that asked for them, with how long each is
@@ -23,7 +31,7 @@ const EVERY_MS = 2000;
 export function WorkQueue() {
   const { t } = useTranslation("workload");
   const queryClient = useQueryClient();
-  const [every, setEvery] = useRefresh("workload.refresh", EVERY_MS);
+  const [every, setEvery] = useWorkloadRefresh();
   const queue = useQuery({
     queryKey: ["workload"],
     queryFn: async () => unwrap(await api.GET("/api/workload")),

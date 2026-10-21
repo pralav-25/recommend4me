@@ -3,12 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckIcon, CopyIcon, ExternalLinkIcon, Loader2Icon, RadarIcon } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
 import { api, unwrap, type ItemRef } from "@/api/client";
+import { RefreshSelect } from "@/components/RefreshSelect";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { findSource, useTypes } from "@/contenttype/types";
 import { ago, formatDate } from "@/i18n/format";
 import { sourceShort, sourceTitle } from "@/i18n/label";
 import { ItemRefDialog } from "@/item/ItemRefDialog";
+import { useRefresh } from "@/lib/useRefresh";
 
 const DEFAULT_ADDRESS = "http://127.0.0.1:8095";
 
@@ -37,9 +39,13 @@ export function CaptureDialog({ open, onOpenChange: setOpen }: { open: boolean; 
   );
 }
 
+/** How often the pages sent are asked for again till the user chooses ([RefreshSelect]). */
+const RECENT_EVERY_MS = 2000;
+
 function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) {
   const { t } = useTranslation("capture");
   const types = useTypes();
+  const [every, setEvery] = useRefresh("capture.refresh", RECENT_EVERY_MS);
   const patterns = useQuery({
     queryKey: ["capture", "patterns"],
     queryFn: async () => unwrap(await api.GET("/api/capture/patterns")),
@@ -52,7 +58,7 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
     queryKey: ["capture", "recent"],
     queryFn: async () => unwrap(await api.GET("/api/capture/recent")),
     // While the dialog is open the pages come in as the user browses
-    refetchInterval: 3000,
+    refetchInterval: every || false,
   });
   const homepageOf = (source: string) => findSource(types.data, source)?.source.homepage;
   const tracked = (patterns.data ?? []).filter((p) => p.patterns.length > 0);
@@ -117,6 +123,7 @@ function CaptureDetails({ onOpenItem }: { onOpenItem: (ref: ItemRef) => void }) 
         <h4 className="flex items-center gap-2 font-semibold">
           {t("CaptureDetails.recentHeading")}
           {recent.isFetching && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
+          <RefreshSelect every={every} onChange={setEvery} className="ml-auto" />
         </h4>
         {recent.data && recent.data.length === 0 && <p className="text-muted-foreground">{t("CaptureDetails.recentNone")}</p>}
         {recent.isError && <p className="text-destructive">{t("CaptureDetails.recentFailed")}</p>}
