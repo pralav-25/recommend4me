@@ -133,8 +133,7 @@ paired with each other.
 For every content type:
 
 1. one pass over every source of the type builds the input of every item: the vectors of its
-   texts, pictures and sets, its facets, numbers, the user's site signals and the grade of an
-   earlier version;
+   texts, pictures and sets, its facets, numbers, and the grade of an earlier version;
 2. the active scorer (`recommend4me.scorer.<type>` setting, the first available by default) is
    measured on 5-fold cross-validation over works for each of its candidate parameters and the
    one-standard-error choice is made;
@@ -401,6 +400,7 @@ The keys of the standard namespace the server sends:
   `badRange` (range), `noDownloads`, `siteSilent` (error), `refreshFailed`, `badGrade` (min, max),
   `badMark`, `badAnswer`, `noUniverses` (type), `notInCatalogue` (universe), `catalogueSilent`
   (error), `noSuchUniverse`, `noSuchType`, `noSiteTags`, `tagSelf`, `tagAbove`, `tagBelow`,
+  `tagThrough`, `notInDictionary` (value), `tagImplied` (tag),
   `noSetting` (setting), `noScorer` (scorer), `accessRefused`, `noExtensionFolder`.
 
 What the model and the search read keeps one language, Russian, whatever the user reads — the
