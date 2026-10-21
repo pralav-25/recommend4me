@@ -51,7 +51,8 @@ class Database(
         idleTimeout = IDLE_MS
     })
 
-    val dsl: DSLContext = DSL.using(pool, SQLDialect.H2)
+    /** Its bytes written as bytes, not as temporary LOBs ([InlineBlobs]). */
+    val dsl: DSLContext = DSL.using(InlineBlobs(pool), SQLDialect.H2)
 
     init {
         beforeMigrations(dsl)

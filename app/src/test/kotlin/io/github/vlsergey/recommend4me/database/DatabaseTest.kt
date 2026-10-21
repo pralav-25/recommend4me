@@ -1,5 +1,8 @@
 package io.github.vlsergey.recommend4me.database
 
+import org.h2.engine.SessionLocal
+import org.h2.jdbc.JdbcConnection
+import org.jooq.impl.DSL
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.random.Random
@@ -25,7 +28,9 @@ class DatabaseTest {
             val random = Random(1)
             // Random bytes: the file's compression gives nothing back of them
             repeat(900) { i -> db.dsl.execute("INSERT INTO junk VALUES (?, ?)", i, random.nextBytes(100_000)) }
-            db.dsl.execute("DELETE FROM junk WHERE id >= 10")
+            // The rows written last kept: their chunk at the end of the file, H2 cannot merely cut the
+            // free space after it off — what is given back is given by the moving of the chunks
+            db.dsl.execute("DELETE FROM junk WHERE id < 890")
             // H2 lets go of the pages of the rows deleted in the background, a checkpoint at a time, slower
             // on a busy machine: till they are let go — of 900 rows 10 kept, a few percent of the pages
             // live — not till the share merely stops falling for a while
@@ -43,7 +48,7 @@ class DatabaseTest {
             var after = first
             var pass = 0
             while (after >= before / 2 && pass++ < PASSES) {
-                db.dsl.execute("UPDATE junk SET data = ? WHERE id = 0", byteArrayOf(pass.toByte()))
+                db.dsl.execute("UPDATE junk SET data = ? WHERE id = 899", byteArrayOf(pass.toByte()))
                 db.dsl.execute("CHECKPOINT")
                 after = db.compact(60_000)?.second ?: after
             }
@@ -52,6 +57,30 @@ class DatabaseTest {
             assertEquals(10, db.dsl.fetchCount(db.dsl.selectFrom("junk")))
             db.dsl.execute("INSERT INTO junk VALUES (?, ?)", 1000, byteArrayOf(1, 2, 3))
             assertEquals(11, db.dsl.fetchCount(db.dsl.selectFrom("junk")))
+        }
+    }
+
+    @Test
+    fun `bytes are written as bytes, no LOB of them left in the file`() {
+        Database("bytes", folder.resolve("ratings"), "ratings").use { db ->
+            db.dsl.execute("CREATE TABLE junk (id INT PRIMARY KEY, data VARBINARY(100000))")
+            val random = Random(2)
+            val written = List(5) { random.nextBytes(100_000) }
+            written.forEachIndexed { i, bytes -> db.dsl.execute("INSERT INTO junk VALUES (?, ?)", i, bytes) }
+            db.dsl.insertInto(DSL.table("junk")).values(5, written[0]).execute()
+            db.dsl.batch("INSERT INTO junk VALUES (?, ?)").bind(6, written[1]).bind(7, written[2]).execute()
+            db.dsl.transaction { c -> DSL.using(c).execute("UPDATE junk SET data = ? WHERE id = 4", written[3]) }
+            // Neither the LOBs of a session nor those of a table: H2's own maps of them all empty
+            val lobs = db.dsl.connectionResult { c ->
+                val mv = (c.unwrap(JdbcConnection::class.java).session as SessionLocal).database.store.mvStore
+                mv.mapNames.filter { it.startsWith("lob") || it.startsWith("tempLob") }.associateWith { mv.openMap<Any, Any>(it).sizeAsLong() }
+            }
+            assertTrue(lobs.isNotEmpty() && lobs.values.all { it == 0L }, "lobs $lobs")
+            val read = db.dsl.fetch("SELECT id, data FROM junk ORDER BY id").associate { it.get(0, Int::class.java) to it.get(1, ByteArray::class.java) }
+            // Every row's bytes as written: the one updated of its new ones
+            val expected = listOf(0, 1, 2, 3, 3, 0, 1, 2).map { written[it] }
+            assertEquals((0..7).toList(), read.keys.sorted())
+            (0..7).forEach { id -> assertTrue(read.getValue(id).contentEquals(expected[id]), "row $id") }
         }
     }
 
