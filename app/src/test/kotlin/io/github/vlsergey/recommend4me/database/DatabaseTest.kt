@@ -4,7 +4,9 @@ import org.h2.engine.SessionLocal
 import org.h2.jdbc.JdbcConnection
 import org.jooq.impl.DSL
 import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Files
 import java.nio.file.Path
+import java.sql.DriverManager
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -82,6 +84,42 @@ class DatabaseTest {
             assertEquals((0..7).toList(), read.keys.sorted())
             (0..7).forEach { id -> assertTrue(read.getValue(id).contentEquals(expected[id]), "row $id") }
         }
+    }
+
+    @Test
+    fun `a file mostly unused is written anew before it is opened, what is used kept`() {
+        val file = folder.resolve("ratings")
+        Database("test", file, "ratings").use { }
+        // Closed without compacting: the file as a run of writes leaves it
+        DriverManager.getConnection("jdbc:h2:file:${file.toAbsolutePath()};COMPRESS=TRUE;MAX_COMPACT_TIME=0", "sa", "").use { c ->
+            c.createStatement().use { it.execute("CREATE TABLE junk (id INT PRIMARY KEY, data VARBINARY(100000))") }
+            val random = Random(3)
+            c.prepareStatement("INSERT INTO junk VALUES (?, ?)").use { s ->
+                repeat(900) { i -> s.setInt(1, i); s.setBytes(2, random.nextBytes(100_000)); s.executeUpdate() }
+            }
+            c.createStatement().use { it.execute("DELETE FROM junk WHERE id < 890") }
+        }
+        // What is kept, read before: byte for byte the same after
+        val kept = DriverManager.getConnection("jdbc:h2:file:${file.toAbsolutePath()};MAX_COMPACT_TIME=0", "sa", "").use { c ->
+            c.createStatement().use { st ->
+                st.executeQuery("SELECT id, data FROM junk ORDER BY id").use { r -> generateSequence { if (r.next()) r.getInt(1) to r.getBytes(2) else null }.toList() }
+            }
+        }
+        val mvFile = folder.resolve("ratings.mv.db")
+        val before = Files.size(mvFile)
+        assertTrue(before > 64L shl 20, "before $before")
+        Database("test", file, "ratings").use { db ->
+            val after = Files.size(mvFile)
+            assertTrue(after < before / 2, "from $before to $after")
+            val read = db.dsl.fetch("SELECT id, data FROM junk ORDER BY id").map { it.get(0, Int::class.java) to it.get(1, ByteArray::class.java) }
+            assertEquals((890..899).toList(), kept.map { it.first })
+            assertEquals(kept.map { it.first }, read.map { it.first })
+            kept.zip(read).forEach { (k, r) -> assertTrue(k.second.size == 100_000 && k.second.contentEquals(r.second), "row ${k.first}: ${k.second.size} and ${r.second.size} bytes") }
+        }
+        // Written anew once: of a file mostly used, nothing
+        val rewritten = Files.size(mvFile)
+        Database("test", file, "ratings").use { }
+        assertTrue(Files.size(mvFile) <= rewritten + (1L shl 20), "again ${Files.size(mvFile)}, was $rewritten")
     }
 
     @Test

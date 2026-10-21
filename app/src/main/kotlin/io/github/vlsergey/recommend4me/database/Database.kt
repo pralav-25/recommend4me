@@ -5,11 +5,14 @@ import com.zaxxer.hikari.HikariDataSource
 import org.flywaydb.core.Flyway
 import org.h2.engine.SessionLocal
 import org.h2.jdbc.JdbcConnection
+import org.h2.mvstore.MVStore
+import org.h2.mvstore.MVStoreTool
 import org.h2.mvstore.RandomAccessStore
 import org.jooq.DSLContext
 import org.jooq.SQLDialect
 import org.jooq.impl.DSL
 import org.slf4j.LoggerFactory
+import java.nio.file.Files
 import java.nio.file.Path
 
 private val log = LoggerFactory.getLogger(Database::class.java)
@@ -31,6 +34,11 @@ class Database(
     /** Done with the file as it is, before its migrations: what a migration drops copied elsewhere first. */
     beforeMigrations: (DSLContext) -> Unit = {},
 ) : AutoCloseable {
+
+    init {
+        // Before the pool, which opens the file at once
+        rewriteIfWasted(name, file)
+    }
 
     private val pool = HikariDataSource(HikariConfig().apply {
         // A writer waits for a row another transaction holds up to 10 s (2 s by default). The file
@@ -130,6 +138,31 @@ class Database(
     override fun close() = pool.close()
 
     companion object {
+        /**
+         * A FILE MOSTLY UNUSED WRITTEN ANEW before it is opened: its live pages copied into a new file
+         * that takes its place (H2's own [MVStoreTool.compact]) — when it is of [MIN_COMPACT_SIZE] or
+         * more and less than [FILL_TO_COMPACT] % of its chunks live. Compacting an open file gives
+         * back no space H2 still counts as used though its maps hold it no more: pages of the LOBs a
+         * row once had above all, dead in the maps, live in the chunks' accounts, never rewritten. Of
+         * f95zone's source, 7.9 GB written over two weeks, 3 GB were left, every row and LOB as before.
+         * The new file is made beside it and put in its place in one move: a run stopped meanwhile
+         * leaves the old file whole, the half-made one removed by H2 at the next opening.
+         */
+        private fun rewriteIfWasted(name: String, file: Path) {
+            val mvFile = file.resolveSibling(file.fileName.toString() + ".mv.db")
+            if (!Files.exists(mvFile) || Files.size(mvFile) < MIN_COMPACT_SIZE) return
+            MVStoreTool.compactCleanUp(mvFile.toString())
+            val live = MVStore.Builder().fileName(mvFile.toString()).readOnly().open().use { it.fileStore.chunksFillRate }
+            if (live >= FILL_TO_COMPACT) return
+            val before = Files.size(mvFile)
+            val started = System.currentTimeMillis()
+            MVStoreTool.compact(mvFile.toString(), true)
+            log.info(
+                "{}: written anew from {} MB to {} MB in {} s, {} % of its chunks live before",
+                name, before shr 20, Files.size(mvFile) shr 20, (System.currentTimeMillis() - started) / 1000, live,
+            )
+        }
+
         private const val POOL = 6
 
         /** How long a connection asked for by nobody is kept: then closed, and the file with the last of them. */
