@@ -118,6 +118,8 @@ erDiagram
         VARCHAR encoder "null"
         TIMESTAMPTZ analyzed_at "null"
         VARCHAR error "null"
+        INTEGER failures
+        TIMESTAMPTZ retry_at "null"
     }
     review {
         VARCHAR item_id PK, FK

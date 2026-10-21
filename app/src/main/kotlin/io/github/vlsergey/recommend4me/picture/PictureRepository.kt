@@ -18,6 +18,8 @@ data class Picture(
     /** Analysed by the encoder in use. */
     val analyzed: Boolean,
     val error: String?,
+    /** Its downloads failed in a row: what the next wait is counted by ([saveError]). */
+    val failures: Int,
 )
 
 /**
@@ -51,6 +53,7 @@ class PictureRepository(private val db: DSLContext) {
                         .set(PICTURE.URL, url.take(2000))
                         .setNull(PICTURE.PREVIEW_FILE).setNull(PICTURE.FULL_FILE).setNull(PICTURE.VEC)
                         .setNull(PICTURE.ENCODER).setNull(PICTURE.ANALYZED_AT).setNull(PICTURE.ERROR)
+                        .set(PICTURE.FAILURES, 0).setNull(PICTURE.RETRY_AT)
                         .where(PICTURE.ITEM_ID.eq(itemId), PICTURE.POSITION.eq(position))
                         .execute()
                     if (old.vec != null) vectorsChanged = true
@@ -81,8 +84,8 @@ class PictureRepository(private val db: DSLContext) {
 
     /**
      * The pictures of the items [itemIds] to be worked on: without a vector of [encoder], or of an
-     * item in [keep] whose original is not on disk. In the order of [itemIds], every picture of an
-     * item together.
+     * item in [keep] whose original is not on disk; not failed, or failed and due to be tried
+     * again. In the order of [itemIds], every picture of an item together.
      */
     fun pendingOf(itemIds: List<String>, encoder: String, keep: Set<String>, limit: Int): List<Picture> {
         if (itemIds.isEmpty()) return emptyList()
@@ -92,7 +95,7 @@ class PictureRepository(private val db: DSLContext) {
             val order = chunk.withIndex().associate { (i, id) -> id to i }
             val keepHere = chunk.filter { it in keep }
             out += db.selectFrom(PICTURE)
-                .where(PICTURE.ITEM_ID.`in`(chunk), PICTURE.ERROR.isNull)
+                .where(PICTURE.ITEM_ID.`in`(chunk), due())
                 .and(analyzed(encoder).not().or(if (keepHere.isEmpty()) DSL.falseCondition() else PICTURE.ITEM_ID.`in`(keepHere).and(PICTURE.FULL_FILE.isNull)))
                 .fetch { map(it, encoder) }
                 .sortedWith(compareBy({ order.getValue(it.itemId) }, { it.position }))
@@ -100,9 +103,9 @@ class PictureRepository(private val db: DSLContext) {
         return out.take(limit)
     }
 
-    /** The items with a picture not analysed by [encoder] yet (and not failed). */
+    /** The items with a picture not analysed by [encoder] yet (not failed, or due to be tried again). */
     fun itemsWithPending(encoder: String): Set<String> =
-        db.selectDistinct(PICTURE.ITEM_ID).from(PICTURE).where(PICTURE.ERROR.isNull, analyzed(encoder).not())
+        db.selectDistinct(PICTURE.ITEM_ID).from(PICTURE).where(due(), analyzed(encoder).not())
             .fetchSet { it.value1()!! }
 
     fun saveAnalysis(itemId: String, position: Int, vector: FloatArray?, encoder: String, previewFile: String?, fullFile: String?, now: Instant) {
@@ -110,7 +113,8 @@ class PictureRepository(private val db: DSLContext) {
         val withVector = if (vector != null) {
             update.set(PICTURE.VEC, Vectors.half(vector)).set(PICTURE.ENCODER, encoder).set(PICTURE.ANALYZED_AT, now)
         } else update
-        withVector.where(PICTURE.ITEM_ID.eq(itemId), PICTURE.POSITION.eq(position)).execute()
+        // Downloaded: whatever failed before is past
+        withVector.setNull(PICTURE.ERROR).set(PICTURE.FAILURES, 0).setNull(PICTURE.RETRY_AT).where(PICTURE.ITEM_ID.eq(itemId), PICTURE.POSITION.eq(position)).execute()
         if (vector != null) refreshItemVectors(listOf(itemId), encoder)
     }
 
@@ -119,22 +123,19 @@ class PictureRepository(private val db: DSLContext) {
             .where(PICTURE.ITEM_ID.eq(itemId), PICTURE.POSITION.eq(position)).execute()
     }
 
-    fun saveError(itemId: String, position: Int, error: String) {
-        db.update(PICTURE).set(PICTURE.ERROR, error.take(500))
+    /**
+     * The picture's download failed the [failures]-th time in a row: tried again at [retryAt], never
+     * when it is null — a picture that cannot be decoded, or is gone (404).
+     */
+    fun saveError(itemId: String, position: Int, error: String, failures: Int, retryAt: Instant?) {
+        db.update(PICTURE).set(PICTURE.ERROR, error.take(500)).set(PICTURE.FAILURES, failures).set(PICTURE.RETRY_AT, retryAt)
             .where(PICTURE.ITEM_ID.eq(itemId), PICTURE.POSITION.eq(position))
             .execute()
     }
 
-    /**
-     * Forgets the errors that may pass — a timeout, a 5xx, a dropped connection — so the pictures
-     * are tried again; a picture that cannot be decoded, or is gone (404), stays as it is.
-     */
-    fun clearPassingErrors(): Int =
-        db.update(PICTURE).setNull(PICTURE.ERROR)
-            .where(PICTURE.ERROR.isNotNull)
-            .and(PICTURE.ERROR.notLike("cannot decode%"))
-            .and(PICTURE.ERROR.notLike("HTTP 404%"))
-            .execute()
+    /** The earliest moment a failed picture is to be tried again; null when none is. */
+    fun nextRetry(): Instant? =
+        db.select(DSL.min(PICTURE.RETRY_AT)).from(PICTURE).where(PICTURE.ERROR.isNotNull).fetchOne()?.value1()
 
     fun find(itemId: String, position: Int, encoder: String?): Picture? =
         db.selectFrom(PICTURE).where(PICTURE.ITEM_ID.eq(itemId), PICTURE.POSITION.eq(position)).fetchOne { map(it, encoder) }
@@ -292,6 +293,7 @@ class PictureRepository(private val db: DSLContext) {
         fullFile = r.fullFile,
         analyzed = r.vec != null && encoder != null && r.encoder == encoder,
         error = r.error,
+        failures = r.failures!!,
     )
 
     companion object {
@@ -299,6 +301,9 @@ class PictureRepository(private val db: DSLContext) {
 
         const val COVER = "img:cover"
         const val SCREENS = "img:screens"
+
+        /** Not failed, or failed and due to be tried again now. */
+        private fun due(): Condition = PICTURE.ERROR.isNull.or(PICTURE.RETRY_AT.le(Instant.now()))
 
         private fun analyzed(encoder: String): Condition = PICTURE.VEC.isNotNull.and(PICTURE.ENCODER.eq(encoder))
 

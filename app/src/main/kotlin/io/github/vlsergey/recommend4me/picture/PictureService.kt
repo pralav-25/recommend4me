@@ -7,6 +7,7 @@ import io.github.vlsergey.recommend4me.model.Recommendations
 import io.github.vlsergey.recommend4me.plugin.Plugins
 import io.github.vlsergey.recommend4me.rating.Grades
 import io.github.vlsergey.recommend4me.rating.GradesChanged
+import io.github.vlsergey.recommend4me.retry.Backoff
 import io.github.vlsergey.recommend4me.source.SourceContexts
 import io.github.vlsergey.recommend4me.source.SourceStore
 import io.github.vlsergey.recommend4me.source.Stores
@@ -17,6 +18,7 @@ import org.springframework.context.event.EventListener
 import org.springframework.core.annotation.Order
 import org.springframework.stereotype.Service
 import java.nio.file.Path
+import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.ExecutorCompletionService
 import java.util.concurrent.Executors
@@ -119,8 +121,6 @@ class PictureService(
         worker.execute {
             try {
                 stores.sources.forEach { s ->
-                    val retried = s.pictures.clearPassingErrors()
-                    if (retried > 0) log.info("{}: {} pictures that failed to download are tried again", s.id, retried)
                     plugins.imageEncoder()?.let { encoder ->
                         s.pictures.itemsWithoutVectors(encoder.id).takeIf { it.isNotEmpty() }?.let { ids ->
                             s.pictures.refreshItemVectors(ids, encoder.id)
@@ -146,6 +146,8 @@ class PictureService(
         val preview: Pair<ByteArray, String>?,
         val prepared: PreparedPicture?,
         val error: String?,
+        /** The error does not pass: the picture is gone (404) or cannot be decoded — never tried again. */
+        val lasting: Boolean = false,
     )
 
     /**
@@ -196,7 +198,10 @@ class PictureService(
                 running = false
                 sinceRetrain.filterValues { it > 0 }.keys.forEach { recommendations.scheduleRetrain(it, "pictures", byUser = false) }
                 sinceRetrain.clear()
-                synchronized(wake) { wake.wait(IDLE_MILLIS) }
+                // Woken by new pictures, or when the first failed one is due to be tried again
+                val retry = stores.sources.mapNotNull { it.pictures.nextRetry() }.minOrNull()
+                val wait = retry?.let { (it.toEpochMilli() - System.currentTimeMillis()).coerceIn(1, IDLE_MILLIS) } ?: IDLE_MILLIS
+                synchronized(wake) { wake.wait(wait) }
                 continue
             }
             running = true
@@ -226,7 +231,7 @@ class PictureService(
         val picture = job.picture
         val headers = { url: String -> store.source.pictureHeaders(url, contexts.of(store.id)) }
         var used: String? = null
-        var lastError: String? = null
+        var lastError: Exception? = null
         var original: Pair<ByteArray, String>? = null
         for (address in store.source.pictureAddresses(picture.url)) {
             try {
@@ -234,10 +239,13 @@ class PictureService(
                 used = address
                 break
             } catch (e: Exception) {
-                lastError = e.message ?: e.javaClass.simpleName
+                lastError = e
             }
         }
-        if (original == null) return Fetched(job, null, null, null, lastError ?: "no address")
+        if (original == null) {
+            val error = lastError?.let { it.message ?: it.javaClass.simpleName } ?: "no address"
+            return Fetched(job, null, null, null, error, lasting = (lastError as? PictureException)?.status == 404)
+        }
         val preview = try {
             when {
                 picture.previewFile != null -> null
@@ -253,16 +261,21 @@ class PictureService(
         val prepared = try {
             PictureFiles.decode(original.first)?.let(encoder::prepare)
         } catch (e: Exception) {
-            return Fetched(job, original, preview, null, "cannot decode ${original.second}: ${e.message ?: e.javaClass.simpleName}")
+            return Fetched(job, original, preview, null, "cannot decode ${original.second}: ${e.message ?: e.javaClass.simpleName}", lasting = true)
         }
-        return if (prepared == null) Fetched(job, original, preview, null, "cannot decode ${original.second}: no reader")
+        return if (prepared == null) Fetched(job, original, preview, null, "cannot decode ${original.second}: no reader", lasting = true)
         else Fetched(job, original, preview, prepared, null)
     }
 
     /** Analyses and stores the downloaded pictures; returns how many new vectors every content type got. */
     private fun analyse(fetched: List<Fetched>, encoder: ImageEncoder): Map<String, Int> {
         val started = System.nanoTime()
-        fetched.filter { it.error != null }.forEach { it.job.store.pictures.saveError(it.job.picture.itemId, it.job.picture.position, it.error!!) }
+        val failedAt = Instant.now()
+        fetched.filter { it.error != null }.forEach {
+            val p = it.job.picture
+            val failures = p.failures + 1
+            it.job.store.pictures.saveError(p.itemId, p.position, it.error!!, failures, if (it.lasting) null else RETRIES.nextAttempt(failedAt, failures))
+        }
         val toAnalyze = fetched.filter { it.prepared != null }
         val vectors = if (toAnalyze.isEmpty()) emptyList() else encoder.encode(toAnalyze.map { it.prepared!! })
         val byJob = toAnalyze.indices.associate { toAnalyze[it].job to vectors[it] }
@@ -314,6 +327,9 @@ class PictureService(
         private const val GATHER_SECONDS = 10L
         private const val PARALLEL_DOWNLOADS = 24
         private const val IDLE_MILLIS = 10 * 60_000L
+
+        /** A picture whose download failed tried again a second after, then twice as late every time, without end (user, 2026-10-21). */
+        private val RETRIES = Backoff(first = Duration.ofSeconds(1), factor = 2.0)
 
         /** New picture vectors between retrainings. */
         private const val RETRAIN_EVERY = 1000
